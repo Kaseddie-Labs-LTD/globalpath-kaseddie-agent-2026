@@ -12,3 +12,5 @@ edge-tts==6.1.10
 fal-client==0.4.2
 openai
 anthropic
+replicate==1.0.4
+httpx-sse
