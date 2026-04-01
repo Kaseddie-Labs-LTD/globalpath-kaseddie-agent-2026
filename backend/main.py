@@ -70,12 +70,9 @@ groq_client = Groq(
     api_key=GROQ_KEY
 )
 
-# Initialize embeddings using Groq (for compatibility)
-from langchain_groq import GroqEmbeddings
-embeddings = GroqEmbeddings(
-    groq_api_key=GROQ_KEY,
-    model="llama-3.3-70b-specdec"
-)
+# Initialize embeddings using HuggingFace (Groq doesn't host embedding models)
+from langchain_community.embeddings import HuggingFaceEmbeddings
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 # Global lock for GitLab to ensure sequential processing with jitter
 gitlab_lock = asyncio.Lock()
