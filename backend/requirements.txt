@@ -9,3 +9,6 @@ pydantic==2.6.3
 pydantic-settings==2.2.1
 aiohttp==3.9.3
 edge-tts==6.1.10
+fal-client==0.4.2
+openai
+anthropic
