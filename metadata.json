@@ -1,0 +1,8 @@
+{
+  "name": "Copy of GlobalPath Kaseddie Agent",
+  "description": "Autonomous AI agent for job matching in GCC and Europe, focusing on blue-collar and professional roles with document verification and long-term workflow management.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}

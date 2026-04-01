@@ -1,0 +1,289 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#020617] text-slate-200 antialiased;
+    /* This ensures the background is deep slate even if a component fails */
+    background-color: #020617 !important;
+  }
+
+  /* Fixes the white-on-white text in the HR Console and Admin inputs */
+  input, textarea, select {
+    @apply bg-slate-900/50 border-slate-700 text-cyan-400 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 outline-none;
+  }
+
+  /* Specific fix for the "Summon Agent" benchmark map text visibility */
+  .benchmark-label, .map-text {
+    @apply text-cyan-400 font-mono drop-shadow-[0_0_8px_rgba(34,211,238,0.8)];
+  }
+}
+
+body {
+  color: #ffffff !important;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.92; transform: scale(1.02); }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 3s infinite ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slideLeft {
+  animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out infinite;
+}
+
+/* Outreach Node Console - Ghost UI Fix */
+.outreach-node-console, .local-vacancy-node {
+  @apply bg-slate-900/80 border border-cyan-500/30 p-4 rounded-lg !important;
+  color: #22d3ee !important; 
+}
+
+/* This makes the AI 'Thinking' state visible */
+.ai-refiner-status {
+  @apply animate-pulse text-purple-400 font-mono text-sm mt-2;
+}
+
+/* index.css */
+.vetted-card, .agent-output-area {
+    background-color: #0f172a !important; /* Deep Navy */
+    color: #ffffff !important; /* Pure White Text */
+    border: 1px solid #22d3ee !important; /* Neon Cyan */
+}
+
+.vetted-card p, .vetted-card span, .vetted-card div {
+    color: #cbd5e1 !important; /* Light Gray for readability */
+}
+
+/* Force Admin Oversight visibility */
+.admin-dashboard, .oversight-panel, body {
+    background-color: #000 !important;
+}
+
+/* Force Summon Agent output text to be visible */
+.agent-output-text {
+    color: #22d3ee !important;
+    font-family: 'Courier New', monospace;
+}
+
+/* Kill any remaining "Unavailable" text overlays */
+.old-chatbot-error, .do-status-message {
+    display: none !important;
+}
+
+/* Style the new Kaseddie Uplink Floating Window */
+.kaseddie-chat-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    z-index: 9998;
+    background: #050505;
+    border: 1px solid #00f2ff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
+    transition: all 0.3s ease;
+}
+
+.kaseddie-chat-toggle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 30px rgba(0, 242, 255, 0.5);
+}
+
+.cybernetic-eye {
+    color: #00f2ff;
+    animation: cybernetic-pulse 2s infinite;
+}
+
+.cybernetic-bot {
+    color: #888;
+    animation: cybernetic-rotate 3s linear infinite;
+}
+
+@keyframes cybernetic-pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+@keyframes cybernetic-rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.kaseddie-uplink-floating {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 350px;
+    height: 500px;
+    z-index: 9999;
+    background: #050505 !important;
+    border: 1px solid #00f2ff;
+    border-radius: 8px;
+    color: #00f2ff !important;
+    font-family: 'Share Tech Mono', monospace;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
+    transition: all 0.3s ease;
+    opacity: 0;
+    transform: translateY(20px) scale(0.8);
+    pointer-events: none;
+}
+
+.kaseddie-uplink-floating.expanded {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: all;
+}
+
+.kaseddie-uplink-floating.collapsed {
+    opacity: 0;
+    transform: translateY(20px) scale(0.8);
+    pointer-events: none;
+}
+
+.kaseddie-uplink-floating .chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    border-bottom: 1px solid rgba(0, 242, 255, 0.2);
+}
+
+.kaseddie-uplink-floating .chat-controls {
+    display: flex;
+    align-items: center;
+}
+
+.kaseddie-uplink-floating .minimize-btn {
+    background: none;
+    border: none;
+    color: #00f2ff;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.kaseddie-uplink-floating .minimize-btn:hover {
+    background: rgba(0, 242, 255, 0.1);
+    transform: scale(1.1);
+}
+
+.kaseddie-uplink-floating .chat-window {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    max-height: 350px;
+}
+
+.kaseddie-uplink-floating .thinking-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #00f2ff;
+    font-style: italic;
+    opacity: 0.7;
+}
+
+.kaseddie-uplink-floating .thinking-indicator .animate-pulse {
+    animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+.kaseddie-uplink-floating .chat-input-container {
+    display: flex;
+    gap: 8px;
+    padding: 0.5rem;
+    border-top: 1px solid rgba(0, 242, 255, 0.2);
+}
+
+.kaseddie-uplink-floating input {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid #00f2ff;
+    color: #00f2ff;
+    padding: 0.5rem;
+    border-radius: 4px;
+    outline: none;
+    font-size: 14px;
+}
+
+.kaseddie-uplink-floating input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.kaseddie-uplink-floating input::placeholder {
+    color: #00f2ff80;
+}
+
+.kaseddie-uplink-floating .send-btn {
+    background: #00f2ff;
+    border: none;
+    color: #050505;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.kaseddie-uplink-floating .send-btn:hover:not(:disabled) {
+    background: #00ccff;
+    transform: scale(1.05);
+}
+
+.kaseddie-uplink-floating .send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: scale(0.95);
+}
