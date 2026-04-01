@@ -71,7 +71,7 @@ groq_client = Groq(
 )
 
 # Initialize embeddings using HuggingFace (Groq doesn't host embedding models)
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 # Global lock for GitLab to ensure sequential processing with jitter
