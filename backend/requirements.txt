@@ -16,5 +16,5 @@ replicate==1.0.4
 httpx-sse
 langchain
 langchain-groq
-langchain-community
+langchain-huggingface
 sentence-transformers
