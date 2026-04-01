@@ -67,8 +67,7 @@ else:
 
 # Initialize Groq Cloud Client for LLM processing
 groq_client = Groq(
-    api_key=GROQ_KEY,
-    model="llama-3.3-70b-specdec"
+    api_key=GROQ_KEY
 )
 
 # Initialize embeddings using Groq (for compatibility)
