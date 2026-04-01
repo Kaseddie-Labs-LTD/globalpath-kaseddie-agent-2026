@@ -32,23 +32,16 @@ from fastapi.responses import FileResponse
 import edge_tts
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from crewai import Agent, Task, Crew, Process
-from langchain_groq import ChatGroq
-from langchain_ollama import OllamaEmbeddings
-from langchain_core.prompts import PromptTemplate
-from langchain_core.documents import Document
-from langchain_apify import ApifyDatasetLoader
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.models import Distance, VectorParams, PayloadSchemaType
 from apify_client import ApifyClient
-from openai import OpenAI  # Add OpenAI import for Ollama compatibility
 import httpx
 from groq import Groq
 from services.media_engine import generate_flux_image, generate_kling_video
 
 # Initialize Groq client
-client = Groq(api_key=GROQ_KEY)
+groq_client = Groq(api_key=GROQ_KEY)
 
 # Collection settings
 COLLECTION_NAME = "globalpath_leads"
@@ -83,14 +76,6 @@ from langchain_groq import GroqEmbeddings
 embeddings = GroqEmbeddings(
     groq_api_key=GROQ_KEY,
     model="llama-3.3-70b-specdec"
-)
-
-# Initialize LangChain Groq LLM
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    groq_api_key=GROQ_KEY,
-    verbose=True,
-    temperature=0.5
 )
 
 # Global lock for GitLab to ensure sequential processing with jitter
