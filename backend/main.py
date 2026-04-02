@@ -38,6 +38,7 @@ from qdrant_client.http.models import Distance, VectorParams, PayloadSchemaType
 from apify_client import ApifyClient
 import httpx
 from groq import Groq
+from langchain_core.documents import Document
 from services.media_engine import generate_flux_image, generate_kling_video
 
 # Initialize Groq client
