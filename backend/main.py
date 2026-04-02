@@ -41,6 +41,25 @@ from groq import Groq
 from langchain_core.documents import Document
 from services.media_engine import generate_flux_image, generate_kling_video
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator:
+    # Yield immediately so Uvicorn can finish starting the server
+    # and bind to port without any delay.
+    print("✅ Port 8080 is now open.")
+    print("Lifespan: Yielding immediately for startup...")
+    
+    # We create the task AFTER the yield or just before, 
+    # but the key is that nothing blocks before 'yield'.
+    startup_task = asyncio.create_task(sync_all_apify_datasets())
+    
+    try:
+        yield
+    finally:
+        # Optional: Cancel startup task if it's still running on shutdown
+        if not startup_task.done():
+            print("Shutting down: Cancelling background startup task...")
+            startup_task.cancel()
+
 # Initialize FastAPI app
 app = FastAPI(
     title="GlobalPath Kaseddie Agent API",
@@ -475,30 +494,6 @@ def ensure_collection_exists():
             
     except Exception as e:
         print(f" Error checking/creating collection: {e}")
-
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator:
-    # Yield immediately so Uvicorn can finish starting the server
-    # and bind to port without any delay.
-    print("✅ Port 8080 is now open.")
-    print("Lifespan: Yielding immediately for startup...")
-    
-    # We create the task AFTER the yield or just before, 
-    # but the key is that nothing blocks before 'yield'.
-    startup_task = asyncio.create_task(sync_all_apify_datasets())
-    
-    try:
-        yield
-    finally:
-        # Optional: Cancel startup task if it's still running on shutdown
-        if not startup_task.done():
-            print("Shutting down: Cancelling background startup task...")
-            startup_task.cancel()
-
-app = FastAPI(
-    title="GlobalPath Kaseddie Agent API",
-    lifespan=lifespan
-)
 
 # CORS configuration: Targeted for dev server stability
 app.add_middleware(
