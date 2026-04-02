@@ -71,8 +71,16 @@ groq_client = Groq(
 )
 
 # Initialize embeddings using HuggingFace (Groq doesn't host embedding models)
-from langchain_huggingface import HuggingFaceEmbeddings
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# Lazy initialization to prevent startup delays
+embeddings = None
+
+def get_embeddings():
+    """Lazy initialization of embeddings to prevent startup delays"""
+    global embeddings
+    if embeddings is None:
+        from langchain_huggingface import HuggingFaceEmbeddings
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    return embeddings
 
 # Global lock for GitLab to ensure sequential processing with jitter
 gitlab_lock = asyncio.Lock()
@@ -792,7 +800,7 @@ async def ingest_lead(lead: Lead):
         text_to_vectorize = f"Name: {lead.name}. Country: {lead.country}. Interests: {lead.interests}"
         
         # 2. Generate Embedding
-        vector = embeddings.embed_query(text_to_vectorize)
+        vector = get_embeddings().embed_query(text_to_vectorize)
 
         # 3. Upsert to Qdrant
         point_id = str(uuid.uuid4())
@@ -833,7 +841,7 @@ async def search_leads(query: str = Query(..., description="The query to search 
     """
     try:
         # 1. Convert query to vector
-        query_vector = embeddings.embed_query(query)
+        query_vector = get_embeddings().embed_query(query)
 
         # 2. Search Qdrant for top 3 matches
         search_result = qdrant_client.search(
@@ -1020,7 +1028,7 @@ async def sync_all_apify_datasets():
                         # Create a simple vector for immediate storage (using text embedding of raw data)
                         raw_text = f"{company} {description}"
                         try:
-                            vector = embeddings.embed_query(raw_text)
+                            vector = get_embeddings().embed_query(raw_text)
                         except:
                             # Fallback: create a simple hash-based vector if embedding fails
                             vector = [hash(f"{i}{raw_text}") % 1000 / 1000 for i in range(3072)]
@@ -1131,7 +1139,7 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
         # Create enriched vector
         enriched_text = f"Position: {doc.metadata.get('name')}. Company/Location: {doc.metadata.get('country')}. Description: {doc.metadata.get('interests')}"
         try:
-            enriched_vector = embeddings.embed_query(enriched_text)
+            enriched_vector = get_embeddings().embed_query(enriched_text)
         except:
             enriched_vector = [hash(f"{i}{enriched_text}") % 1000 / 1000 for i in range(3072)]
         
