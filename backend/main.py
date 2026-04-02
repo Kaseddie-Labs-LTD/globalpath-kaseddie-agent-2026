@@ -41,6 +41,21 @@ from groq import Groq
 from langchain_core.documents import Document
 from services.media_engine import generate_flux_image, generate_kling_video
 
+# Initialize FastAPI app
+app = FastAPI(
+    title="GlobalPath Kaseddie Agent API",
+    lifespan=lifespan
+)
+
+# CORS configuration: Targeted for dev server stability
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Initialize Groq client
 groq_client = Groq(api_key=GROQ_KEY)
 
@@ -460,13 +475,6 @@ def ensure_collection_exists():
             
     except Exception as e:
         print(f" Error checking/creating collection: {e}")
-
-@app.on_event('startup')
-async def startup_event():
-    """Startup event handler that runs background sync immediately."""
-    print(" Startup event triggered - starting background Apify sync...")
-    # Create background task without waiting for server to fully start
-    asyncio.create_task(sync_all_apify_datasets())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
