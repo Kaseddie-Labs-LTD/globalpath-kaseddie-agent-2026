@@ -61,6 +61,11 @@ const getRegionTag = (location: any = "", company: string = "", title: string = 
     return { label: 'Western Corridor', color: 'text-brand-600 bg-brand-50 border-brand-200', accent: 'border-l-brand-500', priorityLabel: 'Tier 5' };
   }
   
+  // Priority 6: Poland-specific check (for POL-NODE data)
+  if (loc.includes('poland') || loc.includes('pl') || t.includes('poland') || comp.includes('poland') || u.includes('poland')) {
+    return { label: 'EU-Central (Germany)', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', accent: 'border-l-emerald-500', priorityLabel: 'Tier 3' };
+  }
+  
   return { label: 'Global Corridor', color: 'text-slate-500 bg-slate-50 border-slate-200', accent: 'border-l-slate-300', priorityLabel: 'General' };
 };
 

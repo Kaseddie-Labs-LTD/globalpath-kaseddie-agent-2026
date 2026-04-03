@@ -417,6 +417,34 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
     # 3. Status Mapping
     status = "vetting_pending" if has_illegal_fees else "live"
     
+    # 4. Node Assignment - Critical for UI filtering
+    node = "Global Corridor"  # Default fallback
+    location_lower = (item.get("location") or item.get("country") or company).lower()
+    title_lower = title.lower()
+    
+    # Priority-based node assignment
+    if forced_country:
+        if "luxembourg" in forced_country.lower():
+            node = "Luxembourg Node"
+        elif "poland" in forced_country.lower() or "pl" in location_lower:
+            node = "EU-Central (Germany)"  # Poland goes under EU-Central
+        elif "united arab emirates" in forced_country.lower() or "uae" in forced_country.lower():
+            node = "GCC Corridor"
+        elif "saudi arabia" in forced_country.lower() or "ksa" in forced_country.lower():
+            node = "GCC Corridor"
+    else:
+        # Fallback logic based on location/title analysis
+        if any(loc in location_lower for loc in ["luxembourg", "lux"]):
+            node = "Luxembourg Node"
+        elif any(loc in location_lower for loc in ["poland", "pl"]) or "poland" in title_lower:
+            node = "EU-Central (Germany)"
+        elif any(loc in location_lower for loc in ["uae", "dubai", "abu dhabi", "qatar", "kuwait", "bahrain", "saudi"]):
+            node = "GCC Corridor"
+        elif any(loc in location_lower for loc in ["uk", "united kingdom", "london"]):
+            node = "UK-Northern Corridor"
+        elif any(loc in location_lower for loc in ["canada", "usa"]):
+            node = "Western Corridor"
+    
     metadata = {
         "name": title,
         "country": forced_country or company,
@@ -429,7 +457,9 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         "fingerprint": fingerprint,
         "fee_blocked": not has_illegal_fees,
         "lat": item.get("lat"),
-        "lng": item.get("lng")
+        "lng": item.get("lng"),
+        "node": node,  # Critical: Add node assignment
+        "corridor": node  # Also add corridor for compatibility
     }
 
     return Document(
@@ -1128,9 +1158,10 @@ async def sync_all_apify_datasets():
                             'company': company or 'Global Partner',
                             'title': title or 'Specialized Role',
                             'description': description,
-                            'status': 'verified',  # <--- CRITICAL: This activates the node on the UI
-                            'vetted': True,        # <--- This moves it out of "Pending"
+                            'status': 'verified',  
+                            'vetted': True,        
                             'corridor': corridor,
+                            'node': corridor,  
                             'timestamp': datetime.now().isoformat(),
                             'fingerprint': fingerprint,
                             'source': 'apify_sync',
@@ -1245,7 +1276,9 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
             'outreach_strategy': outreach_strategy,
             'currency': currency,
             'lat': item.get("lat"),
-            'lng': item.get("lng")
+            'lng': item.get("lng"),
+            'node': doc.metadata.get("node"),  # Critical: Add node assignment
+            'corridor': doc.metadata.get("corridor")  # Also add corridor for compatibility
         }
         
         # Create enriched vector
