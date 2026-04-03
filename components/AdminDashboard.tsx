@@ -149,7 +149,7 @@ const INITIAL_PORTALS: VendorPortal[] = [
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, onAuditJob, onPitch, batches, setBatches, selectedBatch, setSelectedBatch, onAddLog, onExit, onNodeClick, onRefresh, isUplinking, mutateLeads }) => {
   // Helper function to determine category from multiple fields (matches App.tsx logic)
-  const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'general' => {
+  const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'service_domestic' | 'general' => {
     // Check category field first
     if (job.category) {
       const cat = job.category.toLowerCase();
@@ -162,14 +162,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     const interests = (job.interests || '').toLowerCase();
     const text = `${title} ${description} ${interests}`;
 
-    // 1. DOMESTIC & HOSPITALITY (The "Missing" Leads)
+    // 1. SERVICE & DOMESTIC (New Category)
     if (
-      text.includes('cleaner') || text.includes('maid') || 
+      text.includes('cleaner') || text.includes('housekeeper') ||
+      text.includes('maid') || text.includes('nanny') || 
+      text.includes('domestic') || text.includes('janitor')
+    ) {
+      return 'service_domestic';
+    }
+
+    // 2. DOMESTIC & HOSPITALITY (The "Missing" Leads)
+    if (
       text.includes('housekeeping') || text.includes('chef') || 
-      text.includes('cook') || text.includes('domestic') || 
-      text.includes('caregiver') || text.includes('nanny') ||
-      text.includes('housekeeper') || text.includes('care home') ||
-      text.includes('care assistant') || text.includes('support worker')
+      text.includes('cook') || text.includes('caregiver') ||
+      text.includes('care home') || text.includes('care assistant') ||
+      text.includes('support worker')
     ) {
       return 'blue_collar';
     }
@@ -210,7 +217,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     console.log("🛠️ [Admin Dashboard Sync]:", { 
       total_leads: hrJobs.length, 
       professional: hrJobs.filter(j => getJobCategory(j) === 'professional').length,
-      blue_collar: hrJobs.filter(j => getJobCategory(j) === 'blue_collar').length
+      blue_collar: hrJobs.filter(j => getJobCategory(j) === 'blue_collar').length,
+      service_domestic: hrJobs.filter(j => getJobCategory(j) === 'service_domestic').length
     });
   }, [hrJobs]);
 
@@ -363,9 +371,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
   const professionalJobs = sortedHrJobs.filter(j => getJobCategory(j) === 'professional');
   const blueCollarJobs = sortedHrJobs.filter(j => getJobCategory(j) === 'blue_collar');
+  const serviceDomesticJobs = sortedHrJobs.filter(j => getJobCategory(j) === 'service_domestic');
   const otherJobs = sortedHrJobs.filter(j => {
     const cat = getJobCategory(j);
-    return cat !== 'professional' && cat !== 'blue_collar';
+    return cat !== 'professional' && cat !== 'blue_collar' && cat !== 'service_domestic';
   });
   const totalLeadsCount = hrJobs.length;
   
@@ -374,6 +383,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   console.log("🚨 EMERGENCY DEBUG: Total leads:", hrJobs.length);
   console.log("🚨 EMERGENCY DEBUG: Professional count:", professionalJobs.length);
   console.log("🚨 EMERGENCY DEBUG: Blue-collar count:", blueCollarJobs.length);
+  console.log("🚨 EMERGENCY DEBUG: Service & Domestic count:", serviceDomesticJobs.length);
   console.log("🚨 EMERGENCY DEBUG: Other count:", otherJobs.length);
   
   // TEMPORARY DEBUG: Show absolutely everything for 60 seconds
@@ -519,6 +529,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   )) : (
                     <div className="p-6 text-center">
                       <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">No Blue-Collar Nodes Detected</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Service & Domestic Section */}
+                <button 
+                  onClick={() => onNodeClick?.('All', 'service_domestic')}
+                  className="w-full p-8 border-b border-t border-slate-700 flex items-center justify-between bg-slate-800/30 hover:bg-slate-700 transition-all text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-cyan-900 text-cyan-400 rounded-xl group-hover:scale-110 transition-transform"><ShieldCheck size={20} /></div>
+                    <div>
+                      <h3 className="text-xl font-black text-gray-100">Service & Domestic Section</h3>
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Audited Hub Capacity: Vetted Service Nodes</p>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-300 group-hover:text-cyan-500 transition-transform group-hover:translate-x-1" />
+                </button>
+                <div className="divide-y divide-slate-50">
+                  {serviceDomesticJobs.length > 0 ? serviceDomesticJobs.map((job) => (
+                    <JobItem 
+                      key={job.id} 
+                      job={job} 
+                      onPitch={handlePitchLead}
+                      onAddLog={onAddLog}
+                      onCopyB2BLink={handleCopyB2BLink}
+                      onSelectForMarketing={handleSelectForMarketing}
+                      pitchingId={pitchingId}
+                      copiedId={copiedLink}
+                      isUplinking={isUplinking}
+                    />
+                  )) : (
+                    <div className="p-6 text-center">
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">No Service & Domestic Nodes Detected</p>
                     </div>
                   )}
                 </div>

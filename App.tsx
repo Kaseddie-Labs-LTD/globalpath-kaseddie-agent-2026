@@ -30,7 +30,7 @@ import { analyzeJobSafety, verifyDocument, generateB2BPitch, enhanceJobDescripti
 import { fetchGlobalJobs, fetchLuxembourgLeads } from './services/apify';
 import { UserProfile, Job, AgentLogEntry, AppView, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080";
+const API_BASE = import.meta.env.VITE_API_URL || "https://globalpath-kaseddie-agent-2026.onrender.com";
 const KASEDDIE_SIGNATURE = "GlobalPath Kaseddie Agent";
 const ADMIN_PRIMARY = "+256784428821";
 const MARATHON_REGIONS = ["UAE", "Qatar", "Germany", "Canada", "Luxembourg", "Poland", "Kuwait", "Bahrain"];
@@ -765,7 +765,7 @@ function App() {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-screen bg-[radial-gradient(circle_at_top_right,_#111827,_#050505)] overflow-hidden relative font-sans">
+    <div className="flex h-screen bg-[#0f172a] overflow-hidden relative font-sans">
       {/* Kaseddie Uplink Floating Window - positioned via CSS */}
       <KaseddieChat />
       
