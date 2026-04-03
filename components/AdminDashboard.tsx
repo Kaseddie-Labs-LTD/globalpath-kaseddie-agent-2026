@@ -50,7 +50,7 @@ const JobItem: React.FC<JobItemProps> = ({
   copiedId,
   isUplinking
 }) => (
-  <div key={job.id} className="admin-data-node p-8 hover:bg-slate-50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group">
+  <div key={job.id} className="admin-data-node p-8 hover:bg-slate-50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group border border-cyan-500/20">
     <div className="flex-1">
       <div className="flex items-center gap-3 mb-2">
         <h3 className="text-cyan-400 font-bold text-lg group-hover:text-brand-600 transition-colors">{job.company || "Unknown Company"}</h3>
@@ -387,9 +387,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   console.log("📈 [ADMIN DASHBOARD COUNT]:", totalLeadsCount);
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-12 bg-[#0a0a0a] text-gray-100 min-h-screen">
+    <div className="space-y-6 animate-fadeIn pb-12 bg-[#0f172a] text-gray-100 min-h-screen">
       {/* Oversight Banner */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-[#0a0a0a] p-8 rounded-[2.5rem] text-gray-100 shadow-2xl border border-slate-800 relative overflow-hidden">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-[#0f172a] p-8 rounded-[2.5rem] text-gray-100 shadow-2xl border border-slate-800 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-brand-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
         <div className="flex items-center gap-6 relative z-10">
           {typeof onExit === 'function' && (

@@ -191,20 +191,30 @@ function App() {
 
     // 3. IT & DIGITAL
     if (
+      text.includes('it') || text.includes('software') ||
       text.includes('engineer') || text.includes('developer') || 
-      text.includes('ai') || text.includes('software') ||
-      text.includes('it specialist') || text.includes('cybersecurity') ||
-      text.includes('analyst') || text.includes('consultant') ||
-      text.includes('manager') || text.includes('associate') ||
-      text.includes('executive') || text.includes('pwc') || 
-      text.includes('deloitte') || text.includes('officer') ||
-      text.includes('procurement') || text.includes('logistics manager') ||
-      text.includes('supply chain') || text.includes('nurse') || 
-      text.includes('doctor') || text.includes('physician') ||
-      text.includes('hospitality') || text.includes('hotel') ||
-      text.includes('goodyear associate') || text.includes('events management specialist')
+      text.includes('ai') || text.includes('it specialist') ||
+      text.includes('cybersecurity') || text.includes('analyst') ||
+      text.includes('consultant') || text.includes('manager') ||
+      text.includes('associate') || text.includes('executive') ||
+      text.includes('pwc') || text.includes('deloitte') || 
+      text.includes('officer') || text.includes('procurement') ||
+      text.includes('logistics manager') || text.includes('supply chain') ||
+      text.includes('nurse') || text.includes('doctor') || 
+      text.includes('physician') || text.includes('hospitality') ||
+      text.includes('hotel') || text.includes('goodyear associate') ||
+      text.includes('events management specialist')
     ) {
       return 'professional';
+    }
+
+    // 4. SERVICE & DOMESTIC (APPENDED - New Category)
+    if (
+      text.includes('cleaner') || text.includes('housekeeper') ||
+      text.includes('maid') || text.includes('nanny') || 
+      text.includes('domestic') || text.includes('janitor')
+    ) {
+      return 'blue_collar';
     }
 
     // Default fallback - assume blue collar for missing data

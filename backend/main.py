@@ -546,6 +546,38 @@ async def get_tts(text: str = Query(...), voice: str = "en-US-EmmaMultilingualNe
 async def root():
     return {"status": "online", "message": "GlobalPath Backend is running"}
 
+@app.get("/api/ping")
+async def ping_ai():
+    """
+    Test AI connectivity and API key status
+    """
+    try:
+        print(f"🔍 [PING DEBUG]: Testing Groq API Key: {'YES' if GROQ_KEY else 'NO'}")
+        
+        if not GROQ_KEY:
+            return {"status": "AI_KEY_MISSING", "message": "Groq API key not configured"}
+        
+        # Test Groq API with minimal request
+        test_response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-specdec",
+            messages=[
+                {"role": "user", "content": "ping"}
+            ],
+            max_tokens=10,
+            temperature=0.1
+        )
+        
+        return {"status": "AI_CONNECTED", "message": "Groq API is working"}
+        
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "timeout" in error_msg or "connection" in error_msg:
+            return {"status": "CONNECTION_TIMEOUT", "message": f"Connection error: {str(e)}"}
+        elif "key" in error_msg or "unauthorized" in error_msg:
+            return {"status": "AI_KEY_INVALID", "message": f"Invalid API key: {str(e)}"}
+        else:
+            return {"status": "AI_ERROR", "message": f"AI service error: {str(e)}"}
+
 @app.post("/api/generate-proposal")
 async def generate_proposal(req: ProposalRequest):
     """
@@ -553,36 +585,66 @@ async def generate_proposal(req: ProposalRequest):
     Handles null salary values and adjusts tone based on corridor/category.
     """
     try:
+        # Error logging: Check Groq API key and lead data
+        print(f"🔍 [PROPOSAL DEBUG]: Groq API Key loaded: {'YES' if GROQ_KEY else 'NO'}")
+        print(f"🔍 [PROPOSAL DEBUG]: Lead data received - Company: {req.company}, Role: {req.job_title}, Location: {req.location}")
+        print(f"🔍 [PROPOSAL DEBUG]: Category: {req.category}, Salary: {req.salary}")
+        
         # Dynamic Prompt Construction based on Corridor & Category
         system_prompt = "You are a GlobalPath B2B outreach specialist. Generate concise, compelling recruitment pitches."
         
+        # Industry-specific adjustments based on job title and company
+        industry_keywords = []
+        if req.job_title:
+            title_lower = req.job_title.lower()
+            if any(kw in title_lower for kw in ['driver', 'delivery', 'transport', 'logistics']):
+                industry_keywords.append('transportation & logistics')
+                system_prompt += " Focus on fleet management, route optimization, and driver retention strategies."
+            elif any(kw in title_lower for kw in ['engineer', 'developer', 'software', 'it', 'tech']):
+                industry_keywords.append('technology & software')
+                system_prompt += " Emphasize innovation, technical talent acquisition, and digital transformation."
+            elif any(kw in title_lower for kw in ['cleaner', 'housekeeper', 'maid', 'domestic']):
+                industry_keywords.append('hospitality & facilities')
+                system_prompt += " Highlight quality standards, reliability, and professional service delivery."
+            elif any(kw in title_lower for kw in ['nurse', 'doctor', 'medical', 'healthcare']):
+                industry_keywords.append('healthcare')
+                system_prompt += " Focus on patient care standards, medical compliance, and healthcare expertise."
+        
         # Adjust tone based on corridor
-        if req.corridor and "luxembourg" in req.corridor.lower():
-            system_prompt += " Focus on EU compliance, zero placement fees, and premium logistics opportunities."
-        elif req.corridor and "uae" in req.corridor.lower():
-            system_prompt += " Emphasize GCC market access, tax benefits, and rapid deployment."
+        if req.country and "luxembourg" in req.country.lower():
+            system_prompt += " Target EU market with compliance emphasis and premium talent solutions."
+        elif req.country and "uae" in req.country.lower():
+            system_prompt += " Leverage GCC advantages with rapid deployment and tax benefits."
         else:
-            system_prompt += " Highlight global reach and zero-fee recruitment model."
+            system_prompt += " Emphasize global reach and zero-fee recruitment model."
         
         # Adjust based on category
         if req.category and req.category.lower() == "blue_collar":
-            system_prompt += " Use clear, direct language suitable for logistics and warehouse roles."
+            system_prompt += " Use clear, direct language emphasizing reliability and practical benefits."
         elif req.category and req.category.lower() == "professional":
-            system_prompt += " Use professional tone emphasizing career growth and expertise."
+            system_prompt += " Use professional tone highlighting career growth and expertise development."
         
         # Handle null salary in prompt
         salary_text = f"Salary: {req.salary}" if req.salary else "Competitive compensation package"
         
+        # Industry context for the pitch
+        industry_context = f"Industry: {', '.join(industry_keywords) if industry_keywords else 'General business'}" if industry_keywords else ""
+        
         user_prompt = f"""
-        Generate a B2B recruitment pitch for:
+        Generate a targeted B2B recruitment pitch for:
         Company: {req.company}
         Role: {req.job_title}
         Location: {req.location}
         {salary_text}
-        Description: {req.description}
+        Category: {req.category}
+        {industry_context}
+        Description: {req.details}
         
-        Keep it under 150 words and include a call-to-action.
+        Create a pitch that speaks directly to their industry challenges and opportunities.
+        Keep it under 150 words and include a clear call-to-action.
         """
+        
+        print(f"🔍 [PROPOSAL DEBUG]: Calling Groq API with model: llama-3.3-70b-specdec")
         
         # Use Groq Cloud client
         response = groq_client.chat.completions.create(
@@ -596,11 +658,23 @@ async def generate_proposal(req: ProposalRequest):
         )
         
         pitch = response.choices[0].message.content or "Failed to generate proposal."
+        print(f"✅ [PROPOSAL DEBUG]: Generated pitch ({len(pitch)} chars)")
         return {"pitch": pitch}
         
     except Exception as e:
-        print(f"Error generating proposal: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate proposal")
+        error_msg = str(e).lower()
+        print(f"❌ [PROPOSAL ERROR]: Error generating proposal: {e}")
+        print(f"❌ [PROPOSAL ERROR]: Error type: {type(e).__name__}")
+        
+        # Return specific error codes for frontend
+        if "timeout" in error_msg or "connection" in error_msg:
+            return {"pitch": "AI_CONNECTION_TIMEOUT", "error": "Connection timeout - please try again"}
+        elif "key" in error_msg or "unauthorized" in error_msg:
+            return {"pitch": "AI_KEY_MISSING", "error": "AI service key issue - check configuration"}
+        elif "rate" in error_msg or "limit" in error_msg:
+            return {"pitch": "AI_RATE_LIMIT", "error": "AI service rate limit exceeded"}
+        else:
+            return {"pitch": "AI_SERVICE_ERROR", "error": f"AI service error: {str(e)}"}
 
 class ChatRequest(BaseModel):
     message: str
@@ -611,10 +685,14 @@ async def chat_with_groq(req: ChatRequest):
     Kaseddie Uplink Chat endpoint using Groq API.
     """
     try:
-        print(f"🤖 [KASEDDIE CHAT]: Received message: {req.message[:50]}...")
+        # Error logging: Check Groq API key and message data
+        print(f"🔍 [CHAT DEBUG]: Groq API Key loaded: {'YES' if GROQ_KEY else 'NO'}")
+        print(f"🔍 [CHAT DEBUG]: Message received: {req.message[:100]}...")
+        print(f"🔍 [CHAT DEBUG]: Message length: {len(req.message)} chars")
         
         # Use the Groq client to chat with Llama 3
-        response = client.chat.completions.create(
+        print(f"🔍 [CHAT DEBUG]: Calling Groq API with model: llama-3.3-70b-versatile")
+        response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {
@@ -631,13 +709,24 @@ async def chat_with_groq(req: ChatRequest):
         )
         
         reply = response.choices[0].message.content or "I'm having trouble processing that request."
-        print(f"✅ [KASEDDIE CHAT]: Response sent ({len(reply)} chars)")
+        print(f"✅ [CHAT DEBUG]: Response sent ({len(reply)} chars)")
         
         return {"reply": reply}
         
     except Exception as e:
-        print(f"❌ [KASEDDIE CHAT]: Error: {e}")
-        return {"reply": "I'm experiencing technical difficulties. Please try again later."}
+        error_msg = str(e).lower()
+        print(f"❌ [CHAT ERROR]: Error: {e}")
+        print(f"❌ [CHAT ERROR]: Error type: {type(e).__name__}")
+        
+        # Return specific error codes for frontend
+        if "timeout" in error_msg or "connection" in error_msg:
+            return {"reply": "AI_CONNECTION_TIMEOUT", "error": "Connection timeout - please try again"}
+        elif "key" in error_msg or "unauthorized" in error_msg:
+            return {"reply": "AI_KEY_MISSING", "error": "AI service key issue - check configuration"}
+        elif "rate" in error_msg or "limit" in error_msg:
+            return {"reply": "AI_RATE_LIMIT", "error": "AI service rate limit exceeded"}
+        else:
+            return {"reply": "AI_SERVICE_ERROR", "error": f"AI service error: {str(e)}"}
 
 @app.post("/api/generate-marketing")
 async def generate_marketing(job_request: dict):
