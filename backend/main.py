@@ -66,10 +66,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration: Targeted for dev server stability
+# CORS configuration: Allow specific frontend URL
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://globalpath-kaseddie-agent-2026.onrender.com",
+        "https://globalpath-kaseddie-agent-2026-1.onrender.com",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -630,6 +637,9 @@ async def generate_proposal(req: ProposalRequest):
         # Industry context for the pitch
         industry_context = f"Industry: {', '.join(industry_keywords) if industry_keywords else 'General business'}" if industry_keywords else ""
         
+        # Fallback for empty description to prevent AI crashes
+        safe_description = req.details if req.details and req.details.strip() else "General recruitment lead with standard requirements"
+        
         user_prompt = f"""
         Generate a targeted B2B recruitment pitch for:
         Company: {req.company}
@@ -638,7 +648,7 @@ async def generate_proposal(req: ProposalRequest):
         {salary_text}
         Category: {req.category}
         {industry_context}
-        Description: {req.details}
+        Description: {safe_description}
         
         Create a pitch that speaks directly to their industry challenges and opportunities.
         Keep it under 150 words and include a clear call-to-action.
@@ -662,19 +672,28 @@ async def generate_proposal(req: ProposalRequest):
         return {"pitch": pitch}
         
     except Exception as e:
-        error_msg = str(e).lower()
-        print(f"❌ [PROPOSAL ERROR]: Error generating proposal: {e}")
-        print(f"❌ [PROPOSAL ERROR]: Error type: {type(e).__name__}")
+        error_msg = str(e)
+        error_type = type(e).__name__
+        print(f"❌ [PROPOSAL ERROR]: Error generating proposal: {error_msg}")
+        print(f"❌ [PROPOSAL ERROR]: Error type: {error_type}")
+        print(f"❌ [PROPOSAL ERROR]: Full error details: {repr(e)}")
+        
+        # Log HTTP status codes if available
+        if hasattr(e, 'status_code'):
+            print(f"❌ [PROPOSAL ERROR]: HTTP Status Code: {e.status_code}")
+        if hasattr(e, 'response'):
+            print(f"❌ [PROPOSAL ERROR]: Response: {e.response}")
         
         # Return specific error codes for frontend
-        if "timeout" in error_msg or "connection" in error_msg:
+        error_msg_lower = error_msg.lower()
+        if "timeout" in error_msg_lower or "connection" in error_msg_lower:
             return {"pitch": "AI_CONNECTION_TIMEOUT", "error": "Connection timeout - please try again"}
-        elif "key" in error_msg or "unauthorized" in error_msg:
-            return {"pitch": "AI_KEY_MISSING", "error": "AI service key issue - check configuration"}
-        elif "rate" in error_msg or "limit" in error_msg:
+        elif "401" in error_msg or "unauthorized" in error_msg_lower or "key" in error_msg_lower:
+            return {"pitch": "AI_KEY_MISSING", "error": "AI service key issue - check configuration (401 Unauthorized)"}
+        elif "rate" in error_msg_lower or "limit" in error_msg_lower:
             return {"pitch": "AI_RATE_LIMIT", "error": "AI service rate limit exceeded"}
         else:
-            return {"pitch": "AI_SERVICE_ERROR", "error": f"AI service error: {str(e)}"}
+            return {"pitch": "AI_SERVICE_ERROR", "error": f"AI service error: {error_msg}"}
 
 class ChatRequest(BaseModel):
     message: str

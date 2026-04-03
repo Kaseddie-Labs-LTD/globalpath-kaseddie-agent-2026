@@ -20,7 +20,7 @@ import {
 import { AgentLogEntry } from '../../types';
 
 // API Base URL from environment
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080";
+const API_BASE = import.meta.env.VITE_API_URL;
 
 interface ComplianceDashboardProps {
   jobs: Job[];
@@ -57,7 +57,10 @@ const ComplianceDashboard: React.FC<ComplianceDashboardProps> = ({ jobs, onLog, 
     onLog?.(`SUMMON AGENT: Initializing Worker Lifecycle for ${job.title || 'Unknown Role'} at ${job.company || 'Unknown Company'}.`, "thinking", "LIFECYCLE");
     
     try {
-      // Call the /api/generate-proposal endpoint
+      // Call the /api/generate-proposal endpoint with extended timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
       const response = await fetch(`${API_BASE}/api/generate-proposal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,8 +71,11 @@ const ComplianceDashboard: React.FC<ComplianceDashboardProps> = ({ jobs, onLog, 
           details: job.description || `Recruitment for ${job.title} at ${job.company}. Location: ${getJobLocationString(job.location)}.`,
           category: job.category || 'Professional',
           country: job.country || getJobLocationString(job.location)
-        })
+        }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       const data = await response.json();
       

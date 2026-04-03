@@ -1,5 +1,6 @@
 import { Job } from "../types";
 import { JobSchema } from "../schema";
+import { getJobLocationString } from "../types";
 
 const getEnv = (key: string): string | undefined => {
   if (typeof process !== 'undefined' && process.env && process.env[key]) {
@@ -82,7 +83,20 @@ const enrichContactData = async (company: string, domain?: string): Promise<{ em
 const GLOBAL_DATASET_IDS = (getEnv("VITE_APIFY_DATASET_IDS") || "").split(",").filter(Boolean);
 
 export const fetchGlobalJobs = async (): Promise<Job[]> => {
-  return fetchApifyLeads();
+  // Use backend proxy instead of direct Apify calls
+  try {
+    const API_BASE = import.meta.env.VITE_API_URL;
+    const response = await fetch(`${API_BASE}/leads`);
+    if (!response.ok) {
+      console.error(`❌ Backend leads fetch failed:`, response.statusText);
+      return [];
+    }
+    const jobs = await response.json();
+    return Array.isArray(jobs) ? jobs : [];
+  } catch (error) {
+    console.error("❌ Error fetching leads from backend:", error);
+    return [];
+  }
 };
 
 export const fetchApifyLeads = async (): Promise<Job[]> => {
@@ -127,24 +141,22 @@ export const fetchApifyLeads = async (): Promise<Job[]> => {
 };
 
 export const fetchLuxembourgLeads = async (): Promise<Job[]> => {
-  const token = getEnv("VITE_APIFY_TOKEN") || ""; // Use PRIMARY token for Luxembourg dataset
-  const datasetId = getEnv("VITE_APIFY_LUX_DATASET_ID") || "PxGGxYxvWUH4lbJUJ";
-  
-  if (!token || !datasetId) return [];
-
-  const url = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${encodeURIComponent(token)}&clean=true&limit=1000`;
-  
+  // Use backend proxy instead of direct Apify calls
   try {
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const items: ApifyItem[] = await res.json();
-    return Promise.all(
-      items
-        .filter(it => it.positionName) // Filter: exclude jobs where positionName is missing
-        .map(it => mapLuxData(it))
-    );
+    const API_BASE = import.meta.env.VITE_API_URL;
+    const response = await fetch(`${API_BASE}/leads`);
+    if (!response.ok) {
+      console.error(`❌ Backend Luxembourg leads fetch failed:`, response.statusText);
+      return [];
+    }
+    const jobs = await response.json();
+    // Filter for Luxembourg jobs
+    return Array.isArray(jobs) ? jobs.filter(job => {
+      const loc = getJobLocationString(job.location).toLowerCase();
+      return loc.includes('luxembourg') || loc.includes(', lu');
+    }) : [];
   } catch (error) {
-    console.error("Error fetching Luxembourg leads:", error);
+    console.error("❌ Error fetching Luxembourg leads from backend:", error);
     return [];
   }
 };
