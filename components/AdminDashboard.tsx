@@ -228,8 +228,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const [pitchingId, setPitchingId] = useState<string | null>(null);
   const [portalModal, setPortalModal] = useState<{ name: string; region: string } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const handleNodeClickSafe = (region: string, category?: string) => {
+    try {
+      console.log(`🔗 [NODE CLICK]: Navigating to region="${region}" category="${category}"`);
+      onNodeClick?.(region, category as any);
+    } catch (error) {
+      console.error('❌ [NODE CLICK ERROR]:', error);
+      // Fallback: use 'Global' for malformed location data
+      const safeRegion = typeof region === 'string' && region.length > 0 ? region : 'Global';
+      const safeCategory = category && typeof category === 'string' ? category : 'All';
+      onNodeClick?.(safeRegion, safeCategory as any);
+    }
+  };
   const [isForceVerifying, setIsForceVerifying] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const handleRefreshData = async () => {
     if (!onRefresh) return;
@@ -467,7 +479,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
               <div className="bg-[#1a1a1a] rounded-[2.5rem] border border-slate-700 shadow-xl overflow-hidden">
                 {/* Professional Section */}
                 <button 
-                  onClick={() => onNodeClick?.('All', 'professional')}
+                  onClick={() => handleNodeClickSafe('All', 'professional')}
                   className="w-full p-8 border-b border-slate-700 flex items-center justify-between bg-slate-800/30 hover:bg-slate-700 transition-all text-left group"
                 >
                   <div className="flex items-center gap-3">
@@ -501,8 +513,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
                 {/* Blue-Collar Section */}
                 <button 
-                  onClick={() => onNodeClick?.('All', 'blue_collar')}
-                  className="w-full p-8 border-b border-t border-slate-700 flex items-center justify-between bg-slate-800/30 hover:bg-slate-700 transition-all text-left group"
+                  onClick={() => handleNodeClickSafe('All', 'blue_collar')}
+                  className="w-full p-8 border-b border-slate-700 flex items-center justify-between bg-slate-800/30 hover:bg-slate-700 transition-all text-left group"
                 >
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-brand-900 text-brand-400 rounded-xl group-hover:scale-110 transition-transform"><Zap size={20} /></div>
@@ -535,7 +547,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
                 {/* Service & Domestic Section */}
                 <button 
-                  onClick={() => onNodeClick?.('All', 'service_domestic')}
+                  onClick={() => handleNodeClickSafe('All', 'service_domestic')}
                   className="w-full p-8 border-b border-t border-slate-700 flex items-center justify-between bg-slate-800/30 hover:bg-slate-700 transition-all text-left group"
                 >
                   <div className="flex items-center gap-3">
@@ -677,7 +689,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
         {/* Right Column (span-4): Vetted Batches (INTERACTIVE) */}
         <div className="col-span-12 lg:col-span-4 space-y-6">
-           <SearchSummary jobs={hrJobs} onNodeClick={onNodeClick} />
+           <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} />
            
            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
               <h3 className="font-black text-slate-800 flex items-center gap-3 text-sm uppercase tracking-widest mb-6">

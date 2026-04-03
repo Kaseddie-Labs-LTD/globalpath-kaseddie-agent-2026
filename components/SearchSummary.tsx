@@ -5,28 +5,37 @@ import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2 } from 'luc
 
 interface SearchSummaryProps {
   jobs: Job[];
-  onNodeClick?: (region: string, category?: 'All' | 'blue_collar' | 'professional', keyword?: string) => void;
+  onNodeClick?: (region: string, category?: 'All' | 'blue_collar' | 'professional' | 'service_domestic', keyword?: string) => void;
   onSectorClick?: (sector: string) => void;
-  regionJobCounts?: Record<string, { total: number; blue_collar: number; professional: number }>;
+  regionJobCounts?: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }>;
   pendingCount?: number;
 }
 
 export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick, onSectorClick, regionJobCounts, pendingCount = 0 }) => {
   const mappedRegionJobCounts = React.useMemo(() => {
-    const counts: Record<string, { total: number; blue_collar: number; professional: number }> = {
-      'Dubai Hub': { total: 0, blue_collar: 0, professional: 0 },
-      'Premium Node': { total: 0, blue_collar: 0, professional: 0 },
-      'EU-Central (Germany)': { total: 0, blue_collar: 0, professional: 0 },
-      'UK-Northern Corridor': { total: 0, blue_collar: 0, professional: 0 },
-      'Western Corridor': { total: 0, blue_collar: 0, professional: 0 },
-      'Global Corridor': { total: 0, blue_collar: 0, professional: 0 }
+    const counts: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }> = {
+      'Dubai Hub': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+      'Premium Node': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+      'EU-Central (Germany)': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+      'UK-Northern Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+      'Western Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+      'Global Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }
     };
 
     jobs.forEach(job => {
       if (!job) return;
       const loc = getJobLocationString(job.location).toLowerCase();
       const category = job.category?.toLowerCase() || 'professional';
-      const sectorKey = category.includes('blue') ? 'blue_collar' : 'professional';
+      
+      // Updated sector mapping to include service_domestic
+      let sectorKey: 'blue_collar' | 'professional' | 'service_domestic';
+      if (category.includes('blue')) {
+        sectorKey = 'blue_collar';
+      } else if (category.includes('service')) {
+        sectorKey = 'service_domestic';
+      } else {
+        sectorKey = 'professional';
+      }
 
       // LOGIC: Map specific nodes to Main Corridors
       let corridor = 'Global Corridor';
@@ -59,10 +68,11 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
   }, [mappedRegionJobCounts]);
 
   const sectorCounts = React.useMemo(() => {
-    return Object.values(mappedRegionJobCounts).reduce((acc: { blueCollarCount: number; professionalCount: number }, curr: any) => ({
+    return Object.values(mappedRegionJobCounts).reduce((acc: { blueCollarCount: number; professionalCount: number; serviceDomesticCount: number }, curr: any) => ({
       blueCollarCount: acc.blueCollarCount + (curr.blue_collar || 0),
-      professionalCount: acc.professionalCount + (curr.professional || 0)
-    }), { blueCollarCount: 0, professionalCount: 0 });
+      professionalCount: acc.professionalCount + (curr.professional || 0),
+      serviceDomesticCount: acc.serviceDomesticCount + (curr.service_domestic || 0)
+    }), { blueCollarCount: 0, professionalCount: 0, serviceDomesticCount: 0 });
   }, [mappedRegionJobCounts]);
 
   const sectorDistribution = React.useMemo(() => {
@@ -71,6 +81,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
       'IT & Digital': 0,
       'Manufacturing': 0,
       'Healthcare': 0,
+      'Service & Domestic': 0,
       'Other': 0
     };
 
@@ -79,9 +90,14 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
       const description = (job.description || '').toLowerCase();
       const loc = getJobLocationString(job.location).toLowerCase();
       
+      // Service & Domestic detection
+      if (title.includes('cleaner') || title.includes('housekeeper') || title.includes('maid') || title.includes('nanny') || title.includes('domestic') || title.includes('janitor') ||
+          description.includes('cleaner') || description.includes('housekeeper') || description.includes('maid') || description.includes('nanny') || description.includes('domestic') || description.includes('janitor')) {
+        sectors['Service & Domestic']++;
+      }
       // Only deep-dive into Western Corridor (Poland/Canada/etc) or all if preferred
       // User specifically mentioned "those 100 Polish leads"
-      if (title.includes('driver') || title.includes('warehouse') || title.includes('logistics') || title.includes('supply') || title.includes('forklift') || title.includes('delivery') ||
+      else if (title.includes('driver') || title.includes('warehouse') || title.includes('logistics') || title.includes('supply') || title.includes('forklift') || title.includes('delivery') ||
           description.includes('driver') || description.includes('warehouse') || description.includes('logistics') || description.includes('supply') || description.includes('forklift') || description.includes('delivery')) {
         sectors['Logistics']++;
       } else if (title.includes('software') || title.includes('developer') || title.includes('it') || title.includes('digital') || title.includes('tech') || title.includes('engineer') ||
@@ -125,6 +141,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
               const total = typeof data === 'number' ? data : (data as any).total;
               const bcCount = typeof data === 'object' ? (data as any).blue_collar : 0;
               const profCount = typeof data === 'object' ? (data as any).professional : 0;
+              const serviceDomesticCount = typeof data === 'object' ? (data as any).service_domestic : 0;
 
               return (
                 <div key={region} className="space-y-2">
@@ -144,7 +161,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
                     </div>
                   </button>
                   
-                  <div className="grid grid-cols-2 gap-2 px-1">
+                  <div className="grid grid-cols-3 gap-2 px-1">
                     <button 
                       onClick={(e) => { e.stopPropagation(); onNodeClick?.(region, 'blue_collar'); }}
                       className="flex items-center justify-between p-2 bg-brand-50/50 rounded-lg border border-brand-100/50 hover:border-brand-500 hover:bg-brand-100/50 transition-all active:scale-[0.95]"
@@ -164,6 +181,16 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
                         <span className="text-[8px] font-black text-slate-500 uppercase">Professional</span>
                       </div>
                       <span className="text-[10px] font-black text-emerald-600">{profCount}</span>
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onNodeClick?.(region, 'service_domestic'); }}
+                      className="flex items-center justify-between p-2 bg-cyan-50/50 rounded-lg border border-cyan-100/50 hover:border-cyan-500 hover:bg-cyan-100/50 transition-all active:scale-[0.95]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Briefcase size={10} className="text-cyan-600" />
+                        <span className="text-[8px] font-black text-slate-500 uppercase">Service</span>
+                      </div>
+                      <span className="text-[10px] font-black text-cyan-600">{serviceDomesticCount}</span>
                     </button>
                   </div>
                 </div>
