@@ -17,8 +17,8 @@ interface JobGridProps {
   onInitializeNode?: (job: Job) => void;
   selectedRegionOverride?: string;
   onRegionChange?: (region: string) => void;
-  activeCategoryOverride?: 'All' | 'blue_collar' | 'professional';
-  onCategoryChange?: (category: 'All' | 'blue_collar' | 'professional') => void;
+  activeCategoryOverride?: 'All' | 'blue_collar' | 'professional' | 'service_domestic';
+  onCategoryChange?: (category: 'All' | 'blue_collar' | 'professional' | 'service_domestic') => void;
   keywordOverride?: string;
   scrollTrigger?: number;
   isAdmin?: boolean;
@@ -532,7 +532,7 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
-  const [selectedCategory, setSelectedCategory] = useState<'All' | 'blue_collar' | 'professional'>('All');
+  const [selectedCategory, setSelectedCategory] = useState<'All' | 'blue_collar' | 'professional' | 'service_domestic'>('All');
   const [salaryType, setSalaryType] = useState<'All' | 'Fixed' | 'Commission'>('All');
   const [complianceFilter, setComplianceFilter] = useState<'All' | 'High Risk' | 'Verified'>('All');
   const [sponsorshipOnly, setSponsorshipOnly] = useState<boolean>(false);
@@ -712,6 +712,7 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
 
   const blueCollarJobs = sortedJobs.filter(j => j && j.category === 'blue_collar');
   const professionalJobs = sortedJobs.filter(j => j && j.category === 'professional');
+  const serviceDomesticJobs = sortedJobs.filter(j => j && j.category === 'service_domestic');
 
   return (
     <div className="relative space-y-2">
@@ -779,7 +780,7 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
 
         <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-50">
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
-            {(['All', 'blue_collar', 'professional'] as const).map(cat => (
+            {(['All', 'blue_collar', 'professional', 'service_domestic'] as const).map(cat => (
               <button
                 key={cat}
                 onClick={() => { setSelectedCategory(cat); onCategoryChange?.(cat); }}

@@ -279,7 +279,7 @@ function App() {
     }]);
   }, []);
 
-  const handleNodeClick = useCallback((region: string, category: 'All' | 'blue_collar' | 'professional' = 'All', keyword: string = '') => {
+  const handleNodeClick = useCallback((region: string, category: 'All' | 'blue_collar' | 'professional' | 'service_domestic' = 'All', keyword: string = '') => {
     startTransition(() => {
       setSelectedRegion(region);
       setActiveCategory(category);

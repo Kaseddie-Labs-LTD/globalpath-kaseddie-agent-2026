@@ -12,7 +12,7 @@ root_env = Path(__file__).resolve().parent.parent / '.env'
 load_dotenv(dotenv_path=root_env)
 
 # Update these to match your VITE_ naming convention
-GROQ_KEY = os.getenv("GROQ_API_KEY") 
+GROQ_KEY = os.getenv("VITE_GROQ_API_KEY") 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 
