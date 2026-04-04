@@ -844,6 +844,17 @@ function App() {
         </div>
       </aside>
 
+      {/* Floating Sidebar Trigger Button - Always visible when sidebar is closed */}
+      {!isSidebarOpen && (
+        <button 
+          onClick={() => setSidebarOpen(true)}
+          className="fixed top-4 left-4 z-[60] p-2 bg-black/80 backdrop-blur-md border border-white/20 rounded-lg text-white hover:bg-black/90 transition-all"
+          aria-label="Open sidebar"
+        >
+          <Menu size={20} />
+        </button>
+      )}
+
       <main className="flex-1 flex flex-col h-full overflow-hidden w-full">
         <header className="relative bg-black/20 backdrop-blur-md border-b border-white/5 h-12 flex items-center justify-between px-4 shrink-0 z-30">
            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 hover:bg-white/10 rounded-lg text-white">
