@@ -14,6 +14,10 @@ load_dotenv(dotenv_path=root_env)
 # Initialize Groq client with fallback check
 GROQ_KEY = os.getenv("VITE_GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
+# Qdrant configuration
+QDRANT_URL = os.getenv("QDRANT_URL") or "http://localhost:6333"
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+
 if not GROQ_KEY:
     print("❌ ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
     print("❌ Available environment variables:", [k for k in os.environ.keys() if 'GROQ' in k.upper()])
@@ -94,14 +98,11 @@ COLLECTION_NAME = "globalpath_leads"
 VECTOR_SIZE = 3072  # Dimension size for Phi-3 embeddings
 
 # Initialize Qdrant Client (Prefer Cloud URL if available, fallback to Memory)
-qdrant_url = QDRANT_URL or os.getenv("QDRANT_URL")
-qdrant_api_key = os.getenv("QDRANT_API_KEY")
-
-if qdrant_url:
-    print(f"Initializing Qdrant Client with URL: {qdrant_url}")
+if QDRANT_URL:
+    print(f"Initializing Qdrant Client with URL: {QDRANT_URL}")
     qdrant_client = QdrantClient(
-        url=qdrant_url,
-        api_key=qdrant_api_key,
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
         timeout=60  # Increase to 60 seconds for Kampala latency
     )
 else:
