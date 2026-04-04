@@ -82,13 +82,21 @@ body {
 
 /* Outreach Node Console - Ghost UI Fix */
 .outreach-node-console, .local-vacancy-node {
-  @apply bg-slate-900/80 border border-cyan-500/30 p-4 rounded-lg !important;
-  color: #22d3ee !important; 
+  background-color: rgba(15, 23, 42, 0.8);
+  border-color: rgba(34, 211, 238, 0.3);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid;
+  color: #22d3ee !important;
 }
 
 /* This makes the AI 'Thinking' state visible */
 .ai-refiner-status {
-  @apply animate-pulse text-purple-400 font-mono text-sm mt-2;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  color: rgb(168, 85, 247);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
 }
 
 /* index.css */

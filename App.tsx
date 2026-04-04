@@ -279,6 +279,21 @@ function App() {
         onAction
     }]);
   }, []);
+
+  const handleNodeClick = useCallback((region: string, category: 'All' | 'blue_collar' | 'professional' | 'service_domestic' = 'All', keyword: string = '') => {
+    startTransition(() => {
+      setSelectedRegion(region);
+      setActiveCategory(category);
+      setJobGridKeyword(keyword); // Set keyword if provided (e.g. "Luxembourg")
+      setView(AppView.MATCHES);
+      setJobGridScrollTrigger(Date.now());
+      setSidebarOpen(false); // Close sidebar when function is selected
+      setSelectedFunction(`${region}-${category}`); // Track which function is active
+      
+      // Auto-scroll to leads table after a small delay to ensure view has changed
+      setTimeout(() => {
+        const tableElement = document.getElementById('job-grid-top') || leadsTableRef.current;
+        if (tableElement) {
           tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }, 100);
