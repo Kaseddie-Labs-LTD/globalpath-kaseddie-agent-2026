@@ -51,7 +51,7 @@ export interface Job {
   lng?: number;
   positionName?: string;
   sector?: 'Professional' | 'Blue-Collar' | 'Other';
-  category?: 'blue_collar' | 'professional';
+  category?: 'blue_collar' | 'professional' | 'service_domestic';
   node?: string;
   corridor?: string;
 }

@@ -212,16 +212,18 @@ function App() {
     if (
       text.includes('cleaner') || text.includes('housekeeper') ||
       text.includes('maid') || text.includes('nanny') || 
-      text.includes('domestic') || text.includes('janitor')
+      text.includes('domestic') || text.includes('janitor') ||
+      text.includes('driver') || text.includes('delivery') || 
+      text.includes('maintenance') || text.includes('caretaker')
     ) {
-      return 'blue_collar';
+      return 'service_domestic';
     }
 
     // Default fallback - assume blue collar for missing data
     return 'blue_collar';
   }, [computeRegionLabelFromLocation]);
 
-  const countNodesByCategory = useCallback((corridor: string, category: 'blue_collar' | 'professional') => {
+  const countNodesByCategory = useCallback((corridor: string, category: 'blue_collar' | 'professional' | 'service_domestic') => {
     return jobs.filter(j => {
       const region = computeRegionLabelFromLocation(j);
       const cat = categorizeJob(j);
@@ -230,14 +232,14 @@ function App() {
   }, [jobs, computeRegionLabelFromLocation, categorizeJob]);
 
   const regionJobCounts = React.useMemo(() => {
-    const counts: Record<string, { total: number; blue_collar: number; professional: number }> = { 
-      'GCC Corridor': { total: 0, blue_collar: 0, professional: 0 }, 
-      'Dubai Hub': { total: 0, blue_collar: 0, professional: 0 }, 
-      'EU-Central': { total: 0, blue_collar: 0, professional: 0 }, 
-      'Premium Node': { total: 0, blue_collar: 0, professional: 0 }, 
-      'Western Corridor': { total: 0, blue_collar: 0, professional: 0 }, 
-      'UK-Northern Corridor': { total: 0, blue_collar: 0, professional: 0 },
-      'Global Corridor': { total: 0, blue_collar: 0, professional: 0 } 
+    const counts: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }> = { 
+      'GCC Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }, 
+      'Dubai Hub': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }, 
+      'EU-Central': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }, 
+      'Premium Node': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }, 
+      'Western Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }, 
+      'UK-Northern Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+      'Global Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 } 
     };
     const allMapped = (jobs || []).map(j => computeRegionLabelFromLocation(j));
     const hasAnySpecificMapping = allMapped.some(l => l !== 'Global Corridor');
@@ -257,6 +259,8 @@ function App() {
         const cat = categorizeJob(j);
         if (cat === 'professional') {
           counts[label].professional++;
+        } else if (cat === 'service_domestic') {
+          counts[label].service_domestic++;
         } else {
           counts[label].blue_collar++;
         }
