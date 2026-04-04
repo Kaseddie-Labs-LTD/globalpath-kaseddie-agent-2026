@@ -89,7 +89,6 @@ function App() {
   const [sectorIndex, setSectorIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(ROTATION_INTERVAL_SECONDS);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedFunction, setSelectedFunction] = useState<string | null>(null);
 
   const sentLeadsMemory = useRef<Set<string>>(new Set());
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -288,7 +287,6 @@ function App() {
       setView(AppView.MATCHES);
       setJobGridScrollTrigger(Date.now());
       setSidebarOpen(false); // Close sidebar when function is selected
-      setSelectedFunction(`${region}-${category}`); // Track which function is active
       
       // Auto-scroll to leads table after a small delay to ensure view has changed
       setTimeout(() => {
@@ -798,7 +796,7 @@ function App() {
         </div>
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 text-white transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${selectedFunction ? 'md:w-16' : ''}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 text-white transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 border-b border-slate-800">
             <div className="flex items-center gap-2 mb-1">
               <Globe className="text-brand-500" size={24} />
@@ -822,8 +820,7 @@ function App() {
             <button key={item.id} onClick={() => { 
               startTransition(() => { 
                 setView(item.id); 
-                setSidebarOpen(false); 
-                setSelectedFunction(item.id); // Track which function is active
+                setSidebarOpen(false); // Hide sidebar completely when link clicked
               }); 
             }} 
               className={`flex items-center justify-between w-full px-4 py-3 text-sm font-bold rounded-lg transition-all ${view === item.id ? 'bg-[#EAB308]/20 ring-1 ring-[#EAB308]/50' : 'hover:bg-white/10'}`}
@@ -847,7 +844,7 @@ function App() {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden md:ml-64">
+      <main className="flex-1 flex flex-col h-full overflow-hidden md:ml-64 w-full">
         <header className="bg-black/20 backdrop-blur-md border-b border-white/5 h-12 flex items-center justify-between px-4 shrink-0 z-20">
            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 hover:bg-white/10 rounded-lg text-white">
               <Menu size={16} />
@@ -863,7 +860,7 @@ function App() {
            </div>
         </header>
 
-        <div className={`flex-1 overflow-auto scrollbar-hide ${view === AppView.MATCHES ? 'p-0' : 'p-4 md:p-6'}`}>
+        <div className={`flex-1 overflow-auto scrollbar-hide ${view === AppView.MATCHES ? 'p-0' : 'p-4 md:p-6'} overflow-x-hidden`}>
           {serviceNotice && (
             <div className="m-4 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-between">
               <span>{serviceNotice}</span>
