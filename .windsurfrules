@@ -1,0 +1,27 @@
+# Kaseddie Labs: GlobalPath Autonomous Hub - Operational Rules
+
+## 🎯 Critical Mission
+You are an expert developer assistant for Kaseddie Labs. Your goal is to maintain the GlobalPath recruitment platform, ensuring 100% data integrity for the 850+ lead count and zero-fee ethical compliance.
+
+## 🏗️ Technical Architecture Constraints
+- **Framework:** React with TypeScript (.tsx). 
+- **STRICT RULE:** Never search for or create .js files. The project is 100% TypeScript.
+- **Environment:** Windows WSL (Linux Subsystem).
+- **Primary Dashboard:** `@/components/AdminDashboard.tsx`.
+- **UI Style:** Cyberpunk/Haunted aesthetic (Dark mode, neon accents, glassmorphism).
+
+## 📊 Data Mapping & Logic
+- **Sector Categories:** You must support four distinct categories: `professional`, `blue_collar`, `service_domestic`, and `general`.
+- **Lead Recovery:** The `totalLeadsCount` must always aggregate all categories. If the count shows 540, you are missing the `service_domestic` nodes (approx 310 leads).
+- **Keywords for 'service_domestic':** [cleaner, housekeeper, maid, nanny, domestic, janitor, nurse].
+- **Location Safety:** Always use `handleNodeClickSafe`. If a location is a JSON object (e.g., JP-NODE or DE-NODE), extract the `city` string or fallback to "Global". Do NOT render raw objects.
+
+## 🤖 AI & Consultant Behavior
+- **Consultant Feedback:** Always maintain an `isProcessing` state. The AI Consultant UI must provide visual feedback (pulsing/loading) during async tasks.
+- **API Standards:** The `/api/sync` and enrollment endpoints MUST support `POST` requests. Fix any 405 Method Not Allowed errors immediately.
+- **Preservation:** DO NOT refactor or remove core functions (Kaseddie AI Kiroween logic) unless explicitly instructed. 
+
+## 🛡️ Guardrails
+- Before deleting any code, summarize the change and ask for confirmation.
+- Keep "AI Handshake Verified" and "Ethical Zero-Fee" branding visible in the UI.
+- Maintain the 3-column grid in the SearchSummary component.

@@ -89,6 +89,7 @@ function App() {
   const [sectorIndex, setSectorIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(ROTATION_INTERVAL_SECONDS);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedFunction, setSelectedFunction] = useState<string | null>(null);
 
   const sentLeadsMemory = useRef<Set<string>>(new Set());
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -278,19 +279,6 @@ function App() {
         onAction
     }]);
   }, []);
-
-  const handleNodeClick = useCallback((region: string, category: 'All' | 'blue_collar' | 'professional' | 'service_domestic' = 'All', keyword: string = '') => {
-    startTransition(() => {
-      setSelectedRegion(region);
-      setActiveCategory(category);
-      setJobGridKeyword(keyword); // Set the keyword if provided (e.g. "Luxembourg")
-      setView(AppView.MATCHES);
-      setJobGridScrollTrigger(Date.now());
-      
-      // Auto-scroll to leads table after a small delay to ensure view has changed
-      setTimeout(() => {
-        const tableElement = document.getElementById('job-grid-top') || leadsTableRef.current;
-        if (tableElement) {
           tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }, 100);
@@ -795,7 +783,7 @@ function App() {
         </div>
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 text-white transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 text-white transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${selectedFunction ? 'md:w-16' : ''}`}>
         <div className="p-6 border-b border-slate-800">
             <div className="flex items-center gap-2 mb-1">
               <Globe className="text-brand-500" size={24} />
@@ -816,11 +804,18 @@ function App() {
             { id: AppView.VIDEO_GENERATOR, label: "AI Promo", icon: Video },
             { id: AppView.HR_PORTAL, label: "Employer Portal", icon: Building2 },
           ]).map(item => (
-            <button key={item.id} onClick={() => { startTransition(() => { setView(item.id); setSidebarOpen(false); }); }} 
-              className={`flex items-center justify-between w-full px-4 py-3 text-sm font-bold rounded-lg transition-all ${view === item.id ? 'bg-[#EAB308]/20 ring-1 ring-[#EAB308]/50' : 'hover:bg-white/10'}`}>
+            <button key={item.id} onClick={() => { 
+              startTransition(() => { 
+                setView(item.id); 
+                setSidebarOpen(false); 
+                setSelectedFunction(item.id); // Track which function is active
+              }); 
+            }} 
+              className={`flex items-center justify-between w-full px-4 py-3 text-sm font-bold rounded-lg transition-all ${view === item.id ? 'bg-[#EAB308]/20 ring-1 ring-[#EAB308]/50' : 'hover:bg-white/10'}`}
+            >
               <div className="flex items-center gap-3">
                 <item.icon size={18} className={view === item.id ? 'text-[#EAB308]' : 'text-white'} /> 
-                {item.label}
+                <span>{item.label}</span>
               </div>
               {(item as any).badge > 0 && (
                 <span className="bg-[#EAB308] text-black text-[10px] font-black px-1.5 py-0.5 rounded-md min-w-[20px] text-center">

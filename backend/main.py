@@ -11,16 +11,23 @@ from dotenv import load_dotenv
 root_env = Path(__file__).resolve().parent.parent / '.env'
 load_dotenv(dotenv_path=root_env)
 
-# Update these to match your VITE_ naming convention
-GROQ_KEY = os.getenv("VITE_GROQ_API_KEY") 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+# Initialize Groq client with fallback check
+GROQ_KEY = os.getenv("VITE_GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
 if not GROQ_KEY:
-    print("❌ ERROR: GROQ_API_KEY not found!")
+    print("❌ ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
+    print("❌ Available environment variables:", [k for k in os.environ.keys() if 'GROQ' in k.upper()])
 else:
     print(f"✅ Groq API Key loaded: {GROQ_KEY[:10]}...")
     print(f"✅ Kaseddie Node Linked: ...{GROQ_KEY[-4:]}")
+
+# Initialize Groq client
+try:
+    groq_client = Groq(api_key=GROQ_KEY)
+    print("✅ Groq client initialized successfully")
+except Exception as e:
+    print(f"❌ Failed to initialize Groq client: {e}")
+    groq_client = None
 
 # Set CrewAI storage directory to a local path to avoid permission issues in some environments
 os.environ["CREWAI_STORAGE_DIR"] = os.path.join(os.getcwd(), ".crewai")
@@ -82,9 +89,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Groq client
-groq_client = Groq(api_key=GROQ_KEY)
-
 # Collection settings
 COLLECTION_NAME = "globalpath_leads"
 VECTOR_SIZE = 3072  # Dimension size for Phi-3 embeddings
@@ -108,9 +112,7 @@ else:
     )
 
 # Initialize Groq Cloud Client for LLM processing
-groq_client = Groq(
-    api_key=GROQ_KEY
-)
+# Note: groq_client is already initialized above with error handling
 
 # Initialize embeddings using HuggingFace (Groq doesn't host embedding models)
 # Lazy initialization to prevent startup delays
@@ -591,8 +593,8 @@ async def ping_ai():
     try:
         print(f"🔍 [PING DEBUG]: Testing Groq API Key: {'YES' if GROQ_KEY else 'NO'}")
         
-        if not GROQ_KEY:
-            return {"status": "AI_KEY_MISSING", "message": "Groq API key not configured"}
+        if not GROQ_KEY or not groq_client:
+            return {"status": "AI_KEY_MISSING", "message": "Groq API key not configured or client failed to initialize"}
         
         # Test Groq API with minimal request
         test_response = groq_client.chat.completions.create(
@@ -604,16 +606,20 @@ async def ping_ai():
             temperature=0.1
         )
         
+        print(f"✅ [PING SUCCESS]: Groq API responded successfully")
         return {"status": "AI_CONNECTED", "message": "Groq API is working"}
         
     except Exception as e:
         error_msg = str(e).lower()
-        if "timeout" in error_msg or "connection" in error_msg:
-            return {"status": "CONNECTION_TIMEOUT", "message": f"Connection error: {str(e)}"}
-        elif "key" in error_msg or "unauthorized" in error_msg:
-            return {"status": "AI_KEY_INVALID", "message": f"Invalid API key: {str(e)}"}
+        print(f"❌ [PING ERROR]: {e}")
+        
+        # Return specific error codes for frontend
+        if "401" in error_msg or "unauthorized" in error_msg:
+            return {"status": "AI_KEY_INVALID", "message": "Invalid Groq API key (401 Unauthorized)"}
+        elif "connection" in error_msg or "timeout" in error_msg:
+            return {"status": "AI_CONNECTION_FAILED", "message": "Failed to connect to Groq API"}
         else:
-            return {"status": "AI_ERROR", "message": f"AI service error: {str(e)}"}
+            return {"status": "AI_ERROR", "message": f"Groq API error: {str(e)}"}
 
 @app.post("/api/generate-proposal")
 async def generate_proposal(req: ProposalRequest):
