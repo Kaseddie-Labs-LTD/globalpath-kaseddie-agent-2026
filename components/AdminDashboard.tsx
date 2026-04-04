@@ -731,7 +731,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
               </div>
            </div>
 
-          <div className="h-[400px]">
+          <div className="flex-1">
               <CorridorFeed nodesActive={hrJobs.length} feesBlocked={logs.length} />
            </div>
         </div>

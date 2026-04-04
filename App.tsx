@@ -796,7 +796,7 @@ function App() {
         </div>
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 text-white transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 text-white transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-slate-800">
             <div className="flex items-center gap-2 mb-1">
               <Globe className="text-brand-500" size={24} />
@@ -844,8 +844,8 @@ function App() {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden md:ml-64 w-full">
-        <header className="bg-black/20 backdrop-blur-md border-b border-white/5 h-12 flex items-center justify-between px-4 shrink-0 z-20">
+      <main className="flex-1 flex flex-col h-full overflow-hidden w-full">
+        <header className="relative bg-black/20 backdrop-blur-md border-b border-white/5 h-12 flex items-center justify-between px-4 shrink-0 z-30">
            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 hover:bg-white/10 rounded-lg text-white">
               <Menu size={16} />
            </button>
