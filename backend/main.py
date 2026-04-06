@@ -579,6 +579,20 @@ async def get_tts(text: str = Query(...), voice: str = "en-US-EmmaMultilingualNe
 async def root():
     return {"status": "online", "message": "GlobalPath Backend is running"}
 
+@app.get("/api/debug/env")
+async def debug_environment():
+    """
+    Debug endpoint to show all environment variables
+    """
+    return {
+        "all_env_vars": list(os.environ.keys()),
+        "groq_vars": {k: v for k, v in os.environ.items() if 'GROQ' in k.upper()},
+        "groq_key_loaded": bool(GROQ_KEY),
+        "groq_client_initialized": groq_client is not None,
+        "python_path": os.path.abspath(__file__),
+        "working_directory": os.getcwd()
+    }
+
 @app.get("/api/ping")
 async def ping_ai():
     """
@@ -586,6 +600,8 @@ async def ping_ai():
     """
     try:
         print(f"🔍 [PING DEBUG]: Testing Groq API Key: {'YES' if GROQ_KEY else 'NO'}")
+        print(f"🔍 [PING DEBUG]: Available env vars: {[k for k in os.environ.keys() if 'GROQ' in k.upper()]}")
+        print(f"🔍 [PING DEBUG]: All env vars: {list(os.environ.keys())}")
         
         if not GROQ_KEY or not groq_client:
             return {"status": "AI_KEY_MISSING", "message": "Groq API key not configured or client failed to initialize"}
