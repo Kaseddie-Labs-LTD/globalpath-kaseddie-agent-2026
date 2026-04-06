@@ -1,9 +1,12 @@
-const AGENT_ENDPOINT = 'http://localhost:8000/chat';
-const AGENT_ACCESS_KEY = 'local-dev-key';
-const OPENAI_BASE_URL = 'http://localhost:8000/chat';
-const DO_API_KEY = 'local-dev-key';
+// Use dynamic API endpoint from environment or current origin
+const getApiEndpoint = () => {
+  return (import.meta as any).env?.VITE_API_URL || window.location.origin;
+};
 
-type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
 
 async function postJSON(url: string, key: string, body: any) {
   const res = await fetch(url, {
@@ -48,82 +51,75 @@ function toText(val: any): string {
 }
 
 function toJSONIfPossible(val: any): any | undefined {
-  if (val == null) return undefined;
-  if (typeof val === 'object') return val;
-  if (typeof val === 'string') {
-    const t = val.trim();
-    if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
-      try {
-        return JSON.parse(t);
-      } catch {
-        return undefined;
-      }
-    }
+  try {
+    return JSON.parse(val);
+  } catch {
+    return undefined;
   }
-  if (Array.isArray(val)) return val;
-  return undefined;
-}
-
-function pickContentFromData(data: any): { text: string; json?: any } {
-  const choice = data?.choices?.[0];
-  const content = choice?.message?.content;
-  const text = toText(content);
-  const json = toJSONIfPossible(content);
-  return { text, json };
 }
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+export async function doJSONCompletionBase(system: string, user: string, opts?: any): Promise<any> {
+  const model = opts?.model || 'gpt-4o-mini';
+  const attempts = 3;
+  const backoffs = [200, 600];
+  
+  // Use dynamic API endpoint
+  const apiEndpoint = `${getApiEndpoint()}/api/agent/chat`;
+  
+  console.log('🔍 [DOCLIENT DEBUG]: Using API endpoint:', apiEndpoint);
+  
+  const payload: any = { messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
+  let lastErr: any;
+  
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const data = await postJSON(apiEndpoint, '', payload);
+      const text = toText(data);
+      if (text && text.trim()) return text;
+      if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
+    }
+  }
+  if (lastErr) throw lastErr;
+  return '';
+}
+
 export async function doChatCompletion(messages: ChatMessage[], opts?: { model?: string; json?: boolean }) {
   const model = opts?.model || 'gpt-4o-mini';
   const attempts = 3;
   const backoffs = [200, 600];
-  if (AGENT_ENDPOINT && AGENT_ACCESS_KEY) {
-    const base = AGENT_ENDPOINT.replace(/\/+$/, '');
-    const url = /\/chat\/completions$/i.test(base) ? base : `${base}/api/v1/chat/completions`;
-    const payload: any = { messages };
-    let lastErr: any;
-    for (let i = 0; i < attempts; i++) {
-      try {
-        const data = await postJSON(url, AGENT_ACCESS_KEY, payload);
-        const { text } = pickContentFromData(data);
-        if (text && text.trim()) return text;
-        if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
-      } catch (e) {
-        lastErr = e;
-        if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
-      }
+  
+  // Use dynamic API endpoint
+  const apiEndpoint = `${getApiEndpoint()}/api/agent/chat`;
+  
+  console.log('🔍 [DOCLIENT DEBUG]: Using API endpoint:', apiEndpoint);
+  
+  const payload: any = { messages };
+  if (opts?.json) payload.response_format = { type: 'json_object' };
+  let lastErr: any;
+  
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const data = await postJSON(apiEndpoint, '', payload);
+      const text = toText(data);
+      if (text && text.trim()) return text;
+      if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
     }
-    if (lastErr) throw lastErr;
-    return '';
   }
-  if (DO_API_KEY) {
-    const base = OPENAI_BASE_URL.replace(/\/+$/, '');
-    const hasVersion = /\/v\d+$/i.test(base);
-    const url = `${base}${hasVersion ? '' : '/v1'}/chat/completions`;
-    const payload: any = { model, messages };
-    if (opts?.json) payload.response_format = { type: 'json_object' };
-    let lastErr: any;
-    for (let i = 0; i < attempts; i++) {
-      try {
-        const data = await postJSON(url, DO_API_KEY, payload);
-        const { text } = pickContentFromData(data);
-        if (text && text.trim()) return text;
-        if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
-      } catch (e) {
-        lastErr = e;
-        if (i < attempts - 1) await sleep(backoffs[i] ?? 1000);
-      }
-    }
-    if (lastErr) throw lastErr;
-    return '';
-  }
-  throw new Error('DigitalOcean credentials not configured');
+  if (lastErr) throw lastErr;
+  return '';
 }
 
-export async function doJSONCompletion<T = any>(system: string, user: string, model?: string): Promise<T> {
+export async function doJSONCompletionTyped<T = any>(system: string, user: string, model?: string): Promise<T> {
   const textOrJSONString = await doChatCompletion(
     [
       { role: 'system', content: system },
@@ -133,20 +129,9 @@ export async function doJSONCompletion<T = any>(system: string, user: string, mo
   );
   const parsed = toJSONIfPossible(textOrJSONString);
   if (parsed !== undefined) return parsed as T;
-  try {
-    return JSON.parse(textOrJSONString) as T;
-  } catch {
-    throw new Error('Invalid JSON from DO model');
-  }
+  return textOrJSONString as T;
 }
 
-export async function doTextCompletion(system: string, user: string, model?: string): Promise<string> {
-  const content = await doChatCompletion(
-    [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-    { model, json: false }
-  );
-  return content;
-}
+// Export aliases for backward compatibility
+export const doTextCompletion = doJSONCompletionBase;
+export const doJSONCompletion = doJSONCompletionTyped;
