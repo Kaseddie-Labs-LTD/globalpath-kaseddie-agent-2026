@@ -30,7 +30,7 @@ import { analyzeJobSafety, verifyDocument, generateB2BPitch, enhanceJobDescripti
 import { fetchGlobalJobs, fetchLuxembourgLeads } from './services/apify';
 import { UserProfile, Job, AgentLogEntry, AppView, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://globalpath-kaseddie-agent-2026.onrender.com";
+const API_BASE = import.meta.env.VITE_API_URL || "https://globalpath-kaseddie-agent-2026-1.onrender.com";
 const KASEDDIE_SIGNATURE = "GlobalPath Kaseddie Agent";
 const ADMIN_PRIMARY = "+256784428821";
 const MARATHON_REGIONS = ["UAE", "Qatar", "Germany", "Canada", "Luxembourg", "Poland", "Kuwait", "Bahrain"];
