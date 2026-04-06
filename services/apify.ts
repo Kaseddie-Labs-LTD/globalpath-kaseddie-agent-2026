@@ -1,6 +1,6 @@
-import { Job } from "../types";
+import { fetcher } from '../constants/api';
 import { JobSchema } from "../schema";
-import { getJobLocationString } from "../types";
+import { getJobLocationString, Job } from "../types";
 
 const getEnv = (key: string): string | undefined => {
   if (typeof process !== 'undefined' && process.env && process.env[key]) {
@@ -86,7 +86,7 @@ export const fetchGlobalJobs = async (): Promise<Job[]> => {
   // Use backend proxy instead of direct Apify calls
   try {
     const API_BASE = import.meta.env.VITE_API_URL;
-    const response = await fetch(`${API_BASE}/leads`);
+    const response = await fetcher('/leads');
     if (!response.ok) {
       console.error(`❌ Backend leads fetch failed:`, response.statusText);
       return [];
@@ -144,7 +144,7 @@ export const fetchLuxembourgLeads = async (): Promise<Job[]> => {
   // Use backend proxy instead of direct Apify calls
   try {
     const API_BASE = import.meta.env.VITE_API_URL;
-    const response = await fetch(`${API_BASE}/leads`);
+    const response = await fetcher('/leads');
     if (!response.ok) {
       console.error(`❌ Backend Luxembourg leads fetch failed:`, response.statusText);
       return [];

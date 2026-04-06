@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
         host: '127.0.0.1',
         proxy: {
           '/api': {
-            target: 'http://127.0.0.1:8080',
+            target: 'https://globalpath-kaseddie-agent-2026-1.onrender.com',
             changeOrigin: true,
             rewrite: (path) => path.replace(/^\/api/, ''),
           },
