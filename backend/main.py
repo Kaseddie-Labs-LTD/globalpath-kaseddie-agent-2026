@@ -418,7 +418,7 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         refined_category = "blue_collar"
 
     # 3. Status Mapping
-    status = "vetting_pending" if has_illegal_fees else "live"
+    status = "live"  # Set to "live" so frontend recognizes as active
     
     # 4. Node Assignment - Critical for UI filtering
     node = "Global Corridor"  # Default fallback
@@ -1335,7 +1335,7 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
         doc.metadata["outreach_strategy"] = outreach_strategy
         doc.metadata["currency"] = currency
         doc.metadata["dataset_id"] = dataset_id
-        doc.metadata["status"] = "enriched"
+        doc.metadata["status"] = "live"  # Set to "live" so frontend recognizes as active
         
         # Keep the original raw fields but add enriched metadata
         enriched_payload = {
@@ -1345,7 +1345,7 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
             'description': item.get('description', '') or item.get('snippet', '') or item.get('jobTitle', '') or 'No description available',
             'fingerprint': doc.metadata.get("fingerprint"),
             'source': 'apify_sync',
-            'status': 'enriched',
+            'status': 'live',
             'dataset_id': dataset_id,
             # Add enriched metadata
             'name': doc.metadata.get("name"),
