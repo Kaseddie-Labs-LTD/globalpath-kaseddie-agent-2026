@@ -197,14 +197,20 @@ export async function refinePitch(job: Job, currentDraft: string): Promise<strin
   });
   
   try {
-    // POST to Python backend for pitch refinement using correct endpoint
-    const url = 'http://127.0.0.1:8080/api/generate-pitch';
+    // POST to Python backend for pitch refinement using new agent chat endpoint
+    const url = '/api/agent/chat';
     console.log('🌐 [REFINE PITCH DEBUG]: Calling URL:', url);
     
+    // Create context message with job details for Llama-3.3
+    const jobContext = `Job Title: ${job.title || ''}
+Company: ${job.company || ''}
+Location: ${job.location || ''}
+Current Draft: ${currentDraft}
+
+Please refine this B2B pitch for the job above. Make it more compelling, professional, and compliant with GlobalPath's zero-fee recruitment standards.`;
+    
     const requestBody = {
-      role: job.title || '',
-      location: job.location || '',
-      current_draft: currentDraft
+      message: jobContext
     };
     console.log('📤 [REFINE PITCH DEBUG]: Request body:', requestBody);
     
@@ -219,12 +225,31 @@ export async function refinePitch(job: Job, currentDraft: string): Promise<strin
     console.log('📡 [REFINE PITCH DEBUG]: Response status:', response.status);
     
     if (response.ok) {
-      const result = await response.json();
-      console.log('✅ [REFINE PITCH DEBUG]: Success! Response:', result);
-      const refinedText = result.refined_pitch || currentDraft;
-      console.log('📝 [REFINE PITCH DEBUG]: Refined text length:', refinedText.length);
-      console.log('📝 [REFINE PITCH DEBUG]: Refined text preview:', refinedText.substring(0, 200) + '...');
-      return refinedText;
+      // Handle streaming response from new agent chat endpoint
+      const reader = response.body?.getReader();
+      if (reader) {
+        let refinedText = '';
+        const decoder = new TextDecoder();
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          refinedText += chunk;
+        }
+        
+        console.log('✅ [REFINE PITCH DEBUG]: Streaming complete! Response length:', refinedText.length);
+        console.log('📝 [REFINE PITCH DEBUG]: Refined text preview:', refinedText.substring(0, 200) + '...');
+        return refinedText || currentDraft;
+      } else {
+        // Fallback for non-streaming response
+        const result = await response.json();
+        console.log('✅ [REFINE PITCH DEBUG]: Success! Response:', result);
+        const refinedText = result.reply || currentDraft;
+        console.log('📝 [REFINE PITCH DEBUG]: Refined text length:', refinedText.length);
+        return refinedText;
+      }
     } else {
       console.log('❌ [REFINE PITCH DEBUG]: Request failed with status:', response.status);
       const errorText = await response.text();

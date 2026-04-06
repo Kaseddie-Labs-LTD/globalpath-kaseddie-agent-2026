@@ -3,7 +3,7 @@ import { Eye, Bot, Send } from 'lucide-react';
 
 const KaseddieChat = () => {
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState([{ role: 'assistant', content: 'Kaseddie Agent Online. How can I assist your breakthrough today?' }]);
+  const [history, setHistory] = useState([{ role: 'assistant', content: 'Kaseddie Agent Online. How can I assist your breakthrough today?', isStreaming: false }]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
 
@@ -16,14 +16,51 @@ const KaseddieChat = () => {
     setInput("");
 
     try {
-      // Calling your local backend which now uses the Groq Key
-      const res = await fetch('http://127.0.0.1:8080/api/chat', {
+      // Calling new agent chat endpoint with streaming
+      const res = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: input })
       });
-      const data = await res.json();
-      setHistory(prev => [...prev, { role: 'assistant', content: data.reply }]);
+      
+      if (res.ok) {
+        const reader = res.body?.getReader();
+        if (reader) {
+          // Handle streaming response
+          let assistantMessage = '';
+          const decoder = new TextDecoder();
+          
+          setHistory(prev => [...prev, { role: 'assistant', content: '', isStreaming: true }]);
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            assistantMessage += chunk;
+            
+            // Update the streaming message
+            setHistory(prev => {
+              const newHistory = [...prev];
+              newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: true };
+              return newHistory;
+            });
+          }
+          
+          // Final update to mark streaming as complete
+          setHistory(prev => {
+            const newHistory = [...prev];
+            newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: false };
+            return newHistory;
+          });
+        } else {
+          // Fallback for non-streaming response
+          const data = await res.json();
+          setHistory(prev => [...prev, { role: 'assistant', content: data.reply }]);
+        }
+      } else {
+        setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.' }]);
+      }
     } catch (error) {
       setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.' }]);
     } finally {
