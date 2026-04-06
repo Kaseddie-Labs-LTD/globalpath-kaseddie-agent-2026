@@ -6,7 +6,7 @@
 /* Custom base styles */
 @layer base {
   body {
-    background-color: #020617 !important;
+    background-color: #586bc0 !important;
     color: rgb(226 232 240);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

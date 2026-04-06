@@ -7,7 +7,8 @@ import {
   Building2, Loader2, Terminal, ExternalLink, Plus, Share2, Check, ChevronRight, Sparkles, RefreshCw
 } from 'lucide-react';
 import { CorridorFeed } from './CorridorFeed';
-import { SearchSummary } from './SearchSummary';
+import { ComplianceDashboard } from '../src/components/ComplianceDashboard';
+import { API_BASE } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
 
 interface AdminDashboardProps {
@@ -297,7 +298,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     onAddLog("FORCE VERIFY: Starting mass verification of all leads...", "thinking");
     
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8080'}/api/force-verify-all`, {
+      const response = await fetch(`${API_BASE}/api/force-verify-all`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -670,7 +671,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
             <MarketingEngine 
               selectedJob={selectedJob}
               onGenerateMarketing={async (job) => {
-                const response = await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8080'}/api/generate-marketing`, {
+                const response = await fetch(`${API_BASE}/api/generate-marketing`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
