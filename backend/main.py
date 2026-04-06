@@ -39,7 +39,7 @@ import uuid
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 import edge_tts
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -783,6 +783,65 @@ async def chat_with_groq(req: ChatRequest):
             return {"reply": "AI_RATE_LIMIT", "error": "AI service rate limit exceeded"}
         else:
             return {"reply": "AI_SERVICE_ERROR", "error": f"AI service error: {str(e)}"}
+
+class AgentChatRequest(BaseModel):
+    message: str
+
+async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
+    """Generate streaming chat response using Groq Llama-3.3"""
+    try:
+        completion = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are the Kaseddie AI Oversight Agent for GlobalPath. Use the provided 540 nodes and Ethical Rules to assist the user with lead analysis, recruitment strategy, and compliance questions. Be professional, concise, and helpful."
+                },
+                {
+                    "role": "user", 
+                    "content": message
+                }
+            ],
+            temperature=1,
+            max_completion_tokens=1024,
+            top_p=1,
+            stream=True,
+            stop=None
+        )
+        
+        for chunk in completion:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+                
+    except Exception as e:
+        yield f"Error: {str(e)}"
+
+@app.post("/api/agent/chat")
+async def agent_chat_stream(req: AgentChatRequest):
+    """
+    Kaseddie AI Agent streaming chat endpoint using Llama-3.3-70b-versatile model.
+    Provides real-time streaming responses for chatbot UI.
+    """
+    try:
+        print(f"🔍 [AGENT CHAT]: Message received: {req.message[:100]}...")
+        
+        if not groq_client:
+            return StreamingResponse(
+                iter(["AI service not available - please check configuration"]),
+                media_type="text/plain"
+            )
+        
+        return StreamingResponse(
+            generate_chat_stream(req.message),
+            media_type="text/plain"
+        )
+        
+    except Exception as e:
+        print(f"❌ [AGENT CHAT ERROR]: {e}")
+        return StreamingResponse(
+            iter([f"Chat service error: {str(e)}"]),
+            media_type="text/plain"
+        )
 
 @app.post("/api/generate-marketing")
 async def generate_marketing(job_request: dict):
