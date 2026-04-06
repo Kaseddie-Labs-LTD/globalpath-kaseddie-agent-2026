@@ -29,7 +29,7 @@ import ComplianceDashboard from './src/components/ComplianceDashboard';
 import { analyzeJobSafety, verifyDocument, generateB2BPitch, enhanceJobDescription, summarizeJobRequirements } from './services/ai';
 import { fetchGlobalJobs, fetchLuxembourgLeads } from './services/apify';
 import { UserProfile, Job, AgentLogEntry, AppView, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
-import { API_BASE } from './constants/api';
+import { API_BASE, fetcher } from './constants/api';
 
 const KASEDDIE_SIGNATURE = "GlobalPath Kaseddie Agent";
 const ADMIN_PRIMARY = "+256784428821";
@@ -441,11 +441,11 @@ function App() {
       // Initial or Force Refresh Fallback
       if (!statsData || !leadsData) {
         const [sRes, lRes] = await Promise.all([
-          fetch(`${API_BASE}/corridor-stats`),
-          fetch(`${API_BASE}/leads`)
+          fetcher('/corridor-stats'),
+          fetcher('/leads')
         ]);
-        if (sRes.ok) statsData = await sRes.json();
-        if (lRes.ok) leadsData = await lRes.json();
+        statsData = sRes;
+        leadsData = lRes;
       }
 
       if (leadsData && leadsData.leads && leadsData.leads.length > 0) {
@@ -581,7 +581,7 @@ function App() {
     
     try {
       // 1. Trigger Backend Sync (Apify -> Qdrant) - Now returns immediately
-      const syncRes = await fetch(`${API_BASE}/sync-apify-leads`, { method: 'POST' });
+      const syncRes = await fetcher('/sync-apify-leads', { method: 'POST' });
       const syncData = await syncRes.json();
       
       if (syncData.status === 'Accepted') {
@@ -1027,23 +1027,21 @@ function App() {
                   setView(AppView.CHAT);
                 }}
                 onSearchLeads={async (query) => {
-                  const res = await fetch(`${API_BASE}/search-leads?query=${encodeURIComponent(query)}`);
-                  if (!res.ok) throw new Error("Search failed");
-                  return await res.json();
+                  const res = await fetcher(`/search-leads?query=${encodeURIComponent(query)}`);
+                  return res;
                 }}
                 onGenerateB2BPitch={async (title, company, salary) => {
                   try {
-                    const response = await fetch(`${API_BASE}/api/generate-proposal`, {
+                    const response = await fetcher('/api/generate-proposal', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         job_title: title,
                         company: company,
                         salary: salary,
-                        details: `Recruitment for ${title} at ${company}. Pay rate: ${salary || 'Competitive'}.`
                       })
                     });
-                    const data = await response.json();
+                    const data = response;
                     return data.pitch || "Failed to generate proposal.";
                   } catch (err) {
                     console.error("Phi-3 Uplink Failed", err);
