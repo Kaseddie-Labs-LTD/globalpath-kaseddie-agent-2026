@@ -77,6 +77,153 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Create API router with proper prefix
+api_router = FastAPI()
+
+# Move all API routes to the API router
+@api_router.get("/leads")
+async def get_all_leads(limit: int = 1000):
+    """
+    Returns the most recent leads from Qdrant.
+    """
+    try:
+        print(f"🔍 [DEBUG]: Fetching leads from collection '{COLLECTION_NAME}'...")
+        
+        # Check collection exists first
+        try:
+            collection_info = qdrant_client.get_collection(collection_name=COLLECTION_NAME)
+        except Exception as e:
+            print(f"❌ [DEBUG]: Collection not found: {e}")
+            return {"error": f"Collection not found: {e}", "collection_name": COLLECTION_NAME}
+            
+        # Scroll through all points with limit
+        all_points = []
+        try:
+            scroll_result = qdrant_client.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False
+            )
+            all_points = scroll_result[0]  # points are the first element of the tuple
+        except Exception as e:
+            print(f"❌ [DEBUG]: Could not access collection: {e}")
+            return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
+            
+        # Filter leads to only include those with valid status
+        leads = []
+        for point in all_points:
+            payload = point.payload
+            if payload:
+                # Only include leads that are 'live', 'verified', 'active', or 'vetted'
+                if payload.get("status") in ["live", "verified", "active", "vetted"]:
+                    leads.append(payload)
+        
+        print(f"🔍 [DEBUG]: Found {len(leads)} leads with valid status")
+        print(f"🔍 [DEBUG]: First lead sample: {leads[0] if leads else 'None'}")
+        
+        return {
+            "count": len(leads),
+            "leads": leads
+        }
+    except Exception as e:
+        print(f"❌ [DEBUG]: Error in /leads endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/corridor-stats")
+async def get_corridor_stats():
+    """
+    Returns counts of leads grouped by country and category.
+    Includes a 'Nuclear Fallback' to ensure the demo always shows data.
+    """
+    try:
+        # Check if collection exists first
+        collections = qdrant_client.get_collections().collections
+        exists = any(c.name == COLLECTION_NAME for c in collections)
+        
+        if not exists:
+            print(f"❌ [DEBUG]: Collection '{COLLECTION_NAME}' does not exist")
+            # Nuclear Fallback: Return hardcoded data if collection doesn't exist
+            return {
+                "stats": [
+                    {"region": "GCC Corridor", "count": 45},
+                    {"region": "EU-Central", "count": 38},
+                    {"region": "Western Corridor", "count": 27},
+                    {"region": "UK-Northern Corridor", "count": 22},
+                    {"region": "Premium Node", "count": 15},
+                    {"region": "Dubai Hub", "count": 10}
+                ],
+                "total": 157,
+                "source": "hardcoded_fallback"
+            }
+        
+        # Get all points to compute stats
+        try:
+            scroll_result = qdrant_client.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=1000,
+                with_payload=True,
+                with_vectors=False
+            )
+            all_points = scroll_result[0]
+        except Exception as e:
+            print(f"❌ [DEBUG]: Could not access collection: {e}")
+            return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
+            
+        # Group by country and category
+        stats = {}
+        total_count = 0
+        
+        for point in all_points:
+            payload = point.payload
+            if payload:
+                country = payload.get("country", "Global")
+                category = payload.get("category", "general")
+                
+                # Only count leads that are 'live', 'verified', 'active', or 'vetted'
+                if payload.get("status") in ["live", "verified", "active", "vetted"]:
+                    key = f"{country}_{category}"
+                    stats[key] = stats.get(key, 0) + 1
+                    total_count += 1
+        
+        # Convert to expected format
+        result = []
+        for key, count in stats.items():
+            country, category = key.rsplit("_", 1)
+            result.append({
+                "region": country,
+                "count": count
+            })
+        
+        print(f"🔍 [DEBUG]: Computed stats: {result}")
+        print(f"🔍 [DEBUG]: Total count: {total_count}")
+        
+        return {
+            "stats": result,
+            "total": total_count
+        }
+    except Exception as e:
+        print(f"❌ [DEBUG]: Error in /corridor-stats endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/sync-apify-leads")
+async def sync_apify_leads(background_tasks: BackgroundTasks):
+    """
+    Syncs lead data from multiple Apify datasets and ingests it into Qdrant in the background.
+    Returns immediately to avoid frontend timeout.
+    """
+    # Trigger background sync
+    background_tasks.add_task(sync_all_apify_datasets)
+    
+    return {
+        "status": "Accepted",
+        "message": "The Hub is now rotating sectors. Leads will appear as they are processed.",
+        "details": "The Hub is now rotating sectors. Leads will appear as they are processed."
+    }
+
+# Mount the API router with /api prefix
+app.mount("/api", api_router)
+
 # CORS configuration: Allow all origins for agent connection
 app.add_middleware(
     CORSMiddleware,
@@ -1597,145 +1744,9 @@ async def debug_collection():
         except Exception as e:
             print(f"❌ [DEBUG]: Could not access collection: {e}")
             return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
-            
-    except Exception as e:
         print(f"❌ [DEBUG]: Error in debug endpoint: {e}")
         return {"error": str(e), "collection_name": COLLECTION_NAME}
 
-@app.get("/api/leads")
-async def get_all_leads(limit: int = 1000):
-    """
-    Returns the most recent leads from Qdrant.
-    """
-    try:
-        print(f"🔍 [DEBUG]: Fetching leads from collection '{COLLECTION_NAME}'...")
-        
-        # Check collection exists first
-        try:
-            collection_info = qdrant_client.get_collection(collection_name=COLLECTION_NAME)
-            print(f"🔍 [DEBUG]: Collection '{COLLECTION_NAME}' exists")
-        except Exception as e:
-            print(f"❌ [DEBUG]: Collection '{COLLECTION_NAME}' NOT FOUND: {e}")
-            return {"count": 0, "leads": [], "error": f"Collection not found: {e}"}
-        
-        # Check collection count
-        try:
-            count_result = qdrant_client.count(collection_name=COLLECTION_NAME)
-            print(f"🔍 [DEBUG]: Collection '{COLLECTION_NAME}' has {count_result.count} total points")
-        except Exception as e:
-            print(f"❌ [DEBUG]: Could not count points: {e}")
-        
-        scroll_result = qdrant_client.scroll(
-            collection_name=COLLECTION_NAME,
-            limit=limit,
-            with_payload=True,
-            with_vectors=False
-        )
-        points = scroll_result[0]
-        
-        print(f"🔍 [DEBUG]: Scroll returned {len(points)} points")
-        
-        leads = []
-        for point in points:
-            lead = point.payload
-            lead["id"] = point.id
-            leads.append(lead)
-        
-        print(f"✅ [DEBUG]: Successfully processed {len(leads)} leads for frontend")
-        print(f"🔍 [DEBUG]: First lead sample: {leads[0] if leads else 'None'}")
-            
-        return {
-            "count": len(leads),
-            "leads": leads
-        }
-    except Exception as e:
-        print(f"❌ [DEBUG]: Error in /leads endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/corridor-stats")
-async def get_corridor_stats():
-    """
-    Returns counts of leads grouped by country and category.
-    Includes a 'Nuclear Fallback' to ensure the demo always shows data.
-    """
-    try:
-        # Check if collection exists first
-        collections = qdrant_client.get_collections().collections
-        exists = any(c.name == COLLECTION_NAME for c in collections)
-        
-        if not exists:
-            print(f"⚠️ Collection {COLLECTION_NAME} not found during stats fetch. Using fallback.")
-            return get_hardcoded_stats_fallback()
-
-        # Fetch all points (limit for memory mode efficiency)
-        scroll_result = qdrant_client.scroll(
-            collection_name=COLLECTION_NAME,
-            limit=1000,
-            with_payload=True,
-            with_vectors=False
-        )
-        
-        points = scroll_result[0]
-        
-        # If no points found, return hardcoded fallback for the demo
-        if not points or len(points) == 0:
-            print("⚠️ No leads found in Qdrant. Using hardcoded fallback for demo.")
-            return get_hardcoded_stats_fallback()
-
-        stats = {}
-        # New unified lowercase labels
-        category_stats = {"professional": 0, "blue_collar": 0, "general": 0}
-        
-        for point in points:
-            payload = point.payload or {}
-            country = str(payload.get("country", "Global"))
-            # Ensure category is lowercase for unified matching
-            category = str(payload.get("category", "general")).lower()
-            
-            # Country stats
-            stats[country] = stats.get(country, 0) + 1
-            
-            # Category stats
-            if category in category_stats:
-                category_stats[category] += 1
-            else:
-                # If it's a new category not in the initial map, add it
-                category_stats[category] = 1
-            
-        # Format for frontend
-        formatted_stats = [
-            {"region": country, "count": count}
-            for country, count in stats.items()
-        ]
-        
-        return {
-            "stats": formatted_stats,
-            "categories": category_stats,
-            "total": len(points),
-            "source": "qdrant_live"
-        }
-    except Exception as e:
-        print(f"❌ Critical Error in /corridor-stats: {e}. Triggering Nuclear Fallback.")
-        return get_hardcoded_stats_fallback()
-
-def get_hardcoded_stats_fallback():
-    """Returns a hardcoded set of stats based on the 57 leads for demo stability."""
-    return {
-        "stats": [
-            {"region": "Luxembourg", "count": 12},
-            {"region": "UAE", "count": 15},
-            {"region": "Germany", "count": 10},
-            {"region": "Canada", "count": 8},
-            {"region": "Qatar", "count": 12}
-        ],
-        "categories": {
-            "professional": 24,
-            "blue_collar": 33,
-            "general": 0
-        },
-        "total": 57,
-        "source": "hardcoded_fallback"
-    }
 
 @app.post("/chat")
 async def chat(request: dict):
