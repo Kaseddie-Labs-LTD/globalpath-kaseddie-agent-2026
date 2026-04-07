@@ -1058,7 +1058,7 @@ async def ingest_lead(lead: Lead):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/search-leads")
+@app.get("/api/search-leads")
 async def search_leads(query: str = Query(..., description="The query to search for leads")):
     """
     Searches for the top 3 matching leads and summarizes them using the LLM.
@@ -1405,7 +1405,7 @@ async def run_async_enrichment(tasks):
     except Exception as e:
         print(f"❌ Error in async enrichment: {e}")
 
-@app.post("/sync-apify-leads")
+@app.post("/api/sync-apify-leads")
 async def sync_apify_leads(background_tasks: BackgroundTasks):
     """
     Syncs lead data from multiple Apify datasets and ingests it into Qdrant in the background.
@@ -1602,7 +1602,7 @@ async def debug_collection():
         print(f"❌ [DEBUG]: Error in debug endpoint: {e}")
         return {"error": str(e), "collection_name": COLLECTION_NAME}
 
-@app.get("/leads")
+@app.get("/api/leads")
 async def get_all_leads(limit: int = 1000):
     """
     Returns the most recent leads from Qdrant.
@@ -1652,7 +1652,7 @@ async def get_all_leads(limit: int = 1000):
         print(f"❌ [DEBUG]: Error in /leads endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/corridor-stats")
+@app.get("/api/corridor-stats")
 async def get_corridor_stats():
     """
     Returns counts of leads grouped by country and category.
