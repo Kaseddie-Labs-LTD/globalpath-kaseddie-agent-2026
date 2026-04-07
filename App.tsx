@@ -368,51 +368,41 @@ function App() {
 
   // --- 2. Fetch Logic ---
   
-  const { data: swrLeads, mutate: mutateLeads } = useSWR(`${API_BASE}/leads`, 
-    (url: string) => fetch(url).then(res => {
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  const { data: swrLeads, mutate: mutateLeads } = useSWR('/leads', fetcher, {
+    refreshInterval: 10000, // Sync every 10 seconds instead of waiting
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    onError: (error) => {
+      console.error('❌ SWR Error fetching leads:', error);
+      addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
+    },
+    onSuccess: (data) => {
+      console.log('✅ SWR Data received:', data);
+      console.log('✅ SWR Raw response type:', typeof data);
+      console.log('✅ SWR Response structure:', JSON.stringify(data, null, 2));
+      
+      // Check for JSON envelope issues
+      const leadsArray = data?.leads || data || [];
+      console.log('✅ SWR Leads count:', leadsArray.length);
+      console.log('✅ SWR Leads array type:', typeof leadsArray);
+      console.log('✅ SWR First lead sample:', leadsArray[0]);
+      
+      // CRITICAL: Log when leads.length === 0 to debug handshake issues
+      if (!leadsArray || leadsArray.length === 0) {
+        console.error('🚨 CRITICAL: SWR returned 0 leads - investigating handshake failure...');
+        console.error('🚨 SWR Response data:', JSON.stringify(data, null, 2));
+        console.error('🚨 SWR URL:', `${API_BASE}/leads`);
+        addLog('CRITICAL: Backend returned 0 leads - check backend sync and CORS', "error", "SWR");
       }
-      return res.json();
-    }), 
-    { 
-      refreshInterval: 10000, // Sync every 10 seconds instead of waiting
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-      onError: (error) => {
-        console.error('❌ SWR Error fetching leads:', error);
-        addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
-      },
-      onSuccess: (data) => {
-        console.log('✅ SWR Data received:', data);
-        console.log('✅ SWR Raw response type:', typeof data);
-        console.log('✅ SWR Response structure:', JSON.stringify(data, null, 2));
-        
-        // Check for JSON envelope issues
-        const leadsArray = data?.leads || data || [];
-        console.log('✅ SWR Leads count:', leadsArray.length);
-        console.log('✅ SWR Leads array type:', typeof leadsArray);
-        console.log('✅ SWR First lead sample:', leadsArray[0]);
-        
-        // CRITICAL: Log when leads.length === 0 to debug handshake issues
-        if (!leadsArray || leadsArray.length === 0) {
-          console.error('🚨 CRITICAL: SWR returned 0 leads - investigating handshake failure...');
-          console.error('🚨 SWR Response data:', JSON.stringify(data, null, 2));
-          console.error('🚨 SWR URL:', `${API_BASE}/leads`);
-          addLog('CRITICAL: Backend returned 0 leads - check backend sync and CORS', "error", "SWR");
-        }
-      },
-      // Add cache busting and error recovery
-      errorRetryCount: 3,
-      errorRetryInterval: 5000,
-      dedupingInterval: 10000,
-      refreshWhenOffline: false
-    }
-  );
+    },
+    // Add cache busting and error recovery
+    errorRetryCount: 3,
+    errorRetryInterval: 5000,
+    dedupingInterval: 10000,
+    refreshWhenOffline: false
+  });
 
-  const { data: swrStats, mutate: mutateStats } = useSWR(`${API_BASE}/corridor-stats`, 
-    (url: string) => fetch(url).then(res => res.json()), 
-    { 
+  const { data: swrStats, mutate: mutateStats } = useSWR('/corridor-stats', fetcher, { 
       refreshInterval: 10000, // Sync every 10 seconds instead of waiting
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
