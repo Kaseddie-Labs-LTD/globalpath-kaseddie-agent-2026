@@ -1742,9 +1742,11 @@ async def debug_collection():
                 "sample_data": sample_result[0][:2] if sample_result[0] else []
             }
         except Exception as e:
-            print(f"❌ [DEBUG]: Could not access collection: {e}")
+            print(f" [DEBUG]: Could not access collection: {e}")
             return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
-        print(f"❌ [DEBUG]: Error in debug endpoint: {e}")
+        
+    except Exception as e:
+        print(f" [DEBUG]: Error in debug endpoint: {e}")
         return {"error": str(e), "collection_name": COLLECTION_NAME}
 
 
