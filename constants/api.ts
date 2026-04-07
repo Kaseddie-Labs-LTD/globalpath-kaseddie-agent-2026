@@ -2,10 +2,10 @@
 // Detect if we are in production (on Render) or local development
 const isProd = import.meta.env.PROD;
 const BACKEND_URL = isProd 
-  ? 'https://globalpath-kaseddie-agent-2026-1.onrender.com/api' // Production Backend
+  ? 'https://globalpath-kaseddie-agent-2026.onrender.com/api' // Production Backend
   : '/api'; // Local Proxy
 
-export const API_BASE = import.meta.env.VITE_API_URL || "https://globalpath-kaseddie-agent-2026-1.onrender.com";
+export const API_BASE = import.meta.env.VITE_API_URL || "https://globalpath-kaseddie-agent-2026.onrender.com";
 
 // Fetcher function for SWR that automatically adds API prefix
 export const fetcher = async (url: string, options?: RequestInit) => {
