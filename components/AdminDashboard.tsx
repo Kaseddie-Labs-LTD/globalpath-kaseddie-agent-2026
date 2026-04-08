@@ -690,7 +690,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
         {/* Right Column (span-4): Vetted Batches (INTERACTIVE) */}
         <div className="col-span-12 lg:col-span-4 space-y-6">
-           <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} />
+           {/* Safety check: Ensure hrJobs exists before passing to SearchSummary */}
+           {hrJobs && Array.isArray(hrJobs) ? (
+             <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} />
+           ) : (
+             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+               <p className="text-yellow-800">Loading jobs data...</p>
+             </div>
+           )}
            
            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
               <h3 className="font-black text-slate-800 flex items-center gap-3 text-sm uppercase tracking-widest mb-6">
