@@ -1,6 +1,7 @@
 import { Job, SafetyReport, B2BPitch, VerificationReport } from "../types";
 import { doJSONCompletion, doTextCompletion } from "./doClient";
 import * as gemini from "./gemini";
+import { API_BASE } from "../constants/api";
 
 const brandBlue = '#031B4E';
 const brandGold = '#EAB308';
@@ -101,6 +102,32 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
   const title = String(job.title || '').trim();
   const company = String(job.company || '').trim();
   const location = String(job.location || '').trim();
+  
+  // Try API first, fallback to local generation
+  try {
+    const response = await fetch(`${API_BASE}/api/generate-proposal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        company,
+        location,
+        category: job.category,
+        salary: job.salary
+      })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.proposal) {
+        return data.proposal;
+      }
+    }
+  } catch (error) {
+    console.warn('API generate-proposal failed, using fallback:', error);
+  }
+  
+  // Fallback to local generation
   if (!hasDOCreds()) {
     const fb = await gemini.generateFineTunedPitch(job, '');
     const withContacts = /\bWhatsApp:/i.test(fb)
@@ -108,6 +135,7 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
       : [fb, '', 'WhatsApp: +256 784428821 / +256 756824859', 'Email: hr@globalpathkaseddieagent.com'].join('\n');
     return withContacts;
   }
+  
   const system = 'You are Kaseddie Hunter at GlobalPath. Write high-conversion B2B proposals in a professional, ethical tone focused on our vetted Ugandan workforce.';
   const user = [
     `Access the GlobalPath Knowledge Base to draft a B2B proposal for ${title}.`,

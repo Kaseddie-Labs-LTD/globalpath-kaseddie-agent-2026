@@ -3,6 +3,7 @@ import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker, Line } fr
 import { ShieldCheck, Plane, Info, ExternalLink, Globe2, RefreshCw, Loader2, Sparkles, Activity, Users, Zap, X } from 'lucide-react';
 import { fetchGlobalPulseData } from '../services/ai';
 import { getJobLocationString } from '../types';
+import { getCoordinates, getAllCoordinates } from '../utils/geoCoordinates';
 
 const geoUrl = "https://raw.githubusercontent.com/lotusms/world-map-data/master/world.json";
 
@@ -14,6 +15,7 @@ interface CountryStats {
   protectionRating: 'High' | 'Medium' | 'Low';
   status: 'stable' | 'changing' | 'restricted';
   notes: string;
+  nodeCount?: number; // Actual node count from jobs array
 }
 
 const initialPulseData: Record<string, CountryStats> = {
@@ -57,6 +59,44 @@ export const GlobalPulseMap: React.FC<{
         setGeoLoading(false);
       });
   }, []);
+
+  // Process jobs array to calculate actual node counts
+  useEffect(() => {
+    if (jobs && jobs.length > 0) {
+      const jobCoordinates = getAllCoordinates(jobs.map(job => getJobLocationString(job.location)));
+      const regionCounts: Record<string, number> = {};
+      
+      jobCoordinates.forEach(coord => {
+        const region = mapCountryToRegion(coord.country);
+        regionCounts[region] = (regionCounts[region] || 0) + 1;
+      });
+      
+      // Update pulseData with actual node counts
+      setPulseData(prev => {
+        const updated = { ...prev };
+        Object.entries(regionCounts).forEach(([region, count]) => {
+          // Find countries in this region
+          const countries = Object.entries(prev).filter(([countryId, data]: [string, CountryStats]) => {
+            const mappedRegion = mapCountryToRegion(countryId);
+            return mappedRegion === region;
+          });
+          
+          countries.forEach(([countryId, countryData]) => {
+            if (updated[countryId]) {
+              updated[countryId] = {
+                ...updated[countryId],
+                // Add actual node count to the data
+                nodeCount: count
+              };
+            }
+          });
+        });
+        return updated;
+      });
+      
+      addLog?.(`SAFETY MAP: Processed ${jobs.length} leads, updated node counts for ${Object.keys(regionCounts).length} regions`, "success");
+    }
+  }, [jobs, addLog]);
 
   const getCountryColor = (countryId: string) => {
     const data = pulseData[countryId];
@@ -156,7 +196,7 @@ export const GlobalPulseMap: React.FC<{
             >
               <span className="text-[10px] font-black uppercase tracking-widest">Dubai Hub</span>
               <span className="px-2 py-1 rounded bg-white/10 text-[10px] font-black uppercase tracking-widest">
-                {(regionJobCounts?.['GCC Corridor']?.total ?? 0)} Nodes
+                {pulseData['ARE']?.nodeCount ?? (regionJobCounts?.['GCC Corridor']?.total ?? 0)} Nodes
               </span>
             </button>
             {loading && (
@@ -411,11 +451,11 @@ export const GlobalPulseMap: React.FC<{
                <div className="text-white/80 text-[10px] font-bold uppercase tracking-widest">Western Corridor Growth</div>
              </div>
              <div className="text-[10px] bg-black/20 p-3 rounded-xl border border-white/10 leading-relaxed font-medium">
-               {(regionJobCounts?.['Western Corridor']?.total ?? 0) > 0 ? (
-                 `Agent scan detected ${regionJobCounts?.['Western Corridor']?.total} active nodes in Poland/EU. Professional demand up 24%.`
-               ) : (
-                 "Poland Node: 88% Worker Protection rating. Surge in logistics and IT roles detected. Ready for immediate vetting."
-               )}
+               {pulseData['POL']?.nodeCount ?? (regionJobCounts?.['Western Corridor']?.total ?? 0) > 0 ? (
+                `Agent scan detected ${pulseData['POL']?.nodeCount ?? regionJobCounts?.['Western Corridor']?.total} active nodes in Poland/EU. Professional demand up 24%.`
+              ) : (
+                "Poland Node: 88% Worker Protection rating. Surge in logistics and IT roles detected. Ready for immediate vetting."
+              )}
              </div>
           </div>
         </div>
