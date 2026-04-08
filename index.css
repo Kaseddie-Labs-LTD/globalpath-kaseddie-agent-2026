@@ -15,7 +15,7 @@
 
   /* Fixes the white-on-white text in the HR Console and Admin inputs */
   input, textarea, select {
-    background-color: rgba(15, 23, 42, 0.5);
+    background-color: rgba(118, 158, 250, 0.5);
     border-color: rgb(51, 65, 85);
     color: rgb(34, 211, 238);
     caret-color: rgb(34, 211, 238);

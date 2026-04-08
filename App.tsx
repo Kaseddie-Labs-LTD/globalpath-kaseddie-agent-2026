@@ -18,6 +18,7 @@ import { HRPortal } from './components/HRPortal';
 import { AdminSecurityGate } from './components/AdminSecurityGate';
 import { B2BPitchModal } from './components/B2BPitchModal';
 import { B2BPitchGenerator } from './components/B2BPitchGenerator';
+import { StatsCard, FeesBlockedCard } from './components/StatsCard';
 import KaseddieChat from './components/KaseddieChat';
 import { GlobalPulseMap } from './components/GlobalPulseMap';
 import { VideoGenerator } from './components/VideoGenerator';
@@ -796,7 +797,7 @@ function App() {
               <Globe className="text-brand-500" size={24} />
               <h1 className="text-lg font-black tracking-tight">Kaseddie Agent</h1>
             </div>
-            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none">GlobalPath Autonomous Hub</p>
+            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none">GlobalPath • Ethical AI Infrastructure</p>
         </div>
         <nav className="p-4 space-y-2">
           {(!isGatekeeperMode ? [
@@ -874,7 +875,7 @@ function App() {
           )}
            <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-500" size={48} /></div>}>
             {view === AppView.DASHBOARD && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn">
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fadeIn">
                 <div className="space-y-6">
                   <SearchSummary 
                 jobs={jobs} 
@@ -892,6 +893,13 @@ function App() {
                 </div>
                 <div>
                   <EnrollmentForm onEnroll={handleEnroll} initialLogisticsNeeds={enrollmentInterestJob?.title || ''} />
+                </div>
+                <div>
+                  {/* Fees Blocked Counter */}
+                  <FeesBlockedCard 
+                    flaggedLeadsCount={(logs || []).length} 
+                    totalLeadsCount={(jobs || []).length} 
+                  />
                 </div>
               </div>
             )}
@@ -1062,11 +1070,11 @@ function App() {
             <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md p-6">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-black text-slate-900">About GlobalPath</h3>
-                <button onClick={() => setShowAbout(false)} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900">Close</button>
-              </div>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                GlobalPath connects Stage 4 vetted Ugandan talent to verified employers across GCC and Europe, enforcing a strict Zero-Fee mandate.
-              </p>
+              <button onClick={() => setShowAbout(false)} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900">Close</button>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              GlobalPath provides Ethical AI Infrastructure for connecting Stage 4 vetted Ugandan talent to verified employers across GCC and Europe, enforcing a strict Zero-Fee mandate.
+            </p>
             </div>
           </div>
         )}
@@ -1099,7 +1107,7 @@ function App() {
 
         <footer className="border-t border-white/5 bg-black/20 backdrop-blur-md px-6 py-4">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">GlobalPath • Ethical Zero-Fee Recruitment</div>
+            <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">GlobalPath • Ethical AI Infrastructure</div>
             <div className="flex items-center gap-4">
               <button onClick={() => setShowAbout(true)} className="text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-white">About Us</button>
               <button onClick={() => setShowContact(true)} className="text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-white">Contact Us</button>
