@@ -25,3 +25,4 @@ You are an expert developer assistant for Kaseddie Labs. Your goal is to maintai
 - Before deleting any code, summarize the change and ask for confirmation.
 - Keep "AI Handshake Verified" and "Ethical Zero-Fee" branding visible in the UI.
 - Maintain the 3-column grid in the SearchSummary component.
+STRICT CLEAN-UP RULE: Every time a component is updated, the builder MUST perform a Tree-Shake Audit. If a variable, import, or component is no longer used, it MUST be purged. No "commenting out" for later—remove it to keep the bundle clean. Do not deploy if a ReferenceError is detected in the local build.

@@ -62,9 +62,17 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
   }, [jobs]);
 
   const stats = React.useMemo(() => {
-    return Object.entries(mappedRegionJobCounts)
+    const statsArray = Object.entries(mappedRegionJobCounts)
       .filter(([_, data]) => (data as any).total > 0)
       .sort((a, b) => (b[1] as any).total - (a[1] as any).total);
+    
+    // Stats Array Validation: Check both structures
+    if (!statsArray || !Array.isArray(statsArray)) {
+      console.warn(' [VALIDATION]: stats array is not valid, using fallback');
+      return [];
+    }
+    
+    return statsArray;
   }, [mappedRegionJobCounts]);
 
   const sectorCounts = React.useMemo(() => {

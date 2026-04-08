@@ -19,6 +19,7 @@ import { AdminSecurityGate } from './components/AdminSecurityGate';
 import { B2BPitchModal } from './components/B2BPitchModal';
 import { B2BPitchGenerator } from './components/B2BPitchGenerator';
 import { StatsCard, FeesBlockedCard } from './components/StatsCard';
+import { ErrorBoundary, NullGuard } from './components/ErrorBoundary';
 import KaseddieChat from './components/KaseddieChat';
 import { GlobalPulseMap } from './components/GlobalPulseMap';
 import { VideoGenerator } from './components/VideoGenerator';
@@ -403,7 +404,7 @@ function App() {
     refreshWhenOffline: false
   });
 
-  const { data: swrStats, mutate: mutateStats } = useSWR('/corridor-stats', fetcher, { 
+  const { data: swrStats, mutate: mutateStats } = useSWR('/api/corridor-stats', fetcher, { 
       refreshInterval: 10000, // Sync every 10 seconds instead of waiting
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
@@ -432,8 +433,8 @@ function App() {
       // Initial or Force Refresh Fallback
       if (!statsData || !leadsData) {
         const [sRes, lRes] = await Promise.all([
-          fetcher('/corridor-stats'),
-          fetcher('/leads')
+          fetcher('/api/corridor-stats'),
+          fetcher('/api/leads')
         ]);
         statsData = sRes;
         leadsData = lRes;
@@ -555,8 +556,14 @@ function App() {
   }, [swrStats, swrLeads, computeRegionLabelFromLocation]);
 
   const handleRefreshPulse = useCallback(async (forcedRegion?: string, forcedSector?: string, force = false) => {
-    console.log('🔄 [REFRESH]: Triggering pulse refresh - forcedRegion:', forcedRegion, 'forcedSector:', forcedSector, 'force:', force);
-    if (!force && (agentState !== 'IDLE' || isPending)) return;
+    console.log(' [REFRESH]: Triggering pulse refresh - forcedRegion:', forcedRegion, 'forcedSector:', forcedSector, 'force:', force);
+    
+    // shouldFetch guard: Stop recursive loops and prevent crashes
+    const shouldFetch = force || (agentState === 'IDLE' && !isPending && !serviceNotice);
+    if (!shouldFetch) {
+      console.log(' [GUARD]: Skipping refresh - conditions not met');
+      return;
+    }
     
     setAgentState('SCANNING_CORRIDORS');
     const targetRegion = forcedRegion || MARATHON_REGIONS[regionIndex];
@@ -761,12 +768,13 @@ function App() {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-screen bg-[#0f172a] overflow-hidden relative font-sans">
-      {/* Kaseddie Uplink Floating Window - positioned via CSS */}
-      <KaseddieChat />
-      
-      {/* Main Dashboard - Full Width */}
-      <div className="flex-1 flex flex-col">
+    <ErrorBoundary>
+      <div className="flex h-screen bg-[#0f172a] overflow-hidden relative font-sans">
+        {/* Kaseddie Uplink Floating Window - positioned via CSS */}
+        <KaseddieChat />
+        
+        {/* Main Dashboard - Full Width */}
+        <div className="flex-1 flex flex-col">
         {/* Uplink Overlay */}
       {isUplinking && (
         <div className="fixed inset-0 z-[1000] bg-slate-950/90 backdrop-blur-xl flex flex-col items-center justify-center animate-fadeIn">
@@ -1119,6 +1127,7 @@ function App() {
       </main>
       </div>
     </div>
+      </ErrorBoundary>
   );
 }
 
