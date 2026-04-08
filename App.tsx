@@ -1036,16 +1036,19 @@ function App() {
                   const res = await fetcher(sanitizeEndpoint(`search-leads?query=${encodeURIComponent(query)}`));
                   return res;
                 }}
-                onGenerateB2BPitch={async (title, company, salary) => {
+                onGenerateB2BPitch={async (title, company, salary, country, category) => {
                   try {
                     const requestBody = {
-                      job_title: title,
                       company: company,
-                      salary: salary,
+                      job_title: title,
+                      category: category || "Professional",
+                      salary: salary || "null",
+                      country: country || "",
+                      details: "High-priority node."
                     };
                     
                     // DEBUG: Log exactly what we're sending to API
-                    console.log('🚀 [API CALL] B2B Pitch Request:', requestBody);
+                    console.log('API CALL B2B Pitch Request:', requestBody);
                     
                     const response = await fetcher(sanitizeEndpoint('api/generate-proposal'), {
                       method: 'POST',
