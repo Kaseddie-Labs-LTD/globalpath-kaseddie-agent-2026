@@ -83,6 +83,15 @@ GlobalPath Outreach Command Center
       lastLeadId.current = selectedLead.id;
       const title = selectedLead.title || '';
       const comp = selectedLead.company || '';
+      
+      // DEBUG: Log what we're actually passing
+      console.log('🔍 [B2BPitchGenerator] Selected lead data:', {
+        id: selectedLead.id,
+        company: comp,
+        location: selectedLead.location,
+        title: title
+      });
+      
       // Initial null check for salary
       const sal = (selectedLead.salary || '').trim() === '' || selectedLead.salary === 'null'
         ? 'Competitive / To be discussed'
@@ -92,6 +101,7 @@ GlobalPath Outreach Command Center
       setCompany(comp);
       setSalary(sal);
       
+      // Auto-generate pitch when lead changes
       if (title && comp) {
         handleSubmit(title, comp, sal);
       }
