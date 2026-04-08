@@ -1,15 +1,22 @@
-
 import React, { useEffect, useState } from 'react';
-import { RecruitmentBatch, AgentLogEntry, Job, VendorPortal, getJobLocationString } from '../types';
+import { RecruitmentBatch, AgentLogEntry, Job, getJobLocationString } from '../types';
 import { 
   ShieldAlert, ShieldCheck, Users, Activity, 
   Lock, Zap, Globe, MapPin, DollarSign,
   Building2, Loader2, Terminal, ExternalLink, Plus, Share2, Check, ChevronRight, Sparkles, RefreshCw
 } from 'lucide-react';
 import { CorridorFeed } from './CorridorFeed';
-import { ComplianceDashboard } from '../src/components/ComplianceDashboard';
+import { SearchSummary } from './SearchSummary';
 import { API_BASE } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
+
+interface VendorPortal {
+  id: string;
+  name: string;
+  region: string;
+  status: string;
+  url: string;
+}
 
 interface AdminDashboardProps {
   logs: AgentLogEntry[];
