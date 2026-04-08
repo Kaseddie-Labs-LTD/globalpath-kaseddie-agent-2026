@@ -704,6 +704,7 @@ class ProposalRequest(BaseModel):
     category: Optional[str] = "Professional"
     salary: Optional[str] = "null"
     country: Optional[str] = ""
+    location: Optional[str] = ""
     details: Optional[str] = "High-priority node."
 
 class PromoRequest(BaseModel):

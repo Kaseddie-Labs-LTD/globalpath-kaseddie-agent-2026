@@ -1036,7 +1036,7 @@ function App() {
                   const res = await fetcher(sanitizeEndpoint(`search-leads?query=${encodeURIComponent(query)}`));
                   return res;
                 }}
-                onGenerateB2BPitch={async (title, company, salary, country, category) => {
+                onGenerateB2BPitch={async (title, company, salary, country, category, location) => {
                   try {
                     const requestBody = {
                       company: company,
@@ -1044,6 +1044,7 @@ function App() {
                       category: category || "Professional",
                       salary: salary || "null",
                       country: country || "",
+                      location: location || "",
                       details: "High-priority node."
                     };
                     

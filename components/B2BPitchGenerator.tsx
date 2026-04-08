@@ -3,7 +3,7 @@ import { Zap, Send, Loader2, Sparkles, Building2, Briefcase, Copy, Check, Dollar
 import { AgentLogEntry, Job } from '../types';
 
 interface B2BPitchGeneratorProps {
-  onGenerate: (title: string, company: string, salary?: string, country?: string, category?: string) => Promise<string>;
+  onGenerate: (title: string, company: string, salary?: string, country?: string, category?: string, location?: string) => Promise<string>;
   onLog?: (message: string, type: AgentLogEntry['type'], step?: string) => void;
   selectedLead?: Job | null;
 }
@@ -67,7 +67,8 @@ GlobalPath Outreach Command Center
         finalCompany, 
         finalSalary, 
         selectedLead?.country, 
-        selectedLead?.category
+        selectedLead?.category,
+        selectedLead?.location
       );
       setPitch(generatedPitch);
       onLog?.(`OUTREACH AGENT: Phi-3 refinement complete. Unified Pitch updated.`, "success", "OUTREACH");
