@@ -98,6 +98,23 @@ export const GlobalPulseMap: React.FC<{
     }
   }, [jobs, addLog]);
 
+  // Real-Time Professional Mapping: Global Density Heatmap
+  const calculateGlobalDensity = (leads: import('../types').Job[]) => {
+    return leads.reduce((acc: Record<string, number>, job) => {
+      const locationData = getCoordinates(getJobLocationString(job.location));
+      if (locationData) {
+        const key = `${locationData.coordinates.lat.toFixed(1)},${locationData.coordinates.lng.toFixed(1)}`; 
+        acc[key] = (acc[key] || 0) + 1;
+      }
+      return acc;
+    }, {});
+  };
+
+  // Get global density for heatmap visualization
+  const globalDensity = React.useMemo(() => {
+    return calculateGlobalDensity(jobs || []);
+  }, [jobs]);
+
   const getCountryColor = (countryId: string) => {
     const data = pulseData[countryId];
     if (!data) return "#f1f5f9";
@@ -116,6 +133,15 @@ export const GlobalPulseMap: React.FC<{
     if (k === 'GBR') return 'UK-Northern Corridor';
     if (['POL', 'CAN', 'USA', 'FRA', 'NLD', 'TUR'].includes(k)) return 'Western Corridor';
     return 'Global Corridor';
+  };
+
+  // Fuzzy Matcher for Dubai Hub - Fix data mapping mismatch
+  const getDubaiHubCount = () => {
+    const dubaiVariants = ['dubai', 'uae', 'united arab emirates', 'abu dhabi', 'sharjah', 'ajman'];
+    return jobs.filter(job => {
+      const location = getJobLocationString(job.location).toLowerCase();
+      return dubaiVariants.some(variant => location.includes(variant));
+    }).length;
   };
 
   const handleRefreshPulse = async () => {
@@ -196,7 +222,7 @@ export const GlobalPulseMap: React.FC<{
             >
               <span className="text-[10px] font-black uppercase tracking-widest">Dubai Hub</span>
               <span className="px-2 py-1 rounded bg-white/10 text-[10px] font-black uppercase tracking-widest">
-                {pulseData['ARE']?.nodeCount ?? (regionJobCounts?.['GCC Corridor']?.total ?? 0)} Nodes
+                {getDubaiHubCount()} Nodes
               </span>
             </button>
             {loading && (
@@ -288,45 +314,74 @@ export const GlobalPulseMap: React.FC<{
                 className="animate-pulse opacity-50"
               />
 
-              {/* Dynamic Job Markers with Neon Pulse */}
-              {jobs.filter(j => j.lat && j.lng).map((job, idx) => (
-                <Marker key={`${job.id}-${idx}`} coordinates={[job.lng!, job.lat!]}>
-                  <g className="animate-pulse">
-                    {/* Core Marker */}
-                    <circle r={2.5} fill={job.category === 'blue_collar' ? '#10b981' : '#38bdf8'} />
-                    
-                    {/* Multiple Pulse Layers for Neon Effect */}
-                    <circle 
-                      r={6} 
-                      fill="none" 
-                      stroke={job.category === 'blue_collar' ? '#10b981' : '#38bdf8'} 
-                      strokeWidth={1} 
-                      className="animate-ping opacity-40" 
-                    />
-                    <circle 
-                      r={12} 
-                      fill="none" 
-                      stroke={job.category === 'blue_collar' ? '#10b981' : '#38bdf8'} 
-                      strokeWidth={0.5} 
-                      className="animate-pulse opacity-20" 
-                    />
-                    
-                    {/* Static Glow */}
-                    <circle 
-                      r={4} 
-                      fill={job.category === 'blue_collar' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.3)'} 
-                      className="blur-[2px]"
-                    />
-                  </g>
-                </Marker>
-              ))}
+              {/* Dynamic Job Markers with Neon Pulse - Active & Ghost Nodes */}
+              {jobs.filter(j => j.lat && j.lng).map((job, idx) => {
+                const locationData = getCoordinates(getJobLocationString(job.location));
+                const isActiveNode = locationData && (
+                  locationData.country === 'Luxembourg' || 
+                  locationData.country === 'Poland' || 
+                  locationData.country === 'Germany' || 
+                  locationData.country === 'Canada'
+                );
+                
+                return (
+                  <Marker key={`${job.id}-${idx}`} coordinates={[job.lng!, job.lat!]}>
+                    <g className="animate-pulse">
+                      {/* Core Marker */}
+                      <circle 
+                        r={2.5} 
+                        fill={isActiveNode 
+                          ? (job.category === 'blue_collar' ? '#10b981' : '#38bdf8') 
+                          : '#64748b' // Grey for Ghost Nodes
+                        } 
+                      />
+                      
+                      {/* Multiple Pulse Layers for Neon Effect */}
+                      <circle 
+                        r={6} 
+                        fill="none" 
+                        stroke={isActiveNode 
+                          ? (job.category === 'blue_collar' ? '#10b981' : '#38bdf8') 
+                          : '#64748b'
+                        } 
+                        strokeWidth={1} 
+                        className="animate-ping opacity-40" 
+                      />
+                      <circle 
+                        r={12} 
+                        fill="none" 
+                        stroke={isActiveNode 
+                          ? (job.category === 'blue_collar' ? '#10b981' : '#38bdf8') 
+                          : '#64748b'
+                        } 
+                        strokeWidth={0.5} 
+                        className="animate-pulse opacity-20" 
+                      />
+                      
+                      {/* Static Glow */}
+                      <circle 
+                        r={4} 
+                        fill={isActiveNode 
+                          ? (job.category === 'blue_collar' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.3)') 
+                          : 'rgba(100, 116, 139, 0.3)' // Grey glow for Ghost Nodes
+                        } 
+                        className="blur-[2px]"
+                      />
+                    </g>
+                  </Marker>
+                );
+              })}
             </ZoomableGroup>
           </ComposableMap>
 
           <div className="absolute bottom-6 right-6 flex flex-col gap-2 z-10">
               <div className="flex items-center gap-3 bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/10">
                   <div className="w-4 h-4 rounded-full bg-emerald-500"></div>
-                  <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">Legal Protection High</span>
+                  <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">Active Nodes (Verified)</span>
+              </div>
+              <div className="flex items-center gap-3 bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/10">
+                  <div className="w-4 h-4 rounded-full bg-slate-500"></div>
+                  <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">Discovery Nodes (Emerging)</span>
               </div>
               <div className="flex items-center gap-3 bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/10">
                   <div className="w-4 h-4 rounded-full bg-amber-500"></div>
