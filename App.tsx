@@ -31,7 +31,7 @@ import ComplianceDashboard from './src/components/ComplianceDashboard';
 import { analyzeJobSafety, verifyDocument, generateB2BPitch, enhanceJobDescription, summarizeJobRequirements } from './services/ai';
 import { fetchGlobalJobs, fetchLuxembourgLeads } from './services/apify';
 import { UserProfile, Job, AgentLogEntry, AppView, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
-import { API_BASE, fetcher } from './constants/api';
+import { API_BASE, fetcher, sanitizeEndpoint } from './constants/api';
 
 const KASEDDIE_SIGNATURE = "GlobalPath Kaseddie Agent";
 const ADMIN_PRIMARY = "+256784428821";
@@ -404,7 +404,7 @@ function App() {
     refreshWhenOffline: false
   });
 
-  const { data: swrStats, mutate: mutateStats } = useSWR(`${API_BASE}/corridor-stats`, fetcher, { 
+  const { data: swrStats, mutate: mutateStats } = useSWR(sanitizeEndpoint('corridor-stats'), fetcher, { 
       refreshInterval: 10000, // Sync every 10 seconds instead of waiting
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
@@ -433,8 +433,8 @@ function App() {
       // Initial or Force Refresh Fallback
       if (!statsData || !leadsData) {
         const [sRes, lRes] = await Promise.all([
-          fetcher(`${API_BASE}/corridor-stats`),
-          fetcher(`${API_BASE}/leads`)
+          fetcher(sanitizeEndpoint('corridor-stats')),
+          fetcher(sanitizeEndpoint('leads'))
         ]);
         statsData = sRes;
         leadsData = lRes;
@@ -579,7 +579,7 @@ function App() {
     
     try {
       // 1. Trigger Backend Sync (Apify -> Qdrant) - Now returns immediately
-      const syncRes = await fetcher('/sync-apify-leads', { method: 'POST' });
+      const syncRes = await fetcher(sanitizeEndpoint('sync-apify-leads'), { method: 'POST' });
       const syncData = await syncRes.json();
       
       if (syncData.status === 'Accepted') {
@@ -1033,12 +1033,12 @@ function App() {
                   setView(AppView.CHAT);
                 }}
                 onSearchLeads={async (query) => {
-                  const res = await fetcher(`/search-leads?query=${encodeURIComponent(query)}`);
+                  const res = await fetcher(sanitizeEndpoint(`search-leads?query=${encodeURIComponent(query)}`));
                   return res;
                 }}
                 onGenerateB2BPitch={async (title, company, salary) => {
                   try {
-                    const response = await fetcher(`${API_BASE}/api/generate-proposal`, {
+                    const response = await fetcher(sanitizeEndpoint('api/generate-proposal'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({

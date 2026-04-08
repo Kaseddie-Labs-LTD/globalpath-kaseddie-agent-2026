@@ -5,7 +5,17 @@ const BACKEND_URL = isProd
   ? 'https://globalpath-kaseddie-agent-2026.onrender.com/api' // Production Backend
   : '/api'; // Local Proxy
 
-export const API_BASE = import.meta.env.VITE_API_URL || "https://globalpath-kaseddie-agent-2026.onrender.com";
+export const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+// Sanitize endpoint to prevent URL duplication
+export const sanitizeEndpoint = (endpoint: string): string => {
+  // Remove any hardcoded production URLs
+  const cleanEndpoint = endpoint.replace(/https:\/\/[^\/]+/g, '');
+  // Remove any leading /api/ to prevent duplication
+  const noApiPrefix = cleanEndpoint.replace(/^\/api\//, '');
+  // Ensure single leading slash
+  return noApiPrefix.startsWith('/') ? noApiPrefix : `/${noApiPrefix}`;
+};
 
 // Fetcher function for SWR that automatically adds API prefix
 export const fetcher = async (url: string, options?: RequestInit) => {
