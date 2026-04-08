@@ -1040,7 +1040,7 @@ function App() {
                   try {
                     const requestBody = {
                       company: company,
-                      job_title: title,
+                      job_title: title,  // Backend expects 'job_title', not 'title'
                       category: category || "Professional",
                       salary: salary || "null",
                       country: country || "",

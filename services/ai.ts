@@ -109,9 +109,9 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title,
-        company,
-        location,
+        job_title: title,        // Backend expects 'job_title'
+        company: company,
+        location: location,
         category: job.category,
         salary: job.salary
       })
