@@ -1038,14 +1038,19 @@ function App() {
                 }}
                 onGenerateB2BPitch={async (title, company, salary) => {
                   try {
+                    const requestBody = {
+                      job_title: title,
+                      company: company,
+                      salary: salary,
+                    };
+                    
+                    // DEBUG: Log exactly what we're sending to API
+                    console.log('🚀 [API CALL] B2B Pitch Request:', requestBody);
+                    
                     const response = await fetcher(sanitizeEndpoint('api/generate-proposal'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        job_title: title,
-                        company: company,
-                        salary: salary,
-                      })
+                      body: JSON.stringify(requestBody)
                     });
                     const data = response;
                     return data.pitch || "Failed to generate proposal.";
