@@ -1,6 +1,8 @@
 // Trust Intelligence Engine - Disruptor system for job safety validation
 // Calculates trust scores for jobs in Poland, Dubai, and other corridors
 
+import React from 'react';
+
 export interface TrustScore {
   score: number;
   level: 'HIGH' | 'MEDIUM' | 'CAUTION';
