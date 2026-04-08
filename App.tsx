@@ -404,7 +404,7 @@ function App() {
     refreshWhenOffline: false
   });
 
-  const { data: swrStats, mutate: mutateStats } = useSWR('/api/corridor-stats', fetcher, { 
+  const { data: swrStats, mutate: mutateStats } = useSWR(`${API_BASE}/corridor-stats`, fetcher, { 
       refreshInterval: 10000, // Sync every 10 seconds instead of waiting
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
@@ -433,8 +433,8 @@ function App() {
       // Initial or Force Refresh Fallback
       if (!statsData || !leadsData) {
         const [sRes, lRes] = await Promise.all([
-          fetcher('/api/corridor-stats'),
-          fetcher('/api/leads')
+          fetcher(`${API_BASE}/corridor-stats`),
+          fetcher(`${API_BASE}/leads`)
         ]);
         statsData = sRes;
         leadsData = lRes;
@@ -1038,7 +1038,7 @@ function App() {
                 }}
                 onGenerateB2BPitch={async (title, company, salary) => {
                   try {
-                    const response = await fetcher('/api/generate-proposal', {
+                    const response = await fetcher(`${API_BASE}/api/generate-proposal`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
