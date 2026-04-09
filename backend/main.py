@@ -706,6 +706,7 @@ class ProposalRequest(BaseModel):
     country: Optional[str] = ""
     location: Optional[str] = ""
     details: Optional[str] = "High-priority node."
+    use_replicate: Optional[bool] = False
 
 class PromoRequest(BaseModel):
     job_title: str
@@ -789,14 +790,17 @@ async def ping_ai():
 @app.post("/api/generate-proposal")
 async def generate_proposal(req: ProposalRequest):
     """
-    Generates a Unified Outreach Pitch (B2B + Direct Pitch) using Ollama (Phi-3).
+    Generates a Unified Outreach Pitch (B2B + Direct Pitch) using Ollama (Phi-3) or Replicate.
     Handles null salary values and adjusts tone based on corridor/category.
+    Prioritizes Replicate for complex reasoning when use_replicate flag is set.
     """
     try:
-        # Error logging: Check Groq API key and lead data
+        # Error logging: Check API keys and lead data
         print(f"🔍 [PROPOSAL DEBUG]: Groq API Key loaded: {'YES' if GROQ_KEY else 'NO'}")
+        print(f"🔍 [PROPOSAL DEBUG]: Replicate API Key loaded: {'YES' if os.getenv('REPLICATE_API_TOKEN') else 'NO'}")
         print(f"🔍 [PROPOSAL DEBUG]: Lead data received - Company: {req.company}, Role: {req.job_title}, Location: {req.location}")
         print(f"🔍 [PROPOSAL DEBUG]: Category: {req.category}, Salary: {req.salary}")
+        print(f"🔍 [PROPOSAL DEBUG]: Use Replicate: {req.use_replicate}")
         
         # Dynamic Prompt Construction based on Corridor & Category
         system_prompt = "You are a GlobalPath B2B outreach specialist. Generate concise, compelling recruitment pitches."

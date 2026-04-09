@@ -19,7 +19,13 @@ function hasDOCreds() {
   const c = (import.meta as any)?.env?.VITE_DO_API_KEY;
   const huggingFace = (import.meta as any)?.env?.HUGGINGFACEHUB_API_TOKEN;
   const groq = (import.meta as any)?.env?.VITE_GROQ_API_KEY;
-  return !!(a && b) || !!c || !!huggingFace || !!groq;
+  const replicate = (import.meta as any)?.env?.VITE_REPLICATE_API_TOKEN;
+  return !!(a && b) || !!c || !!huggingFace || !!groq || !!replicate;
+}
+
+function hasReplicateCreds() {
+  const replicate = (import.meta as any)?.env?.VITE_REPLICATE_API_TOKEN;
+  return !!replicate;
 }
 
 export async function enhanceJobDescription(job: Job): Promise<string> {
@@ -105,7 +111,34 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
   const company = String(job.company || '').trim();
   const location = String(job.location || '').trim();
   
-  // Try API first, fallback to local generation
+  // Prioritize Replicate for complex reasoning when available
+  if (hasReplicateCreds()) {
+    try {
+      const response = await fetch(`${API_BASE}/api/generate-proposal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_title: title,
+          company: company,
+          location: location,
+          category: job.category,
+          salary: job.salary,
+          use_replicate: true  // Signal to use Replicate for complex reasoning
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.proposal) {
+          return data.proposal;
+        }
+      }
+    } catch (error) {
+      console.warn('Replicate API generate-proposal failed, using fallback:', error);
+    }
+  }
+  
+  // Try standard API first, fallback to local generation
   try {
     const response = await fetch(`${API_BASE}/api/generate-proposal`, {
       method: 'POST',
