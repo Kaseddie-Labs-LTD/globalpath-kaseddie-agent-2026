@@ -221,9 +221,6 @@ async def sync_apify_leads(background_tasks: BackgroundTasks):
         "details": "The Hub is now rotating sectors. Leads will appear as they are processed."
     }
 
-# Mount the API router with /api prefix
-app.mount("/api", api_router)
-
 # CORS configuration: Allow all origins for agent connection
 app.add_middleware(
     CORSMiddleware,
@@ -757,6 +754,25 @@ async def debug_environment():
         "groq_client_initialized": groq_client is not None,
         "python_path": os.path.abspath(__file__),
         "working_directory": os.getcwd()
+    }
+
+@api_router.get("/debug-routes")
+async def debug_routes():
+    """
+    Debug endpoint to list all registered routes.
+    Used to verify API router is properly registered.
+    """
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'methods') and hasattr(route, 'path'):
+            routes.append({
+                "path": route.path,
+                "methods": list(route.methods),
+                "name": getattr(route, 'name', 'unknown')
+            })
+    return {
+        "total_routes": len(routes),
+        "routes": routes
     }
 
 @api_router.get("/ping")
