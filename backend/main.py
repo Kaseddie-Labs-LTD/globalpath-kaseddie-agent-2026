@@ -682,10 +682,17 @@ def ensure_collection_exists():
     except Exception as e:
         print(f" Error checking/creating collection: {e}")
 
-# CORS configuration: Targeted for dev server stability
+# CORS configuration: Targeted for Render deployment and dev server stability
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://globalpath-kaseddie-agent-2026.onrender.com",
+        "https://globalpath-kaseddie-agent-2026-1.onrender.com",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -801,6 +808,14 @@ async def generate_proposal(req: ProposalRequest):
         print(f"🔍 [PROPOSAL DEBUG]: Lead data received - Company: {req.company}, Role: {req.job_title}, Location: {req.location}")
         print(f"🔍 [PROPOSAL DEBUG]: Category: {req.category}, Salary: {req.salary}")
         print(f"🔍 [PROPOSAL DEBUG]: Use Replicate: {req.use_replicate}")
+        
+        # Text Pre-Processor: Sanitize and truncate large details to prevent timeouts
+        raw_details = req.details or ""
+        sanitized_details = raw_details[:2000] if len(raw_details) > 2000 else raw_details
+        print(f"🔍 [PROPOSAL DEBUG]: Details sanitized - Original length: {len(raw_details)}, Sanitized length: {len(sanitized_details)}")
+        
+        # Update request with sanitized details
+        req.details = sanitized_details
         
         # Dynamic Prompt Construction based on Corridor & Category
         system_prompt = "You are a GlobalPath B2B outreach specialist. Generate concise, compelling recruitment pitches."
