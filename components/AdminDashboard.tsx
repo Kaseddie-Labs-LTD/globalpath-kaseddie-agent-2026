@@ -681,7 +681,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
             <MarketingEngine 
               selectedJob={selectedJob}
               onGenerateMarketing={async (job) => {
-                const response = await fetch(`${API_BASE}/api/generate-marketing`, {
+                const response = await fetch(`${API_BASE}/generate-marketing`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({

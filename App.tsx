@@ -1051,7 +1051,7 @@ function App() {
                     // DEBUG: Log exactly what we're sending to API
                     console.log('API CALL B2B Pitch Request:', requestBody);
                     
-                    const response = await fetcher(sanitizeEndpoint('api/generate-proposal'), {
+                    const response = await fetcher(sanitizeEndpoint('generate-proposal'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(requestBody)
