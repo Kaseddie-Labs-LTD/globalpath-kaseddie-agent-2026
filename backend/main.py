@@ -81,7 +81,7 @@ app = FastAPI(
 api_router = APIRouter(prefix="/api")
 
 # Move all API routes to the API router
-@app.get("/leads")
+@api_router.get("/leads")
 async def get_all_leads(limit: int = 1000):
     """
     Returns the most recent leads from Qdrant.
