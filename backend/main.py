@@ -735,9 +735,6 @@ async def get_tts(text: str = Query(...), voice: str = "en-US-EmmaMultilingualNe
         print(f"Edge-TTS failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Include the router in the app (above root route for Uvicorn lazy load fix)
-app.include_router(api_router)
-
 @app.get("/")
 async def root():
     return {"status": "online", "message": "GlobalPath Backend is running"}
@@ -1927,6 +1924,9 @@ async def force_verify_all_leads():
             "message": f"Failed to force verify leads: {str(e)}",
             "verified_count": 0
         }
+
+# 🎯 FINAL REGISTRATION: Capture all routes defined above
+app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn
