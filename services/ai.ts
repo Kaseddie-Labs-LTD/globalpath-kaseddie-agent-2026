@@ -114,7 +114,7 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
   // Prioritize Replicate for complex reasoning when available
   if (hasReplicateCreds()) {
     try {
-      const response = await fetch(`${API_BASE}/api/generate-proposal`, {
+      const response = await fetch(`${API_BASE}/generate-proposal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -140,7 +140,7 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
   
   // Try standard API first, fallback to local generation
   try {
-    const response = await fetch(`${API_BASE}/api/generate-proposal`, {
+    const response = await fetch(`${API_BASE}/generate-proposal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

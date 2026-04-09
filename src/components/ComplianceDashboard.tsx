@@ -57,11 +57,11 @@ const ComplianceDashboard: React.FC<ComplianceDashboardProps> = ({ jobs, onLog, 
     onLog?.(`SUMMON AGENT: Initializing Worker Lifecycle for ${job.title || 'Unknown Role'} at ${job.company || 'Unknown Company'}.`, "thinking", "LIFECYCLE");
     
     try {
-      // Call the /api/generate-proposal endpoint with extended timeout
+      // Call the /generate-proposal endpoint with extended timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
-      const response = await fetch(`${API_BASE}/api/generate-proposal`, {
+      const response = await fetch(`${API_BASE}/generate-proposal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
