@@ -1840,7 +1840,7 @@ async def test_agent():
             "message": str(e)
         }
 
-@app.post("/api/force-verify-all")
+@api_router.post("/force-verify-all")
 async def force_verify_all_leads():
     """
     Force verify all leads in the globalpath_leads collection.
@@ -1909,7 +1909,7 @@ async def force_verify_all_leads():
             "verified_count": 0
         }
 
-# Include the router in the app at the very bottom (after all routes are defined)
+# Include the router in the app (just after last decorator, before __main__)
 app.include_router(api_router)
 
 if __name__ == "__main__":
