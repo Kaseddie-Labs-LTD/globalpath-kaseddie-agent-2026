@@ -4,6 +4,7 @@ import useSWR from 'swr';
 import { Terminal, Activity, Globe, Zap, ShieldCheck, Search, Cpu } from 'lucide-react';
 import { fetchGlobalJobs, fetchLuxembourgLeads } from '../services/apify';
 import { Job, getJobLocationString } from '../types';
+import { fetcher } from '../constants/api';
 
 interface FeedItem {
   id: string;
@@ -47,13 +48,12 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
     return 'Global Corridor';
   };
 
-  const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080";
-  const { data: statsData } = useSWR(`${API_BASE}/corridor-stats`, 
-    (url: string) => fetch(url).then(res => res.json()),
-    { 
-      refreshInterval: 10000, 
+  const { data: statsData } = useSWR('/corridor-stats',
+    fetcher,
+    {
+      refreshInterval: 10000,
       revalidateOnFocus: false,
-      dedupingInterval: 5000 
+      dedupingInterval: 5000
     }
   );
 

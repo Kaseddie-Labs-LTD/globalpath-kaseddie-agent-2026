@@ -698,9 +698,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the router in the app (at the end as per sequence)
-app.include_router(api_router)
-
 # Lead Model
 class Lead(BaseModel):
     name: str
@@ -1911,6 +1908,9 @@ async def force_verify_all_leads():
             "message": f"Failed to force verify leads: {str(e)}",
             "verified_count": 0
         }
+
+# Include the router in the app at the very bottom (after all routes are defined)
+app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn
