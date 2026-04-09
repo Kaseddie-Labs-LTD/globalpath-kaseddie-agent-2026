@@ -38,7 +38,7 @@ os.environ["CREWAI_STORAGE_DIR"] = os.path.join(os.getcwd(), ".crewai")
 import uuid
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, APIRouter
 from fastapi.responses import FileResponse, StreamingResponse
 import edge_tts
 from fastapi.middleware.cors import CORSMiddleware
@@ -77,11 +77,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Create API router with proper prefix
-api_router = FastAPI()
-
 # Move all API routes to the API router
-@api_router.get("/leads")
+@app.get("/leads")
 async def get_all_leads(limit: int = 1000):
     """
     Returns the most recent leads from Qdrant.
@@ -698,6 +695,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Create API Router with /api prefix
+api_router = APIRouter(prefix="/api")
+
+# Include the router in the app
+app.include_router(api_router)
+
 # Lead Model
 class Lead(BaseModel):
     name: str
@@ -724,7 +727,7 @@ class PitchRefineRequest(BaseModel):
     location: str
     current_draft: Optional[str] = ""
 
-@app.get("/api/tts")
+@api_router.get("/tts")
 async def get_tts(text: str = Query(...), voice: str = "en-US-EmmaMultilingualNeural"):
     """
     Generates an MP3 using Edge-TTS for the provided text.
@@ -742,7 +745,7 @@ async def get_tts(text: str = Query(...), voice: str = "en-US-EmmaMultilingualNe
 async def root():
     return {"status": "online", "message": "GlobalPath Backend is running"}
 
-@app.get("/api/debug/env")
+@api_router.get("/debug/env")
 async def debug_environment():
     """
     Debug endpoint to show all environment variables
@@ -756,7 +759,7 @@ async def debug_environment():
         "working_directory": os.getcwd()
     }
 
-@app.get("/api/ping")
+@api_router.get("/ping")
 async def ping_ai():
     """
     Test AI connectivity and API key status
@@ -794,7 +797,7 @@ async def ping_ai():
         else:
             return {"status": "AI_ERROR", "message": f"Groq API error: {str(e)}"}
 
-@app.post("/api/generate-proposal")
+@api_router.post("/generate-proposal")
 async def generate_proposal(req: ProposalRequest):
     """
     Generates a Unified Outreach Pitch (B2B + Direct Pitch) using Ollama (Phi-3) or Replicate.
@@ -918,7 +921,7 @@ async def generate_proposal(req: ProposalRequest):
 class ChatRequest(BaseModel):
     message: str
 
-@app.post("/api/chat")
+@api_router.post("/chat")
 async def chat_with_groq(req: ChatRequest):
     """
     Kaseddie Uplink Chat endpoint using Groq API.
@@ -999,7 +1002,7 @@ async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
     except Exception as e:
         yield f"Error: {str(e)}"
 
-@app.post("/api/agent/chat")
+@api_router.post("/agent/chat")
 async def agent_chat_stream(req: AgentChatRequest):
     """
     Kaseddie AI Agent streaming chat endpoint using Llama-3.3-70b-versatile model.
@@ -1026,7 +1029,7 @@ async def agent_chat_stream(req: AgentChatRequest):
             media_type="text/plain"
         )
 
-@app.post("/api/generate-marketing")
+@api_router.post("/generate-marketing")
 async def generate_marketing(job_request: dict):
     """
     Generate marketing content for a verified job lead.
@@ -1094,7 +1097,7 @@ Format the response as clean text ready for WhatsApp.
         
         return {"marketing_content": fallback_content}
 
-@app.post("/api/generate-pitch")
+@api_router.post("/generate-pitch")
 async def generate_pitch(req: PitchRefineRequest):
     """
     Refines a B2B pitch using Ollama (Phi-3) for Luxembourg driver roles.
@@ -1148,7 +1151,7 @@ async def generate_pitch(req: PitchRefineRequest):
         # Return original draft if refinement fails
         return {"refined_pitch": req.current_draft or "Pitch refinement failed. Please try again."}
 
-@app.post("/api/generate-promo")
+@api_router.post("/generate-promo")
 async def generate_promo(req: PromoRequest):
     """
     Generates a Cyberpunk-style recruitment promo video.
@@ -1225,7 +1228,7 @@ async def ingest_lead(lead: Lead):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/search-leads")
+@api_router.get("/search-leads")
 async def search_leads(query: str = Query(..., description="The query to search for leads")):
     """
     Searches for the top 3 matching leads and summarizes them using the LLM.
@@ -1572,7 +1575,7 @@ async def run_async_enrichment(tasks):
     except Exception as e:
         print(f"❌ Error in async enrichment: {e}")
 
-@app.post("/api/sync-apify-leads")
+@api_router.post("/sync-apify-leads")
 async def sync_apify_leads(background_tasks: BackgroundTasks):
     """
     Syncs lead data from multiple Apify datasets and ingests it into Qdrant in the background.
