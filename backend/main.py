@@ -77,6 +77,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# INITIALIZE THE ROUTER (This must happen BEFORE any decorators use it)
+api_router = APIRouter(prefix="/api")
+
 # Move all API routes to the API router
 @app.get("/leads")
 async def get_all_leads(limit: int = 1000):
@@ -695,10 +698,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create API Router with /api prefix
-api_router = APIRouter(prefix="/api")
-
-# Include the router in the app
+# Include the router in the app (at the end as per sequence)
 app.include_router(api_router)
 
 # Lead Model
