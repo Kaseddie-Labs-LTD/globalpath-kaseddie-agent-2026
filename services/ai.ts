@@ -17,7 +17,9 @@ function hasDOCreds() {
   const a = (import.meta as any)?.env?.VITE_DO_AGENT_ENDPOINT;
   const b = (import.meta as any)?.env?.VITE_DO_AGENT_ACCESS_KEY;
   const c = (import.meta as any)?.env?.VITE_DO_API_KEY;
-  return !!(a && b) || !!c;
+  const huggingFace = (import.meta as any)?.env?.HUGGINGFACEHUB_API_TOKEN;
+  const groq = (import.meta as any)?.env?.VITE_GROQ_API_KEY;
+  return !!(a && b) || !!c || !!huggingFace || !!groq;
 }
 
 export async function enhanceJobDescription(job: Job): Promise<string> {

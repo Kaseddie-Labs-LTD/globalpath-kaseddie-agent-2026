@@ -101,8 +101,9 @@ export const LiveConsultant: React.FC<LiveConsultantProps> = ({ initialPrompt, o
         } else {
           setTranscriptionHistory(prev => [...prev, `AI: Unable to produce clean copy.`].slice(-10));
         }
-      } catch {
-        setTranscriptionHistory(prev => [...prev, `AI: Uplink error.`].slice(-10));
+      } catch (error) {
+        console.error('CHATBOT ERROR:', error);
+        setTranscriptionHistory(prev => [...prev, `AI: Uplink error - ${error}`].slice(-10));
       } finally {
         setIsTyping(false);
       }

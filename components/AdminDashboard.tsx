@@ -285,6 +285,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     onAddLog(`PITCH: Analyzing employer nodes for ${job.company}...`, 'thinking');
     try {
       if (onPitch) await onPitch(job);
+    } catch (error) {
+      console.error('PITCH ERROR:', error);
+      onAddLog(`PITCH ERROR: Failed to generate pitch for ${job.company} - ${error}`, 'error');
     } finally {
       // If we are uplinking, we want to keep the pitchingId set until we redirect
       if (!isUplinking) {
