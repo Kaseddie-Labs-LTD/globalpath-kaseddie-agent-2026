@@ -158,10 +158,13 @@ const INITIAL_PORTALS: VendorPortal[] = [
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, onAuditJob, onPitch, batches, setBatches, selectedBatch, setSelectedBatch, onAddLog, onExit, onNodeClick, onRefresh, isUplinking, mutateLeads }) => {
   // Helper function to determine category from multiple fields (matches App.tsx logic)
   const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'service_domestic' | 'general' => {
-    // Check category field first
+    // Check category field first with LOOSE MAPPING (case-insensitive, partial matches)
     if (job.category) {
       const cat = job.category.toLowerCase();
-      if (cat === 'professional' || cat === 'blue_collar') return cat;
+      // Loose mapping: handle various naming conventions
+      if (cat.includes('professional') || cat === 'professional') return 'professional';
+      if (cat.includes('blue') || cat.includes('collar') || cat === 'blue_collar') return 'blue_collar';
+      if (cat.includes('service') || cat.includes('domestic') || cat === 'service_domestic') return 'service_domestic';
     }
     
     // Enhanced categorization matching App.tsx logic

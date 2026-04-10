@@ -551,7 +551,11 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
     blue_collar_keywords = [
         'driver', 'cleaner', 'warehouse', 'maid', 'housemaid',
         'helper', 'butcher', 'shelf', 'merchandiser', 'housekeeper',
-        'care home', 'care assistant', 'support worker', 'logistics'
+    ]
+
+    domestic_keywords = [
+        'cleaner', 'housekeeper', 'maid', 'nanny', 'domestic', 
+        'janitor', 'caregiver', 'care assistant'
     ]
 
     # Refine category based on title content
@@ -560,6 +564,8 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         refined_category = "professional"
     elif any(kw in title.lower() for kw in blue_collar_keywords):
         refined_category = "blue_collar"
+    elif any(kw in title.lower() for kw in domestic_keywords):
+        refined_category = "service_domestic"
 
     # 3. Status Mapping
     status = "live"  # Set to "live" so frontend recognizes as active
