@@ -62,7 +62,7 @@ except Exception as e:
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Yield immediately so Uvicorn can finish starting the server
     # and bind to port without any delay.
-    print("Port 8080 is now open.")
+    print("Port 10000 is now open.")
     print("Lifespan: Yielding immediately for startup...")
     
     # We create the task AFTER the yield or just before, 
@@ -82,6 +82,16 @@ app = FastAPI(
     title="GlobalPath Kaseddie Agent API",
     lifespan=lifespan
 )
+
+@app.get("/")
+async def root():
+    """Health check endpoint for Render/Port-Checkers"""
+    return {
+        "status": "online",
+        "agent": "Kaseddie v4.5",
+        "timestamp": datetime.now().isoformat(),
+        "corridors": ["GCC", "EU", "Western", "UK"]
+    }
 
 # INITIALIZE THE ROUTER (This must happen BEFORE any decorators use it)
 api_router = APIRouter(prefix="/api")
@@ -2098,4 +2108,4 @@ app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get('PORT', 8080)))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get('PORT', 10000)))

@@ -6,7 +6,7 @@
 /* Custom base styles */
 @layer base {
   body {
-    background-color: #586bc0 !important;
+    background-color: #020617 !important; /* Deep Slate-950 for Cyberpunk Aesthetic */
     color: rgb(226 232 240);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -15,7 +15,7 @@
 
   /* Fixes the white-on-white text in the HR Console and Admin inputs */
   input, textarea, select {
-    background-color: rgba(118, 158, 250, 0.5);
+    background-color: rgba(15, 23, 42, 0.8); /* Slate-900 transparent */
     border-color: rgb(51, 65, 85);
     color: rgb(34, 211, 238);
     caret-color: rgb(34, 211, 238);

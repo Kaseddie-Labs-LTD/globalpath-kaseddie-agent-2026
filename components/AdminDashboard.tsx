@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { CorridorFeed } from './CorridorFeed';
 import { SearchSummary } from './SearchSummary';
-import { API_BASE } from '../constants/api';
+import { API_BASE, fetcher } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
 
 interface VendorPortal {

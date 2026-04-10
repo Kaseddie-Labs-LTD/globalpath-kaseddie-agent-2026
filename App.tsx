@@ -374,6 +374,7 @@ function App() {
     refreshInterval: 10000, // Sync every 10 seconds instead of waiting
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
+    keepPreviousData: true, // Prevents jobs from disappearing during re-validation
     onError: (error) => {
       console.error('❌ SWR Error fetching leads:', error);
       addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
