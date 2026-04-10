@@ -726,7 +726,7 @@ async def get_tts(text: str = Query(...), voice: str = "en-US-EmmaMultilingualNe
         print(f"Edge-TTS failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/")
+@api_router.get("/")
 async def root():
     return {"status": "online", "message": "GlobalPath Backend is running"}
 
@@ -1361,7 +1361,7 @@ async def generate_promo(req: PromoRequest):
         print(f"Media Engine Failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/ingest-lead")
+@api_router.post("/ingest-lead")
 async def ingest_lead(lead: Lead):
     """
     Ingests a lead: vectorizes data and stores it in Qdrant.
@@ -1768,7 +1768,7 @@ async def sync_apify_leads(background_tasks: BackgroundTasks):
         "details": "The Hub is now rotating sectors. Leads will appear as they are processed."
     }
 
-@app.post("/sync-apify-webhook")
+@api_router.post("/sync-apify-webhook")
 async def sync_apify_webhook(payload: dict, background_tasks: BackgroundTasks):
     """
     Webhook endpoint for Apify to ping when a batch is ready.
@@ -1780,7 +1780,7 @@ async def sync_apify_webhook(payload: dict, background_tasks: BackgroundTasks):
     
     return {"status": "Acknowledged"}
 
-@app.post("/clear-and-fresh-sync")
+@api_router.post("/clear-and-fresh-sync")
 async def clear_and_fresh_sync():
     """
     ⚠️ DANGER: This endpoint DELETES ALL DATA from the vault.
@@ -1832,7 +1832,7 @@ async def clear_and_fresh_sync():
             "message": f"Failed to clear and sync: {str(e)}"
         }
 
-@app.post("/force-full-sync")
+@api_router.post("/force-full-sync")
 async def force_full_sync():
     """
     Forces a complete resync of all Apify datasets, bypassing fingerprint deduplication.
@@ -1872,7 +1872,7 @@ async def force_full_sync():
         print(f"❌ [FORCE SYNC]: Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/debug/collection-info")
+@api_router.get("/debug/collection-info")
 async def debug_collection_info():
     """
     Debug endpoint to check collection status and count.
@@ -1910,7 +1910,7 @@ async def debug_collection_info():
     except Exception as e:
         return {"error": str(e)}
 
-@app.get("/debug/collection")
+@api_router.get("/debug/collection")
 async def debug_collection():
     """
     Debug endpoint to check collection status and count.
@@ -1954,7 +1954,7 @@ async def debug_collection():
         return {"error": str(e), "collection_name": COLLECTION_NAME}
 
 
-@app.post("/chat")
+@api_router.post("/chat-agent")
 async def chat(request: dict):
     """
     General purpose chat completion using Groq.
@@ -1980,7 +1980,7 @@ async def chat(request: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/test-agent")
+@api_router.get("/test-agent")
 async def test_agent():
     """
     Test endpoint to verify LLM and CrewAI communication.
