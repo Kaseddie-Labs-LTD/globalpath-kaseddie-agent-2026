@@ -22,8 +22,8 @@ if not GROQ_KEY:
     print("❌ ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
     print("❌ Available environment variables:", [k for k in os.environ.keys() if 'GROQ' in k.upper()])
 else:
-    print(f"✅ Groq API Key loaded: {GROQ_KEY[:10]}...")
-    print(f"✅ Kaseddie Node Linked: ...{GROQ_KEY[-4:]}")
+    print(f"Groq API Key loaded: {GROQ_KEY[:10]}...")
+    print(f"Kaseddie Node Linked: ...{GROQ_KEY[-4:]}")
 
 # Set CrewAI storage directory to a local path to avoid permission issues in some environments
 os.environ["CREWAI_STORAGE_DIR"] = os.path.join(os.getcwd(), ".crewai")
@@ -50,9 +50,9 @@ from services.media_engine import generate_flux_image, generate_kling_video
 try:
     groq_client = Groq(api_key=GROQ_KEY)
     llm = ChatGroq(api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec")
-    print("✅ Groq client initialized successfully")
+    print("Groq client initialized successfully")
 except Exception as e:
-    print(f"❌ Failed to initialize Groq client: {e}")
+    print(f"Failed to initialize Groq client: {e}")
     groq_client = None
     llm = None
 
@@ -62,7 +62,7 @@ except Exception as e:
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Yield immediately so Uvicorn can finish starting the server
     # and bind to port without any delay.
-    print("✅ Port 8080 is now open.")
+    print("Port 8080 is now open.")
     print("Lifespan: Yielding immediately for startup...")
     
     # We create the task AFTER the yield or just before, 
@@ -226,22 +226,6 @@ async def sync_apify_leads(background_tasks: BackgroundTasks):
         "message": "The Hub is now rotating sectors. Leads will appear as they are processed.",
         "details": "The Hub is now rotating sectors. Leads will appear as they are processed."
     }
-
-# CORS configuration: Allow all origins for agent connection
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://globalpath-kaseddie-agent-2026.onrender.com",
-        "https://globalpath-kaseddie-agent-2026-1.onrender.com",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Collection settings
 COLLECTION_NAME = "globalpath_leads"
@@ -696,15 +680,8 @@ def ensure_collection_exists():
 # CORS configuration: Targeted for Render deployment and dev server stability
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://globalpath-kaseddie-agent-2026.onrender.com",
-        "https://globalpath-kaseddie-agent-2026-1.onrender.com",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
