@@ -176,8 +176,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     // 1. SERVICE & DOMESTIC (New Category)
     if (
       text.includes('cleaner') || text.includes('housekeeper') ||
-      text.includes('maid') || text.includes('nanny') || 
-      text.includes('domestic') || text.includes('janitor')
+      text.includes('maid') || text.includes('maids') || text.includes('nanny') || 
+      text.includes('domestic') || text.includes('janitor') || text.includes('caregiver') ||
+      text.includes('care assistant') || text.includes('cleaners')
     ) {
       return 'service_domestic';
     }

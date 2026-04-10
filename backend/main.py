@@ -545,11 +545,12 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         'engineer', 'manager', 'consultant', 'associate', 
         'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
         'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
-        'nurse', 'doctor', 'physician'
+        'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern',
+        'ciklum', 'amazon fulfillment', 'software engineer', 'data scientist'
     ]
     
     blue_collar_keywords = [
-        'driver', 'cleaner', 'warehouse', 'maid', 'housemaid',
+        'driver', 'warehouse', 'maid', 'housemaid',
         'helper', 'butcher', 'shelf', 'merchandiser', 'housekeeper',
     ]
 
@@ -759,6 +760,105 @@ async def debug_environment():
         "python_path": os.path.abspath(__file__),
         "working_directory": os.getcwd()
     }
+
+@api_router.post("/recategorize-leads")
+async def recategorize_existing_leads():
+    """
+    Soft Re-Categorization: Iterates through existing 766 leads and re-runs category detection.
+    This moves leads into correct corridors without deleting any data.
+    """
+    try:
+        print(f"🔄 [RECATEGORIZE]: Starting soft re-categorization of existing leads...")
+        
+        # Get all points from collection
+        all_points = qdrant_client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10000,
+            with_payload=True,
+            with_vectors=False
+        )[0]
+        
+        print(f"🔄 [RECATEGORIZE]: Found {len(all_points)} leads to re-categorize")
+        
+        updated_count = 0
+        points_to_update = []
+        
+        for point in all_points:
+            payload = point.payload
+            original_category = payload.get('category', 'general')
+            
+            # Re-run category detection logic
+            title = (payload.get('title') or payload.get('positionName') or '').lower()
+            description = (payload.get('description') or payload.get('interests') or '').lower()
+            text = f"{title} {description}"
+            
+            # Professional keywords
+            professional_keywords = [
+                'engineer', 'manager', 'consultant', 'associate', 
+                'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
+                'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
+                'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern'
+            ]
+            
+            # Blue-collar keywords
+            blue_collar_keywords = [
+                'driver', 'warehouse', 'maid', 'housemaid',
+                'helper', 'butcher', 'shelf', 'merchandiser', 'housekeeper',
+            ]
+            
+            # Domestic/Service keywords
+            domestic_keywords = [
+                'cleaner', 'housekeeper', 'maid', 'nanny', 'domestic', 
+                'janitor', 'caregiver', 'care assistant'
+            ]
+            
+            # Re-categorize
+            new_category = original_category
+            if any(kw in text for kw in professional_keywords):
+                new_category = "professional"
+            elif any(kw in text for kw in domestic_keywords):
+                new_category = "service_domestic"
+            elif any(kw in text for kw in blue_collar_keywords):
+                new_category = "blue_collar"
+            
+            # Update if category changed
+            if new_category != original_category:
+                payload['category'] = new_category
+                points_to_update.append(
+                    models.PointStruct(
+                        id=point.id,
+                        vector=point.vector,
+                        payload=payload
+                    )
+                )
+                updated_count += 1
+                print(f"🔄 [RECATEGORIZE]: Updated {payload.get('title', 'Unknown')} from {original_category} to {new_category}")
+        
+        # Bulk update if any changes
+        if points_to_update:
+            print(f"🔄 [RECATEGORIZE]: Performing bulk update of {len(points_to_update)} leads...")
+            qdrant_client.upsert(
+                collection_name=COLLECTION_NAME,
+                points=points_to_update
+            )
+            print(f"✅ [RECATEGORIZE]: Successfully updated {updated_count} leads")
+        else:
+            print(f"✅ [RECATEGORIZE]: No category updates needed")
+        
+        return {
+            "status": "success",
+            "total_leads": len(all_points),
+            "updated_count": updated_count,
+            "message": f"Soft re-categorization complete. {updated_count} leads updated."
+        }
+        
+    except Exception as e:
+        print(f"❌ [RECATEGORIZE]: Error during re-categorization: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to re-categorize leads: {str(e)}",
+            "updated_count": 0
+        }
 
 @api_router.get("/transparency-report")
 async def get_transparency_data():
