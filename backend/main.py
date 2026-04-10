@@ -775,7 +775,7 @@ async def recategorize_existing_leads():
             collection_name=COLLECTION_NAME,
             limit=10000,
             with_payload=True,
-            with_vectors=False
+            with_vectors=True
         )[0]
         
         print(f"🔄 [RECATEGORIZE]: Found {len(all_points)} leads to re-categorize")
@@ -2055,7 +2055,7 @@ async def force_verify_all_leads():
             collection_name=COLLECTION_NAME,
             limit=10000,  # Get all points
             with_payload=True,
-            with_vectors=False
+            with_vectors=True
         )[0]
         
         print(f"🔧 [FORCE VERIFY]: Found {len(all_points)} leads to verify")

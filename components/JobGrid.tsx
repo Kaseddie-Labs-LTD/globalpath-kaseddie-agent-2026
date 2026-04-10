@@ -8,6 +8,7 @@ import {
   Sparkles, Check, Handshake, MessageSquare, Copy, Terminal
 } from 'lucide-react';
 import { generateJobInsight, generateB2BPitch } from '../services/ai';
+import { parseJobMetadata } from '../utils/metadataParser';
 
 interface JobGridProps {
   jobs: Job[];
@@ -137,6 +138,8 @@ const JobCard: React.FC<JobCardProps> = ({ job, isPremier, onApply, onEnhanceJob
     setIsApplying(false);
   };
 
+  const parsedMeta = parseJobMetadata(job);
+
   return (
     <div 
       onClick={() => onClick(job)}
@@ -250,8 +253,17 @@ const JobCard: React.FC<JobCardProps> = ({ job, isPremier, onApply, onEnhanceJob
 
       <div className="mb-4 px-1 relative">
         <p className={`text-[11px] text-slate-600 leading-relaxed line-clamp-2 transition-opacity ${isEnhancing ? 'opacity-30' : 'opacity-100'}`}>
-          {job.description}
+          {parsedMeta.description}
         </p>
+        {parsedMeta.benefits && parsedMeta.benefits.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {parsedMeta.benefits.slice(0, 3).map((b, i) => (
+              <span key={i} className="text-[8px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 font-bold max-w-[150px] truncate" title={b}>
+                {b}
+              </span>
+            ))}
+          </div>
+        )}
         {isEnhancing && (
           <div className="absolute inset-0 flex items-center justify-center">
             <Loader2 size={16} className="text-brand-500 animate-spin" />
@@ -577,51 +589,8 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
     let result = jobs || [];
     
     // Company Grouping: Group similar roles from same company
-    const companyGroups: Record<string, Job[]> = {};
-    result.forEach(job => {
-      if (!job || !job.company) return;
-      
-      // Bulletproof string handling for company field
-      const companyName = typeof job.company === 'string' 
-        ? job.company 
-        : (job.company?.country || job.company?.formattedAddressShort || "GlobalPath Partner");
-      
-      const company = companyName.toLowerCase().trim();
-      if (!companyGroups[company]) {
-        companyGroups[company] = [];
-      }
-      companyGroups[company].push(job);
-    });
-    
-    // Create grouped jobs with consolidated display
-    const groupedJobs: Job[] = [];
-    Object.entries(companyGroups).forEach(([company, companyJobs]) => {
-      if (companyJobs.length > 1) {
-        // Find the most common role for this company
-        const roleCounts: Record<string, number> = {};
-        companyJobs.forEach(job => {
-          const role = job.title.toLowerCase().trim();
-          roleCounts[role] = (roleCounts[role] || 0) + 1;
-        });
-        
-        const mostCommonRole = Object.entries(roleCounts)
-          .sort(([,a], [,b]) => b - a)[0]?.[0] || 'various roles';
-        
-        // Create a consolidated job entry
-        const baseJob = companyJobs[0]; // Use first job as base
-        groupedJobs.push({
-          ...baseJob,
-          title: `${mostCommonRole.charAt(0).toUpperCase() + mostCommonRole.slice(1)} (${companyJobs.length} open nodes)`,
-          originalJobs: companyJobs, // Store original jobs for reference
-          isGrouped: true
-        });
-      } else {
-        // Single job, add as-is
-        groupedJobs.push(companyJobs[0]);
-      }
-    });
-    
-    result = groupedJobs;
+    // Data Grouping Removed to ensure all 766 nodes are displayed individually.
+    // The previous grouping logic hid multiple nodes under a single company card.
     
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
@@ -674,22 +643,58 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
     }
 
     if (selectedCategory !== 'All') {
-      // Normalize category matching: case-insensitive and handle variations
       result = result.filter(job => {
-        if (!job || !job.category) return false;
+        if (!job) return false;
         
-        const jobCategory = job.category.toLowerCase();
-        const normalizedCategory = selectedCategory.toLowerCase().replace(/[_\s]/g, '');
+        // Helper function to determine category with Loose Mapping
+        const getCategory = (j: any) => {
+          if (j.category) {
+            const cat = j.category.toLowerCase();
+            if (cat.includes('professional') || cat === 'professional') return 'professional';
+            if (cat.includes('blue') || cat.includes('collar') || cat === 'blue_collar') return 'blue_collar';
+            if (cat.includes('service') || cat.includes('domestic') || cat === 'service_domestic') return 'service_domestic';
+          }
+          
+          const title = (j.title || j.positionName || '').toLowerCase();
+          const description = (j.description || '').toLowerCase();
+          const company = (j.company || '').toLowerCase();
+          const text = `${title} ${description} ${company}`;
+          
+          if (
+            text.includes('cleaner') || text.includes('housekeeper') ||
+            text.includes('maid') || text.includes('maids') || text.includes('nanny') || 
+            text.includes('domestic') || text.includes('janitor') || text.includes('caregiver') ||
+            text.includes('care assistant') || text.includes('cleaners') ||
+            text.includes('housekeeping') || text.includes('chef') || 
+            text.includes('cook') || text.includes('waiter') || text.includes('waitress') ||
+            text.includes('hotel') || text.includes('hospitality') || text.includes('room attendant')
+          ) {
+            return 'service_domestic';
+          }
+          
+          const professionalKeywords = [
+            'engineer', 'manager', 'consultant', 'associate', 
+            'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
+            'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
+            'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern'
+          ];
+          if (professionalKeywords.some(kw => text.includes(kw))) return 'professional';
+          
+          const blueCollarKeywords = [
+            'driver', 'warehouse', 'helper', 'butcher', 'shelf', 'merchandiser'
+          ];
+          if (blueCollarKeywords.some(kw => text.includes(kw))) return 'blue_collar';
+          
+          return 'general';
+        };
+
+        const jobCategory = getCategory(job);
         
-        // Map "IT & Digital" to "professional"
         if (selectedCategory.toLowerCase().includes('it') || selectedCategory.toLowerCase().includes('digital')) {
           return jobCategory === 'professional';
         }
         
-        // Loose matching for other categories
-        return jobCategory.replace(/[_\s]/g, '') === normalizedCategory ||
-               jobCategory.includes(normalizedCategory) ||
-               normalizedCategory.includes(jobCategory.replace(/[_\s]/g, ''));
+        return jobCategory === selectedCategory;
       });
     }
 
@@ -731,9 +736,50 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
     });
   }, [filteredJobs]);
 
-  const blueCollarJobs = sortedJobs.filter(j => j && (j.category === 'blue_collar' || (j.category && j.category.toLowerCase().includes('blue') && j.category.toLowerCase().includes('collar'))));
-  const professionalJobs = sortedJobs.filter(j => j && (j.category === 'professional' || (j.category && j.category.toLowerCase().includes('professional'))));
-  const serviceDomesticJobs = sortedJobs.filter(j => j && (j.category === 'service_domestic' || (j.category && (j.category.toLowerCase().includes('service') || j.category.toLowerCase().includes('domestic')))));
+  const getCategoryHelper = (j: any) => {
+    if (j.category) {
+      const cat = j.category.toLowerCase();
+      if (cat.includes('professional') || cat === 'professional') return 'professional';
+      if (cat.includes('blue') || cat.includes('collar') || cat === 'blue_collar') return 'blue_collar';
+      if (cat.includes('service') || cat.includes('domestic') || cat === 'service_domestic') return 'service_domestic';
+    }
+    
+    const title = (j.title || j.positionName || '').toLowerCase();
+    const description = (j.description || '').toLowerCase();
+    const company = (j.company || '').toLowerCase();
+    const text = `${title} ${description} ${company}`;
+    
+    if (
+      text.includes('cleaner') || text.includes('housekeeper') ||
+      text.includes('maid') || text.includes('maids') || text.includes('nanny') || 
+      text.includes('domestic') || text.includes('janitor') || text.includes('caregiver') ||
+      text.includes('care assistant') || text.includes('cleaners') ||
+      text.includes('housekeeping') || text.includes('chef') || 
+      text.includes('cook') || text.includes('waiter') || text.includes('waitress') ||
+      text.includes('hotel') || text.includes('hospitality') || text.includes('room attendant')
+    ) {
+      return 'service_domestic';
+    }
+    
+    const professionalKeywords = [
+      'engineer', 'manager', 'consultant', 'associate', 
+      'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
+      'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
+      'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern'
+    ];
+    if (professionalKeywords.some(kw => text.includes(kw))) return 'professional';
+    
+    const blueCollarKeywords = [
+      'driver', 'warehouse', 'helper', 'butcher', 'shelf', 'merchandiser'
+    ];
+    if (blueCollarKeywords.some(kw => text.includes(kw))) return 'blue_collar';
+    
+    return 'general';
+  };
+
+  const blueCollarJobs = sortedJobs.filter(j => j && getCategoryHelper(j) === 'blue_collar');
+  const professionalJobs = sortedJobs.filter(j => j && getCategoryHelper(j) === 'professional');
+  const serviceDomesticJobs = sortedJobs.filter(j => j && getCategoryHelper(j) === 'service_domestic');
 
   return (
     <div className="relative space-y-2">
@@ -855,7 +901,7 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
       </div>
 
       {sortedJobs.length > 0 ? (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-10 gap-y-4 animate-fadeIn">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-x-10 gap-y-4 animate-fadeIn">
           {/* Blue Collar Column */}
           <div className="space-y-4">
             <div className="flex items-center justify-between px-3 py-2 bg-slate-50/50 rounded-xl border border-slate-100 mb-2">
@@ -915,6 +961,38 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
               {professionalJobs.length === 0 && (
                 <div className="p-12 text-center bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No Professional Nodes found</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Service & Domestic Column */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-3 py-2 bg-purple-50/50 rounded-xl border border-purple-100 mb-2">
+              <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <div className="p-1.5 bg-purple-100 text-purple-600 rounded-lg"><Users size={16} /></div>
+                Service & Domestic
+              </h2>
+              <span className="bg-purple-100 text-purple-700 px-2.5 py-0.5 rounded-full text-[10px] font-black">
+                {serviceDomesticJobs.length}
+              </span>
+            </div>
+            <div className="space-y-4">
+              {serviceDomesticJobs.map(job => (
+                <JobCard 
+                  key={job.id} 
+                  job={job} 
+                  isPremier={job.tier === 'PREMIER' || (job.hasVisa && job.hasTicket && job.hasAccommodation)} 
+                  onApply={onApply} 
+                  onEnhanceJob={onEnhanceJob} 
+                  onAnalyzeSafety={onAnalyzeSafety} 
+                  onClick={setSelectedJob} 
+                  isAdmin={isAdmin}
+                />
+              ))}
+              {serviceDomesticJobs.length === 0 && (
+                <div className="p-12 text-center bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No Service & Domestic Nodes found</p>
                 </div>
               )}
             </div>
