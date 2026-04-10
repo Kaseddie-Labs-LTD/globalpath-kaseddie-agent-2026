@@ -396,9 +396,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     return 0;
   });
 
-  const professionalJobs = sortedHrJobs.filter(j => getJobCategory(j) === 'professional');
-  const blueCollarJobs = sortedHrJobs.filter(j => getJobCategory(j) === 'blue_collar');
-  const serviceDomesticJobs = sortedHrJobs.filter(j => getJobCategory(j) === 'service_domestic');
+  const professionalJobs = sortedHrJobs.filter(j => {
+    const cat = getJobCategory(j);
+    return cat === 'professional' || (cat && cat.toLowerCase().includes('professional'));
+  });
+  const blueCollarJobs = sortedHrJobs.filter(j => {
+    const cat = getJobCategory(j);
+    return cat === 'blue_collar' || (cat && cat.toLowerCase().includes('blue') && cat.toLowerCase().includes('collar'));
+  });
+  const serviceDomesticJobs = sortedHrJobs.filter(j => {
+    const cat = getJobCategory(j);
+    return cat === 'service_domestic' || (cat && (cat.toLowerCase().includes('service') || cat.toLowerCase().includes('domestic')));
+  });
   const otherJobs = sortedHrJobs.filter(j => {
     const cat = getJobCategory(j);
     return cat !== 'professional' && cat !== 'blue_collar' && cat !== 'service_domestic';

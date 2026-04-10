@@ -674,7 +674,23 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
     }
 
     if (selectedCategory !== 'All') {
-      result = result.filter(job => job && job.category === selectedCategory);
+      // Normalize category matching: case-insensitive and handle variations
+      result = result.filter(job => {
+        if (!job || !job.category) return false;
+        
+        const jobCategory = job.category.toLowerCase();
+        const normalizedCategory = selectedCategory.toLowerCase().replace(/[_\s]/g, '');
+        
+        // Map "IT & Digital" to "professional"
+        if (selectedCategory.toLowerCase().includes('it') || selectedCategory.toLowerCase().includes('digital')) {
+          return jobCategory === 'professional';
+        }
+        
+        // Loose matching for other categories
+        return jobCategory.replace(/[_\s]/g, '') === normalizedCategory ||
+               jobCategory.includes(normalizedCategory) ||
+               normalizedCategory.includes(jobCategory.replace(/[_\s]/g, ''));
+      });
     }
 
     if (salaryType !== 'All') {
@@ -715,9 +731,9 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
     });
   }, [filteredJobs]);
 
-  const blueCollarJobs = sortedJobs.filter(j => j && j.category === 'blue_collar');
-  const professionalJobs = sortedJobs.filter(j => j && j.category === 'professional');
-  const serviceDomesticJobs = sortedJobs.filter(j => j && j.category === 'service_domestic');
+  const blueCollarJobs = sortedJobs.filter(j => j && (j.category === 'blue_collar' || (j.category && j.category.toLowerCase().includes('blue') && j.category.toLowerCase().includes('collar'))));
+  const professionalJobs = sortedJobs.filter(j => j && (j.category === 'professional' || (j.category && j.category.toLowerCase().includes('professional'))));
+  const serviceDomesticJobs = sortedJobs.filter(j => j && (j.category === 'service_domestic' || (j.category && (j.category.toLowerCase().includes('service') || j.category.toLowerCase().includes('domestic')))));
 
   return (
     <div className="relative space-y-2">
