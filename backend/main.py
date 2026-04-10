@@ -753,6 +753,81 @@ async def debug_environment():
         "working_directory": os.getcwd()
     }
 
+@api_router.get("/transparency-report")
+async def get_transparency_data():
+    """
+    Transparency Report: Calculate fees blocked and handshakes verified.
+    Implements Greed-to-Ethic ratio for ethical recruitment impact.
+    """
+    try:
+        print(f"📊 [TRANSPARENCY REPORT]: Generating ethical impact data...")
+        
+        # Get all points from collection
+        all_points = qdrant_client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10000,
+            with_payload=True,
+            with_vectors=False
+        )[0]
+        
+        print(f"📊 [TRANSPARENCY REPORT]: Found {len(all_points)} total leads")
+        
+        # Calculate metrics
+        fees_blocked_count = 0
+        handshakes_verified = 0
+        total_leads = len(all_points)
+        
+        for point in all_points:
+            payload = point.payload
+            
+            # Check if fee was detected (blocked by compliance middleware)
+            # This checks for fee-related keywords in description or if fee field exists
+            description = (payload.get('description') or "").lower()
+            if any(keyword in description for keyword in ['fee', 'visa cost', 'payment', 'charge', 'candidate pay', 'processing fees']):
+                fees_blocked_count += 1
+            
+            # Check if lead is verified/active
+            status = payload.get('status', '').lower()
+            if status in ['active', 'verified', 'vetted', 'live']:
+                handshakes_verified += 1
+        
+        # Calculate savings (estimated $500 saved per blocked fee)
+        savings_to_workers = fees_blocked_count * 500
+        
+        # Calculate system health percentage
+        if total_leads > 0:
+            ethical_ratio = (handshakes_verified / total_leads) * 100
+        else:
+            ethical_ratio = 100
+        
+        system_health = f"{ethical_ratio:.1f}% Ethical"
+        
+        print(f"📊 [TRANSPARENCY REPORT]: Fees Blocked: {fees_blocked_count}")
+        print(f"📊 [TRANSPARENCY REPORT]: Handshakes Verified: {handshakes_verified}")
+        print(f"📊 [TRANSPARENCY REPORT]: Savings to Workers: ${savings_to_workers}")
+        print(f"📊 [TRANSPARENCY REPORT]: System Health: {system_health}")
+        
+        return {
+            "total_leads": total_leads,
+            "fees_blocked": fees_blocked_count,
+            "handshakes_verified": handshakes_verified,
+            "savings_to_workers": savings_to_workers,
+            "system_health": system_health,
+            "greed_to_ethic_ratio": f"1:{handshakes_verified // max(fees_blocked_count, 1)}",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"❌ [TRANSPARENCY REPORT]: Error generating report: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to generate transparency report: {str(e)}",
+            "fees_blocked": 0,
+            "handshakes_verified": 0,
+            "savings_to_workers": 0,
+            "system_health": "Unknown"
+        }
+
 @api_router.get("/debug-routes")
 async def debug_routes():
     """

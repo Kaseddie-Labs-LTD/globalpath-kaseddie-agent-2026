@@ -701,20 +701,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
         {/* Right Column (span-4): Vetted Batches (INTERACTIVE) */}
         <div className="col-span-12 lg:col-span-4 space-y-6">
            {/* Safety check: Ensure hrJobs exists before passing to SearchSummary */}
-           {hrJobs && Array.isArray(hrJobs) ? (
-             SearchSummary ? (
-               <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} />
-             ) : (
-               <div className="p-4 bg-slate-800 text-white rounded-lg">
-                 <div className="flex items-center gap-2">
-                   <Loader2 className="animate-spin" size={16} />
-                   <span>Initializing Summary Engine...</span>
-                 </div>
-               </div>
-             )
+           {hrJobs && Array.isArray(hrJobs) && hrJobs.length > 0 ? (
+             <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} />
            ) : (
-             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-               <p className="text-yellow-800">Loading jobs data...</p>
+             <div className="p-4 bg-slate-800 text-white rounded-lg">
+               <div className="flex items-center gap-2">
+                 <Loader2 className="animate-spin" size={16} />
+                 <span className="animate-pulse text-cyan-400">🔍 AI Brain Syncing...</span>
+               </div>
              </div>
            )}
            
