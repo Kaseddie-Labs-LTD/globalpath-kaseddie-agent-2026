@@ -114,7 +114,7 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
   // Prioritize Replicate for complex reasoning when available
   if (hasReplicateCreds()) {
     try {
-      const response = await fetch(`${API_BASE}/generate-proposal`, {
+      const response = await fetcher('/generate-proposal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -127,11 +127,11 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
         })
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        if (data.proposal) {
-          return data.proposal;
-        }
+      const data = response;
+      if (data && data.pitch) {
+        return data.pitch;
+      } else if (data && data.proposal) {
+        return data.proposal;
       }
     } catch (error) {
       console.warn('Replicate API generate-proposal failed, using fallback:', error);
@@ -140,7 +140,7 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
   
   // Try standard API first, fallback to local generation
   try {
-    const response = await fetch(`${API_BASE}/generate-proposal`, {
+    const response = await fetcher('/generate-proposal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -148,15 +148,16 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
         company: company,
         location: location,
         category: job.category,
-        salary: job.salary
+        salary: job.salary,
+        use_replicate: false     // Explicitly use primary LLM (Phi-3)
       })
     });
     
-    if (response.ok) {
-      const data = await response.json();
-      if (data.proposal) {
-        return data.proposal;
-      }
+    const data = response;
+    if (data && data.pitch) {
+      return data.pitch;
+    } else if (data && data.proposal) {
+      return data.proposal;
     }
   } catch (error) {
     console.warn('API generate-proposal failed, using fallback:', error);

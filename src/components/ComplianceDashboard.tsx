@@ -61,7 +61,7 @@ const ComplianceDashboard: React.FC<ComplianceDashboardProps> = ({ jobs, onLog, 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
-      const response = await fetch(`${API_BASE}/generate-proposal`, {
+      const response = await fetcher('/generate-proposal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -77,9 +77,9 @@ const ComplianceDashboard: React.FC<ComplianceDashboardProps> = ({ jobs, onLog, 
       
       clearTimeout(timeoutId);
 
-      const data = await response.json();
+      const data = response;
       
-      if (data.pitch) {
+      if (data && data.pitch) {
         setGeneratedProposal(data.pitch);
         onLog?.(`LIFECYCLE: Lead transitioned to ACTIVE OUTREACH status. AI Handshake successful.`, "success", "LIFECYCLE");
         

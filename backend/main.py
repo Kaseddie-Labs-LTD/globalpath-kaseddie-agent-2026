@@ -25,14 +25,6 @@ else:
     print(f"✅ Groq API Key loaded: {GROQ_KEY[:10]}...")
     print(f"✅ Kaseddie Node Linked: ...{GROQ_KEY[-4:]}")
 
-# Initialize Groq client
-try:
-    groq_client = Groq(api_key=GROQ_KEY)
-    print("✅ Groq client initialized successfully")
-except Exception as e:
-    print(f"❌ Failed to initialize Groq client: {e}")
-    groq_client = None
-
 # Set CrewAI storage directory to a local path to avoid permission issues in some environments
 os.environ["CREWAI_STORAGE_DIR"] = os.path.join(os.getcwd(), ".crewai")
 import uuid
@@ -50,7 +42,21 @@ from apify_client import ApifyClient
 import httpx
 from groq import Groq
 from langchain_core.documents import Document
+from langchain_groq import ChatGroq
+from langchain_core.prompts import PromptTemplate
 from services.media_engine import generate_flux_image, generate_kling_video
+
+# Initialize Groq client
+try:
+    groq_client = Groq(api_key=GROQ_KEY)
+    llm = ChatGroq(api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec")
+    print("✅ Groq client initialized successfully")
+except Exception as e:
+    print(f"❌ Failed to initialize Groq client: {e}")
+    groq_client = None
+    llm = None
+
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:

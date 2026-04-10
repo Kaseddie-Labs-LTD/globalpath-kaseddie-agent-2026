@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
           '/api': {
             target: 'https://globalpath-kaseddie-agent-2026-1.onrender.com',
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api/, ''),
+            // Removed rewrite so the /api prefix is passed to the backend, which expects it
           },
         },
       },

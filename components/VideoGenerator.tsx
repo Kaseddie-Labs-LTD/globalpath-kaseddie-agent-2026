@@ -24,16 +24,14 @@ export const VideoGenerator: React.FC = () => {
     setStatus('Contacting Media Engine...');
     
     try {
-      const response = await fetch(`${API_BASE}/api/generate-promo`, {
+      const response = await fetcher('/generate-promo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ job_title: jobTitle, location })
       });
 
-      if (!response.ok) throw new Error('Generation failed');
-      
-      const data = await response.json();
-      if (data.status === 'Success') {
+      const data = response;
+      if (data && data.status === 'Success') {
         setImageUrl(data.image_url);
         setVideoUrl(data.video_url);
         setStatus('Generation complete.');

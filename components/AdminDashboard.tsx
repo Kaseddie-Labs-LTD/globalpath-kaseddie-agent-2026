@@ -312,14 +312,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     onAddLog("FORCE VERIFY: Starting mass verification of all leads...", "thinking");
     
     try {
-      const response = await fetch(`${API_BASE}/api/force-verify-all`, {
+      const response = await fetcher('/force-verify-all', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-        },
+          'Content-Type': 'application/json'
+        }
       });
       
-      const result = await response.json();
+      const result = response;
       
       if (result.status === 'success') {
         onAddLog(`FORCE VERIFY: Successfully verified ${result.verified_count} leads!`, "success");
@@ -694,7 +694,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
             <MarketingEngine 
               selectedJob={selectedJob}
               onGenerateMarketing={async (job) => {
-                const response = await fetch(`${API_BASE}/generate-marketing`, {
+                const response = await fetcher('/generate-marketing', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -703,8 +703,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                     corridor: job.corridor
                   })
                 });
-                const data = await response.json();
-                return data.marketing_content;
+                
+                const data = response;
+                if (data && data.marketing_content) {
+                  return data.marketing_content;
+                }
+                return "Failed to generate marketing content.";
               }}
               onLog={(message, type, step) => onAddLog(message, type)}
             />

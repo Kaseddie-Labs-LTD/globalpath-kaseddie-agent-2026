@@ -216,7 +216,7 @@ const JobCard: React.FC<JobCardProps> = ({ job, isPremier, onApply, onEnhanceJob
           <MapPin size={12} className={isPremier ? 'text-amber-500' : 'text-brand-500'} /> {getJobLocationString(typeof job.location === 'object' ? job.location.city || job.location.country : job.location) || "Remote"}
         </a>
         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-amber-50 p-2 rounded-xl border border-amber-200 text-amber-700 overflow-hidden text-ellipsis whitespace-nowrap">
-          <DollarSign size={12} className="text-amber-600" /> {typeof job.salary === 'object' ? (job.salary.amount || job.salary.value || "Competitive") : (job.salary && job.salary.toLowerCase().includes('commission') ? 'Performance Based' : (job.salary || "Competitive"))}
+          <DollarSign size={12} className="text-amber-600" /> {parsedMeta.salary && parsedMeta.salary.toLowerCase().includes('commission') ? 'Performance Based' : (parsedMeta.salary || "Competitive")}
         </div>
       </div>
 
@@ -340,6 +340,7 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, onApply, 
   const [copied, setCopied] = useState(false);
   const isPremier = job && (job.tier === 'PREMIER' || (job.hasVisa && job.hasTicket && job.hasAccommodation));
   const region = getRegionTag(job?.location || "", job?.company || "", job?.title || "", job?.url || "");
+  const parsedMeta = job ? parseJobMetadata(job) : null;
 
   useEffect(() => {
     if (job) {
@@ -477,7 +478,7 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, onApply, 
               </button>
             </div>
             <div className={`relative min-h-[60px] transition-all ${isEnhancing ? 'opacity-40 grayscale-[0.5]' : ''}`}>
-              <p className="text-sm text-slate-600 leading-relaxed font-medium">{job.description}</p>
+              <p className="text-sm text-slate-600 leading-relaxed font-medium">{parsedMeta?.description || job.description}</p>
               {isEnhancing && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-[1px]">
                    <Loader2 size={24} className="text-brand-600 animate-spin mb-2" />
@@ -486,6 +487,21 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, onApply, 
               )}
             </div>
           </div>
+          
+          {parsedMeta?.benefits && parsedMeta.benefits.length > 0 && (
+            <div className="space-y-4">
+              <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                <CheckCircle size={18} className="text-brand-600" /> Ethical Benefits
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {parsedMeta.benefits.map((b, i) => (
+                  <span key={i} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest rounded-xl border border-blue-100 shadow-sm">
+                    {b}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-4 pt-4 border-t border-slate-100">
              <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">

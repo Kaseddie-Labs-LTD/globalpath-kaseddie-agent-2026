@@ -33,7 +33,15 @@ export function parseJobMetadata(job: any): ParsedJobMetadata {
   }
   
   // Extract salary
-  const salary = job.salary || extractSalaryFromDescription(description);
+  let salary = job.salary;
+  if (typeof salary === 'object' && salary !== null) {
+    salary = salary.amount || salary.value || extractSalaryFromDescription(description);
+  } else if (!salary) {
+    salary = extractSalaryFromDescription(description);
+  }
+  if (typeof salary !== 'string') {
+    salary = String(salary || "Competitive");
+  }
   
   // Extract benefits
   const benefits = extractBenefitsFromDescription(description);
