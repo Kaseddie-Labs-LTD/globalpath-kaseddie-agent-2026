@@ -661,7 +661,8 @@ def ensure_collection_exists():
 
         if needs_recreation:
             if exists:
-                print(f"🗑️ Deleting existing collection '{COLLECTION_NAME}'...")
+                print(f"⚠️ [VAULT PROTECTION]: Deleting existing collection '{COLLECTION_NAME}'...")
+                print(f"⚠️ [VAULT PROTECTION]: This is a destructive operation - ensure you have a backup")
                 qdrant_client.delete_collection(collection_name=COLLECTION_NAME)
             
             print(f"🏗️ Creating collection '{COLLECTION_NAME}' with size {VECTOR_SIZE} and COSINE distance...")
@@ -1699,8 +1700,11 @@ async def sync_apify_webhook(payload: dict, background_tasks: BackgroundTasks):
 @app.post("/clear-and-fresh-sync")
 async def clear_and_fresh_sync():
     """
+    ⚠️ DANGER: This endpoint DELETES ALL DATA from the vault.
     Clears all points in globalpath_leads collection and triggers fresh sync for all corridors.
     This resolves corrupted data issues and ensures clean field extraction.
+    
+    PRODUCTION SAFETY: This endpoint should be disabled or require admin authentication.
     """
     try:
         print("🗑️ [CLEAR SYNC]: Starting complete data cleanup...")
