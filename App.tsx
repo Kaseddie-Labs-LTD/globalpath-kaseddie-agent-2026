@@ -87,6 +87,7 @@ function App() {
     } catch { return false; }
   });
   const [activePitch, setActivePitch] = useState<{pitch: B2BPitch, job: Job} | null>(null);
+  const [isGeneratingPitch, setIsGeneratingPitch] = useState(false); // Network bottleneck: pause polling during AI pitch generation
   
   const [regionIndex, setRegionIndex] = useState(0);
   const [sectorIndex, setSectorIndex] = useState(0);
@@ -372,7 +373,7 @@ function App() {
   // --- 2. Fetch Logic ---
   
   const { data: swrLeads, mutate: mutateLeads } = useSWR('/leads', fetcher, {
-    refreshInterval: 10000, // Sync every 10 seconds instead of waiting
+    refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
     keepPreviousData: true, // Prevents jobs from disappearing during re-validation
@@ -407,7 +408,7 @@ function App() {
   });
 
   const { data: swrStats, mutate: mutateStats } = useSWR(sanitizeEndpoint('corridor-stats'), fetcher, { 
-      refreshInterval: 10000, // Sync every 10 seconds instead of waiting
+      refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
       dedupingInterval: 2000,
@@ -1040,6 +1041,10 @@ function App() {
                   return res;
                 }}
                 onGenerateB2BPitch={async (title, company, salary, country, category, location) => {
+                  // Network bottleneck fix: PAUSE all background polling during AI pitch generation
+                  setIsGeneratingPitch(true);
+                  addLog(`NETWORK: Pausing background polling for AI pitch generation (${title})`, "info", "NETWORK");
+                  
                   try {
                     const requestBody = {
                       company: company,
@@ -1057,7 +1062,8 @@ function App() {
                     const response = await fetcher(sanitizeEndpoint('generate-proposal'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(requestBody)
+                      body: JSON.stringify(requestBody),
+                      timeout: 60000 // 60s timeout for complex pitches like N-iX
                     });
                     const data = response;
                     return data.pitch || "Failed to generate proposal.";
@@ -1065,6 +1071,10 @@ function App() {
                     console.error("Phi-3 Uplink Failed", err);
                     // Throw the error so the UI can display "Error 504: Server Busy" or similar
                     throw err;
+                  } finally {
+                    // Network bottleneck fix: RESUME background polling after AI pitch generation
+                    setIsGeneratingPitch(false);
+                    addLog(`NETWORK: Resuming background polling after AI pitch generation`, "success", "NETWORK");
                   }
                 }}
                 onLog={addLog}
