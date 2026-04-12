@@ -473,7 +473,9 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         item.get("position_text") or
         "Unknown Position"
     )
-    company = item.get("company") or item.get("location") or "Global"
+    # Extract company and location separately to prevent cross-contamination
+    company = item.get("company") or item.get("companyName") or "Global"
+    location = item.get("location") or item.get("country") or "Unknown"
     description = item.get("description") or item.get("snippet") or "No description available"
     url = item.get("url") or item.get("link") or f"{title}-{company}"
     
@@ -576,7 +578,7 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
     
     # 4. Node Assignment - Critical for UI filtering
     node = "Global Corridor"  # Default fallback
-    location_lower = (item.get("location") or item.get("country") or company).lower()
+    location_lower = location.lower()
     title_lower = title.lower()
     
     # Priority-based node assignment
@@ -604,7 +606,7 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
     
     metadata = {
         "name": title,
-        "country": forced_country or company,
+        "country": forced_country or location,
         "interests": description,
         "category": refined_category.lower(),
         "status": status,
@@ -929,6 +931,109 @@ async def get_transparency_data():
             "handshakes_verified": 0,
             "savings_to_workers": 0,
             "system_health": "Unknown"
+        }
+
+@api_router.post("/heal-unknown-titles")
+async def heal_unknown_titles():
+    """
+    SURGICAL HEAL: Update only 'Unknown Position' titles without touching other records.
+    This fixes existing leads in-place without triggering a database flush or re-sync.
+    """
+    try:
+        print(f"🩹 [SURGICAL HEAL]: Starting heal for 'Unknown Position' leads...")
+        
+        # Get all points with 'Unknown Position' in title
+        all_points = qdrant_client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10000,
+            with_payload=True,
+            with_vectors=False
+        )[0]
+        
+        points_to_heal = []
+        healed_count = 0
+        
+        for point in all_points:
+            payload = point.payload
+            title = payload.get('name', '')
+            description = payload.get('interests', '')
+            
+            # Check if title needs healing
+            if not title or title == "Unknown Position" or title.strip() == "":
+                print(f"🩹 [SURGICAL HEAL]: Found lead with unknown title. Attempting heal...")
+                
+                # Try to extract title from description
+                new_title = title
+                if description:
+                    # First line of description often contains the title
+                    first_line = description.split('\n')[0].strip()
+                    if first_line and len(first_line) > 3 and len(first_line) < 100:
+                        new_title = first_line
+                        print(f"🩹 [SURGICAL HEAL]: Extracted title from first line: '{new_title}'")
+                    else:
+                        # Use AI to extract title
+                        try:
+                            ai_response = groq_client.chat.completions.create(
+                                model="llama-3.3-70b-versatile",
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": "Extract only the Job Title from this text. Output only the job title, nothing else."
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": description[:300]
+                                    }
+                                ],
+                                max_tokens=50,
+                                temperature=0.1
+                            )
+                            ai_title = ai_response.choices[0].message.content.strip()
+                            if ai_title and ai_title != "Unknown Position":
+                                new_title = ai_title
+                                print(f"🩹 [SURGICAL HEAL]: AI extracted title: '{new_title}'")
+                        except Exception as e:
+                            print(f"❌ [SURGICAL HEAL]: AI extraction failed: {e}")
+                            new_title = "Strategic Lead"
+                else:
+                    new_title = "Strategic Lead"
+                
+                # Update only the title field
+                if new_title != title:
+                    payload['name'] = new_title
+                    points_to_heal.append(
+                        models.PointStruct(
+                            id=point.id,
+                            vector=point.vector,
+                            payload=payload
+                        )
+                    )
+                    healed_count += 1
+        
+        # Surgical update: Only update healed leads
+        if points_to_heal:
+            print(f"🩹 [SURGICAL HEAL]: Performing surgical update of {len(points_to_heal)} leads...")
+            qdrant_client.upsert(
+                collection_name=COLLECTION_NAME,
+                points=points_to_heal
+            )
+            print(f"✅ [SURGICAL HEAL]: Successfully healed {healed_count} leads")
+        else:
+            print(f"✅ [SURGICAL HEAL]: No leads needed healing")
+        
+        return {
+            "status": "success",
+            "total_scanned": len(all_points),
+            "healed_count": healed_count,
+            "message": f"Surgical heal complete. {healed_count} 'Unknown Position' leads updated."
+        }
+        
+    except Exception as e:
+        print(f"❌ [SURGICAL HEAL]: Error during heal: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to heal titles: {str(e)}",
+            "healed_count": 0
         }
 
 @api_router.get("/debug-routes")
@@ -1557,29 +1662,47 @@ async def sync_all_apify_datasets():
                             None
                         )
                         
-                        # AI Enrichment fallback: extract title from description if no title found
-                        if not title:
-                            description = item.get('description', '') or item.get('snippet', '') or item.get('jobTitle', '') or ''
-                            if description:
-                                try:
-                                    print(f"🤖 [AI TITLE EXTRACTION]: No title found, using AI to extract from description...")
-                                    ai_response = groq_client.chat.completions.create(
-                                        model="llama-3.3-70b-versatile",
-                                        messages=[
-                                            {"role": "system", "content": "Extract the job title from the first line of this job description. Return ONLY the job title, nothing else."},
-                                            {"role": "user", "content": description}
-                                        ],
-                                        max_tokens=50,
-                                        temperature=0.1
-                                    )
-                                    ai_title = ai_response.choices[0].message.content or ''
-                                    title = ai_title.strip().replace('\n', '').replace('\r', '')
-                                    print(f"🤖 [AI TITLE EXTRACTION]: AI extracted title: '{title}'")
-                                except Exception as e:
-                                    print(f"❌ [AI TITLE EXTRACTION]: Failed to extract title - {e}")
-                                    title = 'Strategic Lead'
+                        # Part 1: Backend Title Reconstruction - Handle "Unknown Position"
+                        if title == "Unknown Position" or not title:
+                            print(f"⚠️ [TITLE RECONSTRUCTION]: Lead with 'Unknown Position' or no title detected. Attempting to reconstruct...")
+                            # Prioritize metadata fields first
+                            reconstructed_title = (
+                                item.get('jobTitle') or
+                                item.get('title') or
+                                item.get('position') or
+                                item.get('positionName') or
+                                item.get('role') or
+                                item.get('job_title') or
+                                item.get('job_title_text') or
+                                item.get('position_text')
+                            )
+                            
+                            if reconstructed_title and reconstructed_title != "Unknown Position":
+                                title = reconstructed_title
+                                print(f"✅ [TITLE RECONSTRUCTION]: Reconstructed title from metadata: '{title}'")
                             else:
-                                title = 'Strategic Lead'
+                                # Fallback to AI Enrichment if still no good title
+                                description_for_ai = item.get('description', '') or item.get('snippet', '') or item.get('jobTitle', '') or ''
+                                if description_for_ai:
+                                    try:
+                                        print(f"🤖 [AI TITLE EXTRACTION]: No title found, using AI to extract from description...")
+                                        ai_response = groq_client.chat.completions.create(
+                                            model="llama-3.3-70b-versatile",
+                                            messages=[
+                                                {"role": "system", "content": "Extract the job title from the first line of this job description. Return ONLY the job title, nothing else."},
+                                                {"role": "user", "content": description_for_ai.split('\n')[0]} # Use only the first line
+                                            ],
+                                            max_tokens=50,
+                                            temperature=0.1
+                                        )
+                                        ai_title = ai_response.choices[0].message.content or ''
+                                        title = ai_title.strip().replace('\n', '').replace('\r', '')
+                                        print(f"🤖 [AI TITLE EXTRACTION]: AI extracted title: '{title}'")
+                                    except Exception as e:
+                                        print(f"❌ [AI TITLE EXTRACTION]: Failed to extract title - {e}")
+                                        title = 'Strategic Lead'
+                                else:
+                                    title = 'Strategic Lead'
                         
                         description = item.get('description', '') or item.get('snippet', '') or item.get('jobTitle', '') or 'No description available'
                         
