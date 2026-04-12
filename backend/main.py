@@ -48,9 +48,10 @@ from services.media_engine import generate_flux_image, generate_kling_video
 
 # Initialize Groq client
 try:
-    groq_client = Groq(api_key=GROQ_KEY)
-    llm = ChatGroq(api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec")
-    print("Groq client initialized successfully")
+    http_client = httpx.Client(timeout=180.0, limits=httpx.Limits(max_keepalive_connections=50, max_connections=100))
+    groq_client = Groq(api_key=GROQ_KEY, http_client=http_client, max_retries=3)
+    llm = ChatGroq(api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec", max_retries=3, timeout=180.0)
+    print("Groq client initialized successfully with optimized connections")
 except Exception as e:
     print(f"Failed to initialize Groq client: {e}")
     groq_client = None

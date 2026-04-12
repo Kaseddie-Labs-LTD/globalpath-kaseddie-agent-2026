@@ -19,6 +19,7 @@ import { AdminSecurityGate } from './components/AdminSecurityGate';
 import { B2BPitchModal } from './components/B2BPitchModal';
 import { B2BPitchGenerator } from './components/B2BPitchGenerator';
 import { StatsCard, FeesBlockedCard } from './components/StatsCard';
+import { BlockedLeadsReport } from './components/BlockedLeadsReport';
 import { ErrorBoundary, NullGuard } from './components/ErrorBoundary';
 import KaseddieChat from './components/KaseddieChat';
 import { GlobalPulseMap } from './components/GlobalPulseMap';
@@ -908,6 +909,7 @@ function App() {
                   <FeesBlockedCard 
                     flaggedLeadsCount={(logs || []).length} 
                     totalLeadsCount={(jobs || []).length} 
+                    onClick={() => setView(AppView.BLOCK_REPORT)}
                   />
                 </div>
               </div>
@@ -1075,6 +1077,13 @@ function App() {
                   }
                 }}
                 onLog={addLog}
+              />
+            )}
+            {view === AppView.BLOCK_REPORT && (
+              <BlockedLeadsReport 
+                logs={logs} 
+                jobs={jobs} 
+                onBack={() => setView(AppView.DASHBOARD)} 
               />
             )}
            </Suspense>

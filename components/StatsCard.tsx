@@ -8,6 +8,7 @@ interface StatsCardProps {
   color?: string;
   trend?: number;
   description?: string;
+  onClick?: () => void;
 }
 
 export const StatsCard: React.FC<StatsCardProps> = ({ 
@@ -16,7 +17,8 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   icon, 
   color = 'brand',
   trend,
-  description 
+  description,
+  onClick
 }) => {
   const colorClasses = {
     brand: 'bg-brand-500 text-white',
@@ -27,7 +29,10 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 hover:shadow-2xl transition-all duration-300">
+    <div 
+      className={`bg-white rounded-2xl border border-slate-200 shadow-xl p-6 hover:shadow-2xl transition-all duration-300 ${onClick ? 'cursor-pointer hover:border-brand-500' : ''}`}
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between mb-4">
         <div className={`p-3 rounded-xl ${colorClasses[color as keyof typeof colorClasses]}`}>
           {icon}
@@ -56,11 +61,13 @@ export const StatsCard: React.FC<StatsCardProps> = ({
 interface FeesBlockedCardProps {
   flaggedLeadsCount: number;
   totalLeadsCount: number;
+  onClick?: () => void;
 }
 
 export const FeesBlockedCard: React.FC<FeesBlockedCardProps> = ({ 
   flaggedLeadsCount, 
-  totalLeadsCount 
+  totalLeadsCount,
+  onClick
 }) => {
   const percentage = totalLeadsCount > 0 ? (flaggedLeadsCount / totalLeadsCount) * 100 : 0;
   
@@ -72,6 +79,7 @@ export const FeesBlockedCard: React.FC<FeesBlockedCardProps> = ({
       color="red"
       trend={percentage > 0 ? Math.round(percentage) : 0}
       description={`Ethical AI blocked ${flaggedLeadsCount} fee-charging violations`}
+      onClick={onClick}
     />
   );
 };
