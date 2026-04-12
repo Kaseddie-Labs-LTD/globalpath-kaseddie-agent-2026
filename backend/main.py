@@ -57,7 +57,9 @@ except Exception as e:
     groq_client = None
     llm = None
 
-
+# Global Event for Pitch Priority Lane
+pitch_priority_event = asyncio.Event()
+pitch_priority_event.set() # Set means "allowed to run", clear means "paused"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
@@ -994,6 +996,10 @@ async def generate_proposal(req: ProposalRequest):
     Prioritizes Replicate for complex reasoning when use_replicate flag is set.
     """
     try:
+        # PITCH PRIORITY LANE: Pause background node sync to give Groq Llama-3 full bandwidth
+        print("🚦 [PRIORITY LANE]: Pausing background node sync for B2B Generation...")
+        pitch_priority_event.clear()
+        
         # Error logging: Check API keys and lead data
         print(f"🔍 [PROPOSAL DEBUG]: Groq API Key loaded: {'YES' if GROQ_KEY else 'NO'}")
         print(f"🔍 [PROPOSAL DEBUG]: Replicate API Key loaded: {'YES' if os.getenv('REPLICATE_API_TOKEN') else 'NO'}")
@@ -1099,13 +1105,17 @@ async def generate_proposal(req: ProposalRequest):
         # Return specific error codes for frontend
         error_msg_lower = error_msg.lower()
         if "timeout" in error_msg_lower or "connection" in error_msg_lower:
-            return {"pitch": "AI_CONNECTION_TIMEOUT", "error": "Connection timeout - please try again"}
+            raise HTTPException(status_code=504, detail="Server Busy")
         elif "401" in error_msg or "unauthorized" in error_msg_lower or "key" in error_msg_lower:
-            return {"pitch": "AI_KEY_MISSING", "error": "AI service key issue - check configuration (401 Unauthorized)"}
+            raise HTTPException(status_code=401, detail="AI Service Key Invalid")
         elif "rate" in error_msg_lower or "limit" in error_msg_lower:
-            return {"pitch": "AI_RATE_LIMIT", "error": "AI service rate limit exceeded"}
+            raise HTTPException(status_code=429, detail="Rate Limit Exceeded")
         else:
-            return {"pitch": "AI_SERVICE_ERROR", "error": f"AI service error: {error_msg}"}
+            raise HTTPException(status_code=500, detail=error_msg)
+    finally:
+        # PITCH PRIORITY LANE: Resume background node sync
+        print("🟢 [PRIORITY LANE]: Resuming background node sync...")
+        pitch_priority_event.set()
 
 class ChatRequest(BaseModel):
     message: str
@@ -1526,6 +1536,9 @@ async def sync_all_apify_datasets():
                     enrichment_tasks = []
                     
                     for item in items_list:
+                        # Pitch Priority Lane: Wait if B2B generation is running
+                        await pitch_priority_event.wait()
+                        
                         # Extract fields for fingerprint generation
                         phone = item.get('phone', '') or item.get('phoneNumber', '') or ''
                         email = item.get('email', '') or item.get('emailAddress', '') or ''

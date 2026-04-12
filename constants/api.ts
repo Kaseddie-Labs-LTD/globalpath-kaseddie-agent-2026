@@ -31,7 +31,14 @@ export const fetcher = async (url: string, options?: RequestInit) => {
   console.log(' [FIXED PRODUCTION FETCH]:', fullUrl);
   
   const res = await fetch(fullUrl, options);
-  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  if (!res.ok) {
+    let errMsg = `HTTP error! status: ${res.status}`;
+    try {
+      const errData = await res.json();
+      if (errData && errData.detail) errMsg = errData.detail;
+    } catch(e) {}
+    throw new Error(errMsg);
+  }
   // This check prevents "Unexpected token <" error when backend returns HTML instead of JSON
   const contentType = res.headers.get("content-type");
   if (!contentType || !contentType.includes("application/json")) {

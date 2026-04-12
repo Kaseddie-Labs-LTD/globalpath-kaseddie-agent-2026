@@ -13,6 +13,7 @@ export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({ onGenerate
   const [company, setCompany] = useState('');
   const [salary, setSalary] = useState('');
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
   const [pitch, setPitch] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const lastLeadId = React.useRef<string | null>(null);
@@ -28,6 +29,7 @@ export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({ onGenerate
     if (!finalTitle || !finalCompany) return;
 
     setLoading(true);
+    setStatusMessage('Verifying Corridor...');
     
     // Safety Stats Injection Logic
     let safetyStat = "";
@@ -62,6 +64,7 @@ GlobalPath Outreach Command Center
     onLog?.(`OUTREACH AGENT: Deployed Immediate Template Handshake for ${finalTitle}. Phi-3 background refinement starting...`, "thinking", "OUTREACH");
     
     try {
+      setStatusMessage('Streaming Ethical Pitch...');
       const generatedPitch = await onGenerate(
         finalTitle, 
         finalCompany, 
@@ -71,11 +74,18 @@ GlobalPath Outreach Command Center
         selectedLead?.location
       );
       setPitch(generatedPitch);
+      setStatusMessage('Complete');
       onLog?.(`OUTREACH AGENT: Phi-3 refinement complete. Unified Pitch updated.`, "success", "OUTREACH");
-    } catch (err) {
-      onLog?.(`OUTREACH AGENT: Phi-3 Uplink Failed. Keeping high-authority template.`, "warning", "OUTREACH");
-    } finally {
       setLoading(false);
+      setTimeout(() => setStatusMessage(''), 2000);
+    } catch (err: any) {
+      const errMsg = err.message || "Server Busy";
+      setStatusMessage(`Error 504: ${errMsg}`);
+      onLog?.(`OUTREACH AGENT: Phi-3 Uplink Failed. Keeping high-authority template.`, "warning", "OUTREACH");
+      setTimeout(() => {
+        setLoading(false);
+        setStatusMessage('');
+      }, 4000);
     }
   };
 
@@ -237,7 +247,7 @@ GlobalPath Outreach Command Center
           className="w-full bg-emerald-600 text-slate-950 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg flex items-center justify-center gap-2 hover:bg-emerald-500 transition-all active:scale-95 disabled:opacity-50"
         >
           {loading ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
-          {loading ? 'AI Handshake in Progress...' : 'Generate Outreach Pitch'}
+          {statusMessage ? statusMessage : 'Generate Outreach Pitch'}
         </button>
       </form>
 

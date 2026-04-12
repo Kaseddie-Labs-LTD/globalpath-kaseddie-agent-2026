@@ -899,7 +899,7 @@ function App() {
               />
                 </div>
                 <div>
-              <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={(logs || []).length} leads={jobs} />
+              <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => j.fee_blocked || j.illegalFeeDetected || j.complianceStatus === 'High Risk' || j.description?.toLowerCase().includes('fee') || j.requirements?.some(r => r.toLowerCase().includes('fee'))).length} leads={jobs} />
                 </div>
                 <div>
                   <EnrollmentForm onEnroll={handleEnroll} initialLogisticsNeeds={enrollmentInterestJob?.title || ''} />
@@ -907,7 +907,7 @@ function App() {
                 <div>
                   {/* Fees Blocked Counter */}
                   <FeesBlockedCard 
-                    flaggedLeadsCount={(logs || []).length} 
+                    flaggedLeadsCount={jobs.filter(j => j.fee_blocked || j.illegalFeeDetected || j.complianceStatus === 'High Risk' || j.description?.toLowerCase().includes('fee') || j.requirements?.some(r => r.toLowerCase().includes('fee'))).length} 
                     totalLeadsCount={(jobs || []).length} 
                     onClick={() => setView(AppView.BLOCK_REPORT)}
                   />
@@ -1061,19 +1061,10 @@ function App() {
                     });
                     const data = response;
                     return data.pitch || "Failed to generate proposal.";
-                  } catch (err) {
+                  } catch (err: any) {
                     console.error("Phi-3 Uplink Failed", err);
-                    // Fallback to existing Gemini/AI logic if Ollama is down
-                    return await generateB2BPitch({ 
-                      id: 'custom', 
-                      title, 
-                      company, 
-                      salary: salary || 'Competitive',
-                      location: 'Target Region', 
-                      description: '', 
-                      category: 'professional', 
-                      status: 'live' 
-                    } as Job, jobs.length || 500).then(res => res.proposal);
+                    // Throw the error so the UI can display "Error 504: Server Busy" or similar
+                    throw err;
                   }
                 }}
                 onLog={addLog}
