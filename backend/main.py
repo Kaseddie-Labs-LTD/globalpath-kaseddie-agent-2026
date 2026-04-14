@@ -101,12 +101,19 @@ api_router = APIRouter(prefix="/api")
 
 # Move all API routes to the API router
 @api_router.get("/leads")
-async def get_all_leads(limit: int = 1000):
+async def get_all_leads(
+    limit: int = 100,  # REDUCED: Default 100 instead of 1000 to prevent OOM
+    offset: int = 0,   # NEW: Pagination offset
+    category: str = None,  # NEW: Filter by category to reduce payload
+    corridor: str = None   # NEW: Filter by corridor to reduce payload
+):
     """
-    Returns the most recent leads from Qdrant.
+    Returns the most recent leads from Qdrant with PAGINATION support.
+    OOM PROTECTION: Default limit reduced to 100, use offset for pagination.
+    Filter by category/corridor to reduce memory usage.
     """
     try:
-        print(f"🔍 [DEBUG]: Fetching leads from collection '{COLLECTION_NAME}'...")
+        print(f"🔍 [PAGINATED LEADS]: Fetching leads - limit={limit}, offset={offset}, category={category}, corridor={corridor}")
         
         # Check collection exists first
         try:
@@ -114,17 +121,44 @@ async def get_all_leads(limit: int = 1000):
         except Exception as e:
             print(f"❌ [DEBUG]: Collection not found: {e}")
             return {"error": f"Collection not found: {e}", "collection_name": COLLECTION_NAME}
-            
-        # Scroll through all points with limit
+        
+        # OOM PROTECTION: Hard cap at 500 leads max per request
+        safe_limit = min(limit, 500)
+        
+        # Build filter conditions for category/corridor
+        filter_conditions = []
+        if category:
+            filter_conditions.append(
+                models.FieldCondition(
+                    key="category",
+                    match=models.MatchValue(value=category.lower())
+                )
+            )
+        if corridor:
+            filter_conditions.append(
+                models.FieldCondition(
+                    key="corridor",
+                    match=models.MatchValue(value=corridor)
+                )
+            )
+        
+        # Build scroll filter
+        scroll_filter = None
+        if filter_conditions:
+            scroll_filter = models.Filter(must=filter_conditions)
+        
+        # Paginated scroll through points
         all_points = []
         try:
             scroll_result = qdrant_client.scroll(
                 collection_name=COLLECTION_NAME,
-                limit=limit,
+                limit=safe_limit,
+                offset=offset,
+                scroll_filter=scroll_filter,
                 with_payload=True,
-                with_vectors=False
+                with_vectors=False  # Never fetch vectors for list view (saves memory)
             )
-            all_points = scroll_result[0]  # points are the first element of the tuple
+            all_points = scroll_result[0]
         except Exception as e:
             print(f"❌ [DEBUG]: Could not access collection: {e}")
             return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
@@ -138,11 +172,12 @@ async def get_all_leads(limit: int = 1000):
                 if payload.get("status") in ["live", "verified", "active", "vetted"]:
                     leads.append(payload)
         
-        print(f"🔍 [DEBUG]: Found {len(leads)} leads with valid status")
-        print(f"🔍 [DEBUG]: First lead sample: {leads[0] if leads else 'None'}")
+        print(f"✅ [PAGINATED LEADS]: Found {len(leads)} leads (requested {safe_limit}, offset {offset})")
         
         return {
             "count": len(leads),
+            "total_offset": offset,
+            "next_offset": offset + len(leads) if len(leads) == safe_limit else None,
             "leads": leads
         }
     except Exception as e:
@@ -244,19 +279,26 @@ async def sync_apify_leads(background_tasks: BackgroundTasks):
 COLLECTION_NAME = "globalpath_leads"
 VECTOR_SIZE = 3072  # Dimension size for Phi-3 embeddings
 
-# Initialize Qdrant Client (Prefer Cloud URL if available, fallback to Memory)
+# PERSISTENT STORAGE: Use disk-based storage instead of :memory: to prevent OOM data loss
+PERSISTENT_STORAGE_PATH = os.environ.get('QDRANT_STORAGE_PATH', './qdrant_storage')
+
+# Initialize Qdrant Client (Prefer Cloud URL, then persistent disk, never :memory:)
 if QDRANT_URL:
-    print(f"Initializing Qdrant Client with URL: {QDRANT_URL}")
+    print(f"🔌 [PERSISTENT STORE]: Initializing Qdrant Client with Cloud URL: {QDRANT_URL}")
     qdrant_client = QdrantClient(
         url=QDRANT_URL,
         api_key=QDRANT_API_KEY,
         timeout=60  # Increase to 60 seconds for Kampala latency
     )
 else:
-    print("Initializing Qdrant Client in :memory: mode")
+    # ❌ NEVER USE :memory: - causes complete data loss on OOM/restart
+    # ✅ USE persistent disk storage instead
+    print(f"💾 [PERSISTENT STORE]: No QDRANT_URL found. Using disk-based storage at: {PERSISTENT_STORAGE_PATH}")
+    print(f"💾 [PERSISTENT STORE]: This ensures 1,000 leads survive OOM and restarts!")
+    os.makedirs(PERSISTENT_STORAGE_PATH, exist_ok=True)
     qdrant_client = QdrantClient(
-        location=":memory:",
-        timeout=60  # Increase to 60 seconds
+        path=PERSISTENT_STORAGE_PATH,  # ✅ PERSISTENT: Data survives OOM/restart
+        timeout=60
     )
 
 # Initialize Groq Cloud Client for LLM processing

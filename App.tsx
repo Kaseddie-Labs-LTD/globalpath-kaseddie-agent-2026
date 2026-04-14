@@ -99,6 +99,11 @@ function App() {
   const [pitchContext, setPitchContext] = useState<{ job?: Job; candidate?: UserProfile } | null>(null);
   const [chatPrompt, setChatPrompt] = useState<string>('');
   const [hrPitchText, setHrPitchText] = useState<string>('');
+  
+  // OOM PROTECTION: Pagination state for leads (prevent loading all 1,000 at once)
+  const [leadsOffset, setLeadsOffset] = useState(0);
+  const [hasMoreLeads, setHasMoreLeads] = useState(true);
+  const LEADS_PAGE_SIZE = 100; // Only load 100 leads at a time
   const [enrollmentInterestJob, setEnrollmentInterestJob] = useState<{ title: string; company?: string } | null>(null);
   const [recentLead, setRecentLead] = useState<{ name: string; job: string; company?: string } | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
@@ -372,40 +377,48 @@ function App() {
 
   // --- 2. Fetch Logic ---
   
-  const { data: swrLeads, mutate: mutateLeads } = useSWR('/leads', fetcher, {
-    refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
-    revalidateOnFocus: true,
-    revalidateOnReconnect: true,
-    keepPreviousData: true, // Prevents jobs from disappearing during re-validation
-    onError: (error) => {
-      console.error('❌ SWR Error fetching leads:', error);
-      addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
-    },
-    onSuccess: (data) => {
-      console.log('✅ SWR Data received:', data);
-      console.log('✅ SWR Raw response type:', typeof data);
-      console.log('✅ SWR Response structure:', JSON.stringify(data, null, 2));
-      
-      // Check for JSON envelope issues
-      const leadsArray = data?.leads || data || [];
-      console.log('✅ SWR Leads count:', leadsArray.length);
-      console.log('✅ SWR Leads array type:', typeof leadsArray);
-      console.log('✅ SWR First lead sample:', leadsArray[0]);
-      
-      // CRITICAL: Log when leads.length === 0 to debug handshake issues
-      if (!leadsArray || leadsArray.length === 0) {
-        console.error('🚨 CRITICAL: SWR returned 0 leads - investigating handshake failure...');
-        console.error('🚨 SWR Response data:', JSON.stringify(data, null, 2));
-        console.error('🚨 SWR URL:', `${API_BASE}/leads`);
-        addLog('CRITICAL: Backend returned 0 leads - check backend sync and CORS', "error", "SWR");
-      }
-    },
-    // Add cache busting and error recovery
-    errorRetryCount: 3,
-    errorRetryInterval: 5000,
-    dedupingInterval: 10000,
-    refreshWhenOffline: false
-  });
+  // OOM PROTECTION: Paginated leads fetching - only load 100 at a time
+  const { data: swrLeads, mutate: mutateLeads } = useSWR(
+    `/leads?limit=${LEADS_PAGE_SIZE}&offset=${leadsOffset}`, 
+    fetcher, 
+    {
+      refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
+      revalidateOnFocus: false, // OOM PROTECTION: Don't revalidate on focus (prevents memory spikes)
+      revalidateOnReconnect: true,
+      keepPreviousData: true, // Prevents jobs from disappearing during re-validation
+      onError: (error) => {
+        console.error('❌ SWR Error fetching leads:', error);
+        addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
+      },
+      onSuccess: (data) => {
+        console.log('✅ SWR Data received:', data);
+        
+        // OOM PROTECTION: Track if there are more leads to load
+        const leadsArray = data?.leads || [];
+        setHasMoreLeads(data?.next_offset !== null);
+        
+        console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})`);
+        console.log(`✅ [PAGINATED]: Has more leads: ${data?.next_offset !== null}`);
+        
+        if (leadsArray.length === 0 && leadsOffset === 0) {
+          console.error('🚨 CRITICAL: SWR returned 0 leads at offset 0');
+          addLog('CRITICAL: Backend returned 0 leads - check backend sync', "error", "SWR");
+        }
+      },
+      // OOM PROTECTION: Reduce retry count and interval
+      errorRetryCount: 2,
+      errorRetryInterval: 10000,
+      dedupingInterval: 30000,
+      refreshWhenOffline: false
+    }
+  );
+  
+  // OOM PROTECTION: Load more leads function (pagination)
+  const loadMoreLeads = useCallback(() => {
+    if (hasMoreLeads && !isGeneratingPitch) {
+      setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);
+    }
+  }, [hasMoreLeads, isGeneratingPitch]);
 
   const { data: swrStats, mutate: mutateStats } = useSWR(sanitizeEndpoint('corridor-stats'), fetcher, { 
       refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
