@@ -734,11 +734,19 @@ def ensure_collection_exists():
     except Exception as e:
         print(f" Error checking/creating collection: {e}")
 
-# CORS configuration: Targeted for Render deployment and dev server stability
+# THE UNIVERSAL HANDSHAKE: CORS configuration for multi-instance stability
+# Add both primary and -1 variant to ensure total stability across Render deployments
+origins = [
+    "https://globalpath-kaseddie-agent-2026.onrender.com",
+    "https://globalpath-kaseddie-agent-2026-1.onrender.com",  # ✅ Add the new variant
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=origins,  # Explicit origins for security + stability
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
