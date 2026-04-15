@@ -1167,7 +1167,15 @@ async def generate_proposal(req: ProposalRequest):
         
         # Industry-specific adjustments based on job title and company
         industry_keywords = []
-        if req.job_title:
+        
+        # AI UX FIX: Handle "Unknown Position" - assume general role instead of failing
+        effective_title = req.job_title
+        if req.job_title and req.job_title.lower() in ['unknown position', 'unknown', 'unknown role', '']:
+            print(f"🤖 [UNKNOWN POSITION FIX]: Title is '{req.job_title}', assuming general administrative/logistics role")
+            effective_title = "Administrative & Logistics Professional"
+            industry_keywords.append('administrative & logistics')
+            system_prompt += " Assume a general administrative/logistics role. Focus on organizational skills, operational efficiency, and versatile workforce solutions."
+        elif req.job_title:
             title_lower = req.job_title.lower()
             if any(kw in title_lower for kw in ['driver', 'delivery', 'transport', 'logistics']):
                 industry_keywords.append('transportation & logistics')
@@ -1205,10 +1213,11 @@ async def generate_proposal(req: ProposalRequest):
         # Fallback for empty description to prevent AI crashes
         safe_description = req.details if req.details and req.details.strip() else "General recruitment lead with standard requirements"
         
+        # AI UX FIX: Use effective_title in prompt (handles Unknown Position case)
         user_prompt = f"""
         Generate a targeted B2B recruitment pitch for:
         Company: {req.company}
-        Role: {req.job_title}
+        Role: {effective_title}
         Location: {req.location}
         {salary_text}
         Category: {req.category}

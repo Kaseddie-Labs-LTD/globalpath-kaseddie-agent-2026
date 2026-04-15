@@ -88,6 +88,7 @@ function App() {
   });
   const [activePitch, setActivePitch] = useState<{pitch: B2BPitch, job: Job} | null>(null);
   const [isGeneratingPitch, setIsGeneratingPitch] = useState(false); // Network bottleneck: pause polling during AI pitch generation
+  const [pitchErrorMessage, setPitchErrorMessage] = useState<string | null>(null); // AI UX: Error message for pitch generation failures
   
   const [regionIndex, setRegionIndex] = useState(0);
   const [sectorIndex, setSectorIndex] = useState(0);
@@ -1045,6 +1046,8 @@ function App() {
                 pitchContext={pitchContext || undefined}
                 recentLead={recentLead || undefined}
                 initialPitchText={hrPitchText || undefined}
+                isGeneratingPitch={isGeneratingPitch} // AI UX: Pass generating state for visual feedback
+                pitchErrorMessage={pitchErrorMessage} // AI UX: Pass error message for display
                 onPitchLead={(prompt) => {
                   setChatPrompt(prompt || '');
                   setView(AppView.CHAT);
@@ -1054,9 +1057,10 @@ function App() {
                   return res;
                 }}
                 onGenerateB2BPitch={async (title, company, salary, country, category, location) => {
-                  // Network bottleneck fix: PAUSE all background polling during AI pitch generation
+                  // AI UX & STATE LOCK: Clear any previous error and set generating state
+                  setPitchErrorMessage(null);
                   setIsGeneratingPitch(true);
-                  addLog(`NETWORK: Pausing background polling for AI pitch generation (${title})`, "info", "NETWORK");
+                  addLog(`AI PITCH: Starting B2B pitch generation for ${title} at ${company}`, "info", "PITCH");
                   
                   try {
                     const requestBody = {
@@ -1079,15 +1083,24 @@ function App() {
                       timeout: 60000 // 60s timeout for complex pitches like N-iX
                     });
                     const data = response;
+                    
+                    // Clear error on success
+                    setPitchErrorMessage(null);
+                    addLog(`AI PITCH: Successfully generated pitch for ${title}`, "success", "PITCH");
                     return data.pitch || "Failed to generate proposal.";
                   } catch (err: any) {
+                    // AI UX: Set error message for display in UI
+                    const errorMsg = err.message || "Connection Error: AI service temporarily unavailable";
+                    setPitchErrorMessage(errorMsg);
+                    addLog(`AI PITCH ERROR: ${errorMsg} for ${title}`, "error", "PITCH");
                     console.error("Phi-3 Uplink Failed", err);
                     // Throw the error so the UI can display "Error 504: Server Busy" or similar
                     throw err;
                   } finally {
-                    // Network bottleneck fix: RESUME background polling after AI pitch generation
+                    // AI UX & STATE LOCK: CRITICAL - Unlock UI first thing in finally block
+                    // This prevents "Zombie Button" state where button stays disabled
                     setIsGeneratingPitch(false);
-                    addLog(`NETWORK: Resuming background polling after AI pitch generation`, "success", "NETWORK");
+                    addLog(`AI PITCH: Pitch generation complete (success or error)`, "info", "PITCH");
                   }
                 }}
                 onLog={addLog}

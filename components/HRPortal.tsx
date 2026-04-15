@@ -28,6 +28,8 @@ interface HRPortalProps {
   onSearchLeads?: (query: string) => Promise<{ summary: string; leads: Job[] }>;
   onGenerateB2BPitch?: (title: string, company: string, salary?: string, country?: string, category?: string) => Promise<string>;
   onLog?: (message: string, type: AgentLogEntry['type'], step?: string) => void;
+  isGeneratingPitch?: boolean; // AI UX: Visual feedback during pitch generation
+  pitchErrorMessage?: string | null; // AI UX: Error display for failed generation
 }
 
 export const HRPortal: React.FC<HRPortalProps> = ({ 
@@ -45,7 +47,9 @@ export const HRPortal: React.FC<HRPortalProps> = ({
   onPitchLead,
   onSearchLeads,
   onGenerateB2BPitch,
-  onLog
+  onLog,
+  isGeneratingPitch = false, // AI UX: Default false
+  pitchErrorMessage = null   // AI UX: Default null
  }) => {
   const [isPosting, setIsPosting] = useState(false);
   const [activeTab, setActiveTab] = useState<'talent' | 'vacancies'>(pitchContext ? 'vacancies' : 'talent');
@@ -556,6 +560,8 @@ export const HRPortal: React.FC<HRPortalProps> = ({
               selectedLead={pitchContext?.job}
               onGenerate={onGenerateB2BPitch || (async () => "AI Handshake Pending...")}
               onLog={onLog}
+              isGeneratingPitch={isGeneratingPitch} // AI UX: Visual thinking state
+              pitchErrorMessage={pitchErrorMessage}  // AI UX: Error display
             />
           </div>
 

@@ -6,17 +6,28 @@ interface B2BPitchGeneratorProps {
   onGenerate: (title: string, company: string, salary?: string, country?: string, category?: string, location?: string) => Promise<string>;
   onLog?: (message: string, type: AgentLogEntry['type'], step?: string) => void;
   selectedLead?: Job | null;
+  isGeneratingPitch?: boolean; // AI UX: Visual thinking state from parent
+  pitchErrorMessage?: string | null; // AI UX: Error message from parent
 }
 
-export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({ onGenerate, onLog, selectedLead }) => {
+export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({ 
+  onGenerate, 
+  onLog, 
+  selectedLead,
+  isGeneratingPitch = false, // AI UX: Parent-controlled generating state
+  pitchErrorMessage = null   // AI UX: Parent-provided error message
+}) => {
   const [jobTitle, setJobTitle] = useState('');
   const [company, setCompany] = useState('');
   const [salary, setSalary] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false); // Local loading for fallback template
   const [statusMessage, setStatusMessage] = useState('');
   const [pitch, setPitch] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const lastLeadId = React.useRef<string | null>(null);
+  
+  // AI UX: Combine parent and local loading states
+  const loading = isGeneratingPitch || localLoading;
 
   const handleSubmit = async (title?: string, comp?: string, sal?: string) => {
     const finalTitle = title || jobTitle;
@@ -28,7 +39,8 @@ export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({ onGenerate
     
     if (!finalTitle || !finalCompany) return;
 
-    setLoading(true);
+    // AI UX: Use local loading for immediate template (parent handles AI generation state)
+    setLocalLoading(true);
     setStatusMessage('Verifying Corridor...');
     
     // Safety Stats Injection Logic
@@ -76,14 +88,14 @@ GlobalPath Outreach Command Center
       setPitch(generatedPitch);
       setStatusMessage('Complete');
       onLog?.(`OUTREACH AGENT: Phi-3 refinement complete. Unified Pitch updated.`, "success", "OUTREACH");
-      setLoading(false);
+      setLocalLoading(false);
       setTimeout(() => setStatusMessage(''), 2000);
     } catch (err: any) {
       const errMsg = err.message || "Server Busy";
       setStatusMessage(`Error 504: ${errMsg}`);
       onLog?.(`OUTREACH AGENT: Phi-3 Uplink Failed. Keeping high-authority template.`, "warning", "OUTREACH");
       setTimeout(() => {
-        setLoading(false);
+        setLocalLoading(false);
         setStatusMessage('');
       }, 4000);
     }
@@ -250,6 +262,47 @@ GlobalPath Outreach Command Center
           {statusMessage ? statusMessage : 'Generate Outreach Pitch'}
         </button>
       </form>
+
+      {/* AI UX: Thinking State - Shows when AI is processing during 60s timeout window */}
+      {isGeneratingPitch && (
+        <div className="mt-6 space-y-3 animate-fadeIn">
+          <div className="flex items-center gap-2 mb-2">
+            <Loader2 className="animate-spin text-cyan-400" size={16} />
+            <h4 className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">
+              Kaseddie AI is analyzing logistics corridors...
+            </h4>
+          </div>
+          {/* Loading Skeleton */}
+          <div className="bg-gray-900/50 p-4 rounded-2xl border border-cyan-900/30 space-y-2">
+            <div className="h-3 bg-cyan-900/30 rounded animate-pulse w-3/4"></div>
+            <div className="h-3 bg-cyan-900/30 rounded animate-pulse w-1/2"></div>
+            <div className="h-3 bg-cyan-900/30 rounded animate-pulse w-5/6"></div>
+            <div className="h-3 bg-cyan-900/30 rounded animate-pulse w-2/3"></div>
+            <div className="mt-4 flex items-center gap-2 text-[9px] text-cyan-500/60 font-bold uppercase tracking-widest">
+              <Sparkles size={10} className="animate-pulse" />
+              Generating B2B outreach pitch with Phi-3 LLM...
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI UX: Error Message Display */}
+      {pitchErrorMessage && !isGeneratingPitch && (
+        <div className="mt-4 p-3 bg-red-900/20 border border-red-500/30 rounded-xl">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+            <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">
+              Connection Error
+            </span>
+          </div>
+          <p className="text-[9px] text-red-300/80 mt-1 font-mono">
+            {pitchErrorMessage}
+          </p>
+          <p className="text-[8px] text-red-400/60 mt-2 uppercase tracking-wider">
+            Fallback template is active. You can still copy and send the pitch above.
+          </p>
+        </div>
+      )}
 
       {pitch && (
         <div className="mt-6 space-y-3 animate-fadeIn">
