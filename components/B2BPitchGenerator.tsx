@@ -8,6 +8,7 @@ interface B2BPitchGeneratorProps {
   selectedLead?: Job | null;
   isGeneratingPitch?: boolean; // AI UX: Visual thinking state from parent
   pitchErrorMessage?: string | null; // AI UX: Error message from parent
+  autoInitialize?: boolean; // MISSION 1: Auto-trigger pitch generation on navigation
 }
 
 export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({ 
@@ -15,7 +16,8 @@ export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({
   onLog, 
   selectedLead,
   isGeneratingPitch = false, // AI UX: Parent-controlled generating state
-  pitchErrorMessage = null   // AI UX: Parent-provided error message
+  pitchErrorMessage = null,   // AI UX: Parent-provided error message
+  autoInitialize = false // MISSION 1: Default to false
 }) => {
   const [jobTitle, setJobTitle] = useState('');
   const [company, setCompany] = useState('');
@@ -28,6 +30,9 @@ export const B2BPitchGenerator: React.FC<B2BPitchGeneratorProps> = ({
   
   // AI UX: Combine parent and local loading states
   const loading = isGeneratingPitch || localLoading;
+  
+  // MISSION 1: Track if we've already auto-initialized for this lead
+  const hasAutoInitialized = React.useRef(false);
 
   const handleSubmit = async (title?: string, comp?: string, sal?: string) => {
     const finalTitle = title || jobTitle;
@@ -101,6 +106,25 @@ GlobalPath Outreach Command Center
     }
   };
 
+  // MISSION 1: Auto-trigger pitch generation when navigated from Admin Dashboard
+  useEffect(() => {
+    if (autoInitialize && selectedLead && !hasAutoInitialized.current) {
+      hasAutoInitialized.current = true;
+      const title = selectedLead.title || selectedLead.positionName || '';
+      const comp = selectedLead.company || '';
+      const sal = selectedLead.salary || 'Competitive';
+      
+      setJobTitle(title);
+      setCompany(comp);
+      setSalary(sal);
+      
+      onLog?.(`PITCH: Auto-generating B2B proposal for ${comp} - ${title}`, 'thinking');
+      if (title && comp) {
+        handleSubmit(title, comp, sal);
+      }
+    }
+  }, [autoInitialize, selectedLead, onLog]);
+
   useEffect(() => {
     if (selectedLead && selectedLead.id !== lastLeadId.current) {
       lastLeadId.current = selectedLead.id;
@@ -124,12 +148,12 @@ GlobalPath Outreach Command Center
       setCompany(comp);
       setSalary(sal);
       
-      // Auto-generate pitch when lead changes
-      if (title && comp) {
+      // Auto-generate pitch when lead changes (only if not from navigation)
+      if (title && comp && !autoInitialize) {
         handleSubmit(title, comp, sal);
       }
     }
-  }, [selectedLead]);
+  }, [selectedLead, autoInitialize]);
 
   const handleCopy = () => {
     if (!pitch) return;

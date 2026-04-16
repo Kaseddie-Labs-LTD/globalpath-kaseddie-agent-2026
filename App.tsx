@@ -820,9 +820,9 @@ function App() {
         <div className="p-6 border-b border-slate-800">
             <div className="flex items-center gap-2 mb-1">
               <Globe className="text-brand-500" size={24} />
-              <h1 className="text-lg font-black tracking-tight">Kaseddie Agent</h1>
+              <h1 className="text-lg font-black tracking-tight">ETHICAL AI INFRASTRUCTURE</h1>
             </div>
-            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none">GlobalPath • Ethical AI Infrastructure</p>
+            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none">Oversight Uplink • GlobalPath • Zero-Fee Guarantee</p>
         </div>
         <nav className="p-4 space-y-2">
           {(!isGatekeeperMode ? [
@@ -833,7 +833,7 @@ function App() {
             { id: AppView.CHAT, label: "Consultant", icon: Mic },
             { id: AppView.WHATSAPP_BOT, label: "Safety Map", icon: Globe2 },
           ] : [
-            { id: AppView.ADMIN_DASHBOARD, label: "Oversight", icon: LayoutDashboard },
+            { id: AppView.ADMIN_DASHBOARD, label: "Oversight Uplink", icon: LayoutDashboard },
             { id: AppView.VIDEO_GENERATOR, label: "AI Promo", icon: Video },
             { id: AppView.HR_PORTAL, label: "Employer Portal", icon: Building2 },
           ]).map(item => (
@@ -914,15 +914,16 @@ function App() {
               />
                 </div>
                 <div>
-              <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => j.fee_blocked || j.illegalFeeDetected || j.complianceStatus === 'High Risk' || j.description?.toLowerCase().includes('fee') || j.requirements?.some(r => r.toLowerCase().includes('fee'))).length} leads={jobs} />
+              {/* MISSION 3: Corridor Feed - Fees Blocked linked to Qdrant vetted count */}
+              <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => j.vetted === true || j.status === 'verified' || !(j as any).illegalFeeDetected).length} leads={jobs} />
                 </div>
                 <div>
                   <EnrollmentForm onEnroll={handleEnroll} initialLogisticsNeeds={enrollmentInterestJob?.title || ''} />
                 </div>
                 <div>
-                  {/* Fees Blocked Counter */}
+                  {/* MISSION 3: Fees Blocked Counter - Linked to Qdrant Vetted/Zero-Fee Leads */}
                   <FeesBlockedCard 
-                    flaggedLeadsCount={jobs.filter(j => j.fee_blocked || j.illegalFeeDetected || j.complianceStatus === 'High Risk' || j.description?.toLowerCase().includes('fee') || j.requirements?.some(r => r.toLowerCase().includes('fee'))).length} 
+                    flaggedLeadsCount={jobs.filter(j => j.vetted === true || j.status === 'verified' || !(j as any).illegalFeeDetected).length} 
                     totalLeadsCount={(jobs || []).length} 
                     onClick={() => setView(AppView.BLOCK_REPORT)}
                   />

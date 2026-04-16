@@ -1,5 +1,6 @@
 
- import React, { useState, useRef } from 'react';
+ import React, { useState, useRef, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Job, UserProfile, OfferLetter, RecruitmentBatch, getJobLocationString } from '../types';
 import { 
   PlusCircle, Users, FileCheck, Send, Building2, MapPin, DollarSign, 
@@ -63,6 +64,19 @@ export const HRPortal: React.FC<HRPortalProps> = ({
   const [subject, setSubject] = useState<string>('');
   const [leadContact, setLeadContact] = useState<string>('');
   const HR_WHATSAPP = '256784428821';
+  
+  // MISSION 1: Pitch Lead Data Handover - Read selectedLead from navigation state
+  const location = useLocation();
+  const [navigatedLead, setNavigatedLead] = useState<Job | null>(null);
+  
+  useEffect(() => {
+    const state = location.state as { selectedLead?: Job; autoInitializeB2B?: boolean } | null;
+    if (state?.selectedLead) {
+      setNavigatedLead(state.selectedLead);
+      setActiveTab('vacancies');
+      onLog?.(`PITCH: Auto-populating B2B generator from Admin Dashboard handover for ${state.selectedLead.company}`, 'success');
+    }
+  }, [location.state, onLog]);
   
   // Fuzzy search helper function
   const fuzzyMatch = (text: string, query: string): boolean => {
@@ -557,11 +571,12 @@ export const HRPortal: React.FC<HRPortalProps> = ({
           {/* Unified Outreach Command Center */}
           <div className="lg:col-span-5">
             <B2BPitchGenerator 
-              selectedLead={pitchContext?.job}
+              selectedLead={navigatedLead || pitchContext?.job}
               onGenerate={onGenerateB2BPitch || (async () => "AI Handshake Pending...")}
               onLog={onLog}
               isGeneratingPitch={isGeneratingPitch} // AI UX: Visual thinking state
               pitchErrorMessage={pitchErrorMessage}  // AI UX: Error display
+              autoInitialize={!!navigatedLead}
             />
           </div>
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, Bot, Send } from 'lucide-react';
+import { BACKEND_URL } from '../constants/api';
 
 const KaseddieChat = () => {
   const [input, setInput] = useState("");
@@ -16,10 +17,11 @@ const KaseddieChat = () => {
     setInput("");
 
     try {
-      // Calling new agent chat endpoint with streaming
-      const res = await fetch('/api/agent/chat', {
+      // MISSION 2: Universal Handshake - Use explicit BACKEND_URL with credentials
+      const res = await fetch(`${BACKEND_URL}/agent/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ message: input })
       });
       

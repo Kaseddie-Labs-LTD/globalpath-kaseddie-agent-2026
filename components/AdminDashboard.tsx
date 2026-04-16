@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { RecruitmentBatch, AgentLogEntry, Job, getJobLocationString } from '../types';
 import { 
   ShieldAlert, ShieldCheck, Users, Activity, 
@@ -284,19 +285,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
+  const navigate = useNavigate();
+
   const handlePitchLead = async (job: Job) => {
     setPitchingId(job.id);
     onAddLog(`PITCH: Analyzing employer nodes for ${job.company}...`, 'thinking');
     try {
+      // MISSION 1: Pitch Lead Data Handover - Use React Router navigate with state
+      navigate('/hr-portal', { 
+        state: { 
+          selectedLead: job,
+          autoInitializeB2B: true 
+        } 
+      });
+      onAddLog(`PITCH: Data handover to HR Portal for ${job.company} complete.`, 'success');
       if (onPitch) await onPitch(job);
     } catch (error) {
       console.error('PITCH ERROR:', error);
       onAddLog(`PITCH ERROR: Failed to generate pitch for ${job.company} - ${error}`, 'error');
-    } finally {
-      // If we are uplinking, we want to keep the pitchingId set until we redirect
-      if (!isUplinking) {
-        setPitchingId(null);
-      }
     }
   };
 
@@ -719,7 +725,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
         <div className="col-span-12 lg:col-span-4 space-y-6">
            {/* Safety check: Ensure hrJobs exists before passing to SearchSummary */}
            {hrJobs && Array.isArray(hrJobs) && hrJobs.length > 0 ? (
-             <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} />
+             <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} onSectorClick={(sector) => onAddLog(`Sector filter: ${sector}`, 'info')} />
            ) : (
              <div className="p-4 bg-slate-800 text-white rounded-lg">
                <div className="flex items-center gap-2">
