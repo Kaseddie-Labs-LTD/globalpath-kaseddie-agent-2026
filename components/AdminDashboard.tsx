@@ -10,6 +10,7 @@ import { CorridorFeed } from './CorridorFeed';
 import { SearchSummary } from './SearchSummary';
 import { API_BASE, fetcher } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
+import { safeArray } from '../utils/sanitize'; // K2.5: Defensive array utility
 
 interface VendorPortal {
   id: string;
@@ -522,7 +523,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   <ChevronRight size={20} className="text-slate-300 group-hover:text-emerald-500 transition-transform group-hover:translate-x-1" />
                 </button>
                 <div className="divide-y divide-slate-50">
-                  {displayProfessionalJobs.length > 0 ? displayProfessionalJobs.map((job) => (
+                  {/* K2.5 NULL GUARD: Use safeArray before mapping */}
+                  {safeArray<Job>(displayProfessionalJobs).length > 0 ? safeArray<Job>(displayProfessionalJobs).map((job) => (
                     <JobItem 
                       key={job.id} 
                       job={job} 
@@ -556,7 +558,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   <ChevronRight size={20} className="text-slate-300 group-hover:text-brand-500 transition-transform group-hover:translate-x-1" />
                 </button>
                 <div className="divide-y divide-slate-50">
-                  {displayBlueCollarJobs.length > 0 ? displayBlueCollarJobs.map((job) => (
+                  {/* K2.5 NULL GUARD: Use safeArray before mapping */}
+                  {safeArray<Job>(displayBlueCollarJobs).length > 0 ? safeArray<Job>(displayBlueCollarJobs).map((job) => (
                     <JobItem 
                       key={job.id} 
                       job={job} 
@@ -590,7 +593,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   <ChevronRight size={20} className="text-slate-300 group-hover:text-cyan-500 transition-transform group-hover:translate-x-1" />
                 </button>
                 <div className="divide-y divide-slate-50">
-                  {serviceDomesticJobs.length > 0 ? serviceDomesticJobs.map((job) => (
+                  {/* K2.5 NULL GUARD: Use safeArray before mapping */}
+                  {safeArray<Job>(serviceDomesticJobs).length > 0 ? safeArray<Job>(serviceDomesticJobs).map((job) => (
                     <JobItem 
                       key={job.id} 
                       job={job} 
@@ -622,7 +626,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                       </div>
                     </div>
                     <div className="divide-y divide-slate-50">
-                      {displayOtherJobs.map((job) => (
+                      {/* K2.5 NULL GUARD: Use safeArray before mapping */}
+                      {safeArray<Job>(displayOtherJobs).map((job) => (
                         <JobItem 
                           key={job.id} 
                           job={job} 

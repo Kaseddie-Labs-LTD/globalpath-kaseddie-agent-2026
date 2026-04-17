@@ -2,24 +2,7 @@
 import React from 'react';
 import { Job, getJobLocationString } from '../types';
 import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2 } from 'lucide-react';
-
-// V4.5 SURGICAL STABILIZER: Hard-hardened sanitizer with type guards
-const sanitizeRegionName = (name: any): string => {
-  // V4.5: Handle non-string types (null, undefined, object, number)
-  if (typeof name !== 'string') return "Global Node";
-  if (!name) return "Global Corridor";
-  if (name.includes('{')) {
-    // If it's a JSON string from the "Blue Nodes"
-    try {
-      // Basic extraction of the Country or City without needing a complex parser
-      const countryMatch = name.match(/'country':\s*'([^']+)'/);
-      return countryMatch ? countryMatch[1] : "International Node";
-    } catch (e) {
-      return "Satellite Node";
-    }
-  }
-  return name.replace('_blue', ''); // Clean up the internal _blue tagging
-};
+import { sanitizeRegionName, safeNumber, safeArray } from '../utils/sanitize';
 
 interface SearchSummaryProps {
   jobs: Job[];
@@ -117,10 +100,14 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
       const company = (job.company || '').toLowerCase();
       const loc = getJobLocationString(job.location).toLowerCase();
       
-      // V4.4 DOMESTIC FILTER FIX: Check for company names from backend
-      const isDomesticCompany = company.includes('tidy') || 
-                                company.includes('authentic') || 
-                                company.includes('domestic');
+      // K2.5 OMEGA: Explicit Service & Domestic company mapping
+      const domesticCompanies = [
+        'the tidy troupe',
+        'authentic services', 
+        'cleaning',
+        'domestic'
+      ];
+      const isDomesticCompany = domesticCompanies.some(dc => company.includes(dc));
       
       // Service & Domestic detection (title/description OR company name)
       if (title.includes('cleaner') || title.includes('housekeeper') || title.includes('maid') || title.includes('nanny') || title.includes('domestic') || title.includes('janitor') ||
@@ -172,14 +159,15 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
         </div>
         
         <div className="space-y-4 max-h-[400px] overflow-y-auto scrollbar-hide">
-          {stats.length > 0 ? (
-            stats.map(([region, data]) => {
-              const total = typeof data === 'number' ? data : (data as any).total;
-              const bcCount = typeof data === 'object' ? (data as any).blue_collar : 0;
-              const profCount = typeof data === 'object' ? (data as any).professional : 0;
-              const serviceDomesticCount = typeof data === 'object' ? (data as any).service_domestic : 0;
+          {safeArray<[string, any]>(stats).length > 0 ? (
+            safeArray<[string, any]>(stats).map(([region, data]) => {
+              // K2.5 DEFENSIVE RENDER: Hard fallback to 0 for all numeric properties
+              const total = safeNumber(typeof data === 'number' ? data : (data as any)?.total, 0);
+              const bcCount = safeNumber((data as any)?.blue_collar, 0);
+              const profCount = safeNumber((data as any)?.professional, 0);
+              const serviceDomesticCount = safeNumber((data as any)?.service_domestic, 0);
               
-              // V4.4 CRITICAL PATCH: Sanitize region name before display
+              // K2.5: Sanitize region name before display
               const cleanRegion = sanitizeRegionName(region);
 
               return (

@@ -5,21 +5,7 @@ import { Terminal, Activity, Globe, Zap, ShieldCheck, Search, Cpu } from 'lucide
 import { fetchGlobalJobs, fetchLuxembourgLeads } from '../services/apify';
 import { Job, getJobLocationString } from '../types';
 import { fetcher } from '../constants/api';
-
-// V4.4 CRITICAL PATCH: Sanitize region names to prevent JSON crash
-const sanitizeRegionName = (name: string): string => {
-  if (!name) return "Global Corridor";
-  if (name.includes('{')) {
-    try {
-      const countryMatch = name.match(/'country':\s*'([^']+)'/);
-      const cityMatch = name.match(/'city':\s*'([^']+)'/);
-      return countryMatch ? countryMatch[1] : (cityMatch ? cityMatch[1] : "International Node");
-    } catch (e) {
-      return "Satellite Node";
-    }
-  }
-  return name.replace('_blue', '');
-};
+import { sanitizeRegionName, safeNumber, safeArray } from '../utils/sanitize';
 
 interface FeedItem {
   id: string;
@@ -67,21 +53,24 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
     fetcher,
     {
       refreshInterval: 10000,
-      revalidateOnFocus: false,
+      revalidateOnFocus: false,  // K2.5: Already correct - prevents focus revalidation loops
+      shouldRetryOnError: false, // K2.5: Prevent error loops on backend cold start
       dedupingInterval: 5000
     }
   );
 
   useEffect(() => {
-    if (statsData && statsData.stats) {
-      const newItems: FeedItem[] = statsData.stats.map((s: any) => {
-        // V4.4 CRITICAL PATCH: Sanitize region name before display
-        const cleanRegion = sanitizeRegionName(s.region);
+    // K2.5 NULL GUARD: Ensure statsData.stats is a valid array before mapping
+    if (statsData && Array.isArray(statsData.stats)) {
+      const newItems: FeedItem[] = safeArray<any>(statsData.stats).map((s: any) => {
+        // K2.5: Sanitize region name and use safeNumber for count
+        const cleanRegion = sanitizeRegionName(s?.region);
+        const count = safeNumber(s?.count, 0);
         return {
           id: `stat-${cleanRegion}-${Date.now()}`,
           timestamp: new Date().toLocaleTimeString(),
           node: `${cleanRegion.toUpperCase().slice(0, 3)}-NODE`,
-          message: `Active Node Sync: ${s.count} leads identified in ${cleanRegion} corridor.`,
+          message: `Active Node Sync: ${count} leads identified in ${cleanRegion} corridor.`,
           type: 'sync'
         };
       });
