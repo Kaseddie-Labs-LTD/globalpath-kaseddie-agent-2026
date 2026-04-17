@@ -3,16 +3,17 @@ import React from 'react';
 import { Job, getJobLocationString } from '../types';
 import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2 } from 'lucide-react';
 
-// V4.4 CRITICAL PATCH: Sanitize region names to prevent JSON crash
-const sanitizeRegionName = (name: string): string => {
+// V4.5 SURGICAL STABILIZER: Hard-hardened sanitizer with type guards
+const sanitizeRegionName = (name: any): string => {
+  // V4.5: Handle non-string types (null, undefined, object, number)
+  if (typeof name !== 'string') return "Global Node";
   if (!name) return "Global Corridor";
   if (name.includes('{')) {
     // If it's a JSON string from the "Blue Nodes"
     try {
       // Basic extraction of the Country or City without needing a complex parser
       const countryMatch = name.match(/'country':\s*'([^']+)'/);
-      const cityMatch = name.match(/'city':\s*'([^']+)'/);
-      return countryMatch ? countryMatch[1] : (cityMatch ? cityMatch[1] : "International Node");
+      return countryMatch ? countryMatch[1] : "International Node";
     } catch (e) {
       return "Satellite Node";
     }
@@ -150,6 +151,9 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
       .filter(([_, count]) => count > 0)
       .sort((a, b) => b[1] - a[1]);
   }, [jobs]);
+
+  // V4.5 ABSOLUTE GUARD: Prevent render if stats is invalid
+  if (!stats || !Array.isArray(stats)) return null;
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 flex flex-col h-full space-y-6">
