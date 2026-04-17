@@ -6,6 +6,21 @@ import { fetchGlobalJobs, fetchLuxembourgLeads } from '../services/apify';
 import { Job, getJobLocationString } from '../types';
 import { fetcher } from '../constants/api';
 
+// V4.4 CRITICAL PATCH: Sanitize region names to prevent JSON crash
+const sanitizeRegionName = (name: string): string => {
+  if (!name) return "Global Corridor";
+  if (name.includes('{')) {
+    try {
+      const countryMatch = name.match(/'country':\s*'([^']+)'/);
+      const cityMatch = name.match(/'city':\s*'([^']+)'/);
+      return countryMatch ? countryMatch[1] : (cityMatch ? cityMatch[1] : "International Node");
+    } catch (e) {
+      return "Satellite Node";
+    }
+  }
+  return name.replace('_blue', '');
+};
+
 interface FeedItem {
   id: string;
   timestamp: string;
@@ -59,13 +74,17 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
 
   useEffect(() => {
     if (statsData && statsData.stats) {
-      const newItems: FeedItem[] = statsData.stats.map((s: any) => ({
-        id: `stat-${s.region}-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString(),
-        node: `${s.region.toUpperCase().slice(0, 3)}-NODE`,
-        message: `Active Node Sync: ${s.count} leads identified in ${s.region} corridor.`,
-        type: 'sync'
-      }));
+      const newItems: FeedItem[] = statsData.stats.map((s: any) => {
+        // V4.4 CRITICAL PATCH: Sanitize region name before display
+        const cleanRegion = sanitizeRegionName(s.region);
+        return {
+          id: `stat-${cleanRegion}-${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString(),
+          node: `${cleanRegion.toUpperCase().slice(0, 3)}-NODE`,
+          message: `Active Node Sync: ${s.count} leads identified in ${cleanRegion} corridor.`,
+          type: 'sync'
+        };
+      });
       setItems(prev => [...newItems, ...prev].slice(0, 50));
     }
   }, [statsData]);

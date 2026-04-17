@@ -3,6 +3,23 @@ import React from 'react';
 import { Job, getJobLocationString } from '../types';
 import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2 } from 'lucide-react';
 
+// V4.4 CRITICAL PATCH: Sanitize region names to prevent JSON crash
+const sanitizeRegionName = (name: string): string => {
+  if (!name) return "Global Corridor";
+  if (name.includes('{')) {
+    // If it's a JSON string from the "Blue Nodes"
+    try {
+      // Basic extraction of the Country or City without needing a complex parser
+      const countryMatch = name.match(/'country':\s*'([^']+)'/);
+      const cityMatch = name.match(/'city':\s*'([^']+)'/);
+      return countryMatch ? countryMatch[1] : (cityMatch ? cityMatch[1] : "International Node");
+    } catch (e) {
+      return "Satellite Node";
+    }
+  }
+  return name.replace('_blue', ''); // Clean up the internal _blue tagging
+};
+
 interface SearchSummaryProps {
   jobs: Job[];
   onNodeClick?: (region: string, category?: 'All' | 'blue_collar' | 'professional' | 'service_domestic', keyword?: string) => void;
@@ -96,11 +113,18 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
     jobs.forEach(job => {
       const title = (job.title || '').toLowerCase();
       const description = (job.description || '').toLowerCase();
+      const company = (job.company || '').toLowerCase();
       const loc = getJobLocationString(job.location).toLowerCase();
       
-      // Service & Domestic detection
+      // V4.4 DOMESTIC FILTER FIX: Check for company names from backend
+      const isDomesticCompany = company.includes('tidy') || 
+                                company.includes('authentic') || 
+                                company.includes('domestic');
+      
+      // Service & Domestic detection (title/description OR company name)
       if (title.includes('cleaner') || title.includes('housekeeper') || title.includes('maid') || title.includes('nanny') || title.includes('domestic') || title.includes('janitor') ||
-          description.includes('cleaner') || description.includes('housekeeper') || description.includes('maid') || description.includes('nanny') || description.includes('domestic') || description.includes('janitor')) {
+          description.includes('cleaner') || description.includes('housekeeper') || description.includes('maid') || description.includes('nanny') || description.includes('domestic') || description.includes('janitor') ||
+          isDomesticCompany) {
         sectors['Service & Domestic']++;
       }
       // Only deep-dive into Western Corridor (Poland/Canada/etc) or all if preferred
@@ -150,18 +174,21 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
               const bcCount = typeof data === 'object' ? (data as any).blue_collar : 0;
               const profCount = typeof data === 'object' ? (data as any).professional : 0;
               const serviceDomesticCount = typeof data === 'object' ? (data as any).service_domestic : 0;
+              
+              // V4.4 CRITICAL PATCH: Sanitize region name before display
+              const cleanRegion = sanitizeRegionName(region);
 
               return (
                 <div key={region} className="space-y-2">
                   <button 
-                    onClick={() => onNodeClick?.(region)}
+                    onClick={() => onNodeClick?.(cleanRegion)}
                     className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-brand-500 hover:bg-brand-50 transition-all group active:scale-[0.98]"
                   >
                     <div className="flex items-center gap-3">
                       <div className="p-1.5 bg-white rounded-lg shadow-sm group-hover:text-brand-600 transition-colors text-slate-400">
                         <MapPin size={12} />
                       </div>
-                      <span className="text-xs font-bold text-slate-700 group-hover:text-brand-700">{region}</span>
+                      <span className="text-xs font-bold text-slate-700 group-hover:text-brand-700">{cleanRegion}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-black text-brand-600">{total}</span>
@@ -171,7 +198,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
                   
                   <div className="grid grid-cols-3 gap-2 px-1">
                     <button 
-                      onClick={(e) => { e.stopPropagation(); onNodeClick?.(region, 'blue_collar'); }}
+                      onClick={(e) => { e.stopPropagation(); onNodeClick?.(cleanRegion, 'blue_collar'); }}
                       className="flex items-center justify-between p-2 bg-brand-50/50 rounded-lg border border-brand-100/50 hover:border-brand-500 hover:bg-brand-100/50 transition-all active:scale-[0.95]"
                     >
                       <div className="flex items-center gap-1.5">
@@ -181,7 +208,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
                       <span className="text-[10px] font-black text-brand-600">{bcCount}</span>
                     </button>
                     <button 
-                      onClick={(e) => { e.stopPropagation(); onNodeClick?.(region, 'professional'); }}
+                      onClick={(e) => { e.stopPropagation(); onNodeClick?.(cleanRegion, 'professional'); }}
                       className="flex items-center justify-between p-2 bg-emerald-50/50 rounded-lg border border-emerald-100/50 hover:border-emerald-500 hover:bg-emerald-100/50 transition-all active:scale-[0.95]"
                     >
                       <div className="flex items-center gap-1.5">
@@ -191,7 +218,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
                       <span className="text-[10px] font-black text-emerald-600">{profCount}</span>
                     </button>
                     <button 
-                      onClick={(e) => { e.stopPropagation(); onNodeClick?.(region, 'service_domestic'); }}
+                      onClick={(e) => { e.stopPropagation(); onNodeClick?.(cleanRegion, 'service_domestic'); }}
                       className="flex items-center justify-between p-2 bg-cyan-50/50 rounded-lg border border-cyan-100/50 hover:border-cyan-500 hover:bg-cyan-100/50 transition-all active:scale-[0.95]"
                     >
                       <div className="flex items-center gap-1.5">
