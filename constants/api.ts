@@ -2,7 +2,7 @@
 // THE UNIVERSAL HANDSHAKE: Explicitly using primary backend URL (without -1 variant)
 // Backend CORS is configured to accept both primary and -1 origins
 const isProd = import.meta.env.PROD;
-const BACKEND_URL = isProd 
+export const BACKEND_URL = isProd 
   ? 'https://globalpath-kaseddie-agent-2026.onrender.com/api' // ✅ Primary backend (NOT the -1 variant)
   : '/api'; // Local Proxy
 
