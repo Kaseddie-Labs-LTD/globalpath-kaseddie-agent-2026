@@ -139,18 +139,31 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
       .sort((a, b) => b[1] - a[1]);
   }, [jobs]);
 
-  // V4.5 ABSOLUTE GUARD: Prevent render if stats is invalid
-  if (!stats || !Array.isArray(stats)) return null;
+  // STRIKE 2: Logic/Render Separation - Calculate Ethical Impact OUTSIDE JSX with safeNumber
+  const totalLeads = safeNumber(jobs?.length, 0);
+  const verifiedLeads = jobs?.filter(j => j?.vetted === true || j?.status === 'verified') || [];
+  const totalVerified = safeNumber(verifiedLeads?.length, 0);
+  // SILENT FAILURE PROTECTION: If calculation fails, defaults to 0
+  const feesBlocked = safeNumber(totalVerified, 0) * 2500;
+  const formattedFeesBlocked = React.useMemo(() => {
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 0
+      }).format(feesBlocked);
+    } catch {
+      return '$0'; // Silent fallback
+    }
+  }, [feesBlocked]);
 
-  // ARCHITECT'S DIRECTIVE 2: Impact Card - Calculate Ethical Impact
-  const verifiedLeads = jobs.filter(j => j.vetted === true || j.status === 'verified');
-  const totalVerified = verifiedLeads.length;
-  const feesBlocked = totalVerified * 2500; // $2,500 average exploitative fee per placement
-  const formattedFeesBlocked = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0
-  }).format(feesBlocked);
+  // STRIKE 1: Null-Coalescing Fortress - Data Ready Check with Skeleton
+  const isDataReady = React.useMemo(() => {
+    return stats && Array.isArray(stats) && stats.length > 0 && totalLeads > 0;
+  }, [stats, totalLeads]);
+
+  // V4.5 ABSOLUTE GUARD: Prevent render if stats is invalid (kept as last resort)
+  if (!stats || !Array.isArray(stats)) return null;
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 flex flex-col h-full space-y-6">
@@ -168,24 +181,46 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
           )}
         </div>
         
-        {/* ARCHITECT'S DIRECTIVE 2: Ethical Impact Card */}
-        <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-lg mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/20 rounded-xl">
-                <ShieldCheck size={24} className="text-white" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-100">Ethical Impact (Fees Blocked)</p>
-                <p className="text-2xl font-black">{formattedFeesBlocked}</p>
+        {/* STRIKE 1: Data Ready Check - Only render cards when data exists */}
+        {isDataReady ? (
+          <>
+            {/* STRIKE 2: Ethical Impact Card - Now safely calculated outside JSX */}
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-lg mb-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-xl">
+                    <ShieldCheck size={24} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-100">Ethical Impact (Fees Blocked)</p>
+                    <p className="text-2xl font-black">{formattedFeesBlocked}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-bold text-emerald-100">{totalVerified} Verified Placements</p>
+                  <p className="text-[8px] text-emerald-200">Based on avg. $2,500 exploitative fee blocked</p>
+                </div>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-[9px] font-bold text-emerald-100">{totalVerified} Verified Placements</p>
-              <p className="text-[8px] text-emerald-200">Based on avg. $2,500 exploitative fee blocked</p>
+          </>
+        ) : (
+          /* STRIKE 1: Skeleton Loader while data loads */
+          <div className="bg-slate-100 rounded-2xl p-5 shadow-lg mb-6 animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-200 rounded-xl w-12 h-12"></div>
+                <div className="space-y-2">
+                  <div className="h-3 bg-slate-200 rounded w-32"></div>
+                  <div className="h-6 bg-slate-300 rounded w-24"></div>
+                </div>
+              </div>
+              <div className="text-right space-y-2">
+                <div className="h-3 bg-slate-200 rounded w-20"></div>
+                <div className="h-2 bg-slate-200 rounded w-28"></div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
         
         <div className="space-y-4 max-h-[400px] overflow-y-auto scrollbar-hide">
           {safeArray<[string, any]>(stats).length > 0 ? (
