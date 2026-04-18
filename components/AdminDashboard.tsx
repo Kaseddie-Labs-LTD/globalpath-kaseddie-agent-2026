@@ -235,14 +235,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     return 'blue_collar';
   };
 
-  useEffect(() => {
-    console.log("🛠️ [Admin Dashboard Sync]:", { 
-      total_leads: hrJobs.length, 
-      professional: hrJobs.filter(j => getJobCategory(j) === 'professional').length,
-      blue_collar: hrJobs.filter(j => getJobCategory(j) === 'blue_collar').length,
-      service_domestic: hrJobs.filter(j => getJobCategory(j) === 'service_domestic').length
-    });
+  // KIMI K2.5 DATA SANITIZER: Force schema on jobs array - filters corrupted nodes
+  interface SanitizedJob {
+    id: string;
+    title: string;
+    company: string;
+    category: string;
+    vetted: boolean;
+    status: string;
+    corridor?: string;
+    node?: string;
+    country?: string;
+  }
+
+  const sanitizedJobs = React.useMemo(() => {
+    if (!hrJobs || !Array.isArray(hrJobs)) return [];
+    
+    return hrJobs
+      .filter((job): job is Job => {
+        // Filter corrupted nodes: must be valid object with required fields
+        if (!job || typeof job !== 'object') return false;
+        if (!job.id) return false; // ID is mandatory
+        return true;
+      })
+      .map((job): SanitizedJob => {
+        // Force schema: every field MUST exist with fallback defaults
+        return {
+          id: typeof job.id === 'string' ? job.id : String(job.id || ''),
+          title: typeof job.title === 'string' ? job.title : (typeof job.positionName === 'string' ? job.positionName : ''),
+          company: typeof job.company === 'string' ? job.company : '',
+          category: getJobCategory(job),
+          vetted: job.isVetted === true,
+          status: typeof job.status === 'string' ? job.status : 'pending',
+          corridor: typeof job.corridor === 'string' ? job.corridor : undefined,
+          node: typeof job.node === 'string' ? job.node : undefined,
+          country: typeof job.country === 'string' ? job.country : undefined
+        };
+      })
+      .filter(job => job.id !== ''); // Remove items with empty IDs
   }, [hrJobs]);
+
+  useEffect(() => {
+    // KIMI K2.5: Use sanitizedJobs for logging to prevent errors on corrupted data
+    console.log("🛠️ [Admin Dashboard Sync]:", { 
+      total_leads: sanitizedJobs.length, 
+      professional: sanitizedJobs.filter(j => j.category === 'professional').length,
+      blue_collar: sanitizedJobs.filter(j => j.category === 'blue_collar').length,
+      service_domestic: sanitizedJobs.filter(j => j.category === 'service_domestic').length
+    });
+  }, [sanitizedJobs]);
 
   const [activeTab, setActiveTab] = useState<'leads' | 'portals' | 'marketing'>('leads');
   const [portals, setPortals] = useState<VendorPortal[]>(INITIAL_PORTALS);
@@ -392,7 +433,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   };
 
   // PRIORITY SORT: Golden Corridor (GCC -> Western/Poland) and Luxembourg Node must appear at the top
-  const sortedHrJobs = [...hrJobs].sort((a, b) => {
+  // KIMI K2.5: Use sanitizedJobs for safe sorting
+  const sortedHrJobs = [...sanitizedJobs].sort((a, b) => {
     const priorityNodes = ['Premium Node', 'Premium Node (LUX)', 'Dubai Hub', 'Western Corridor'];
     
     const aNode = a.corridor || a.node || '';
@@ -426,27 +468,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     return 0;
   });
 
-  const professionalJobs = sortedHrJobs.filter(j => {
-    const cat = getJobCategory(j);
-    return cat === 'professional' || (cat && cat.toLowerCase().includes('professional'));
-  });
-  const blueCollarJobs = sortedHrJobs.filter(j => {
-    const cat = getJobCategory(j);
-    return cat === 'blue_collar' || (cat && cat.toLowerCase().includes('blue') && cat.toLowerCase().includes('collar'));
-  });
-  const serviceDomesticJobs = sortedHrJobs.filter(j => {
-    const cat = getJobCategory(j);
-    return cat === 'service_domestic' || (cat && (cat.toLowerCase().includes('service') || cat.toLowerCase().includes('domestic')));
-  });
-  const otherJobs = sortedHrJobs.filter(j => {
-    const cat = getJobCategory(j);
-    return cat !== 'professional' && cat !== 'blue_collar' && cat !== 'service_domestic';
-  });
-  const totalLeadsCount = hrJobs.length;
+  // KIMI K2.5: Use sanitizedJobs.category which is already computed
+  const professionalJobs = sortedHrJobs.filter(j => j.category === 'professional');
+  const blueCollarJobs = sortedHrJobs.filter(j => j.category === 'blue_collar');
+  const serviceDomesticJobs = sortedHrJobs.filter(j => j.category === 'service_domestic');
+  const otherJobs = sortedHrJobs.filter(j => j.category !== 'professional' && j.category !== 'blue_collar' && j.category !== 'service_domestic');
+  const totalLeadsCount = sanitizedJobs.length;
   
-  // EMERGENCY DEBUG: Log raw data for 60 seconds
-  console.log("🚨 EMERGENCY DEBUG: Raw hrJobs data:", hrJobs);
-  console.log("🚨 EMERGENCY DEBUG: Total leads:", hrJobs.length);
+  // EMERGENCY DEBUG: Log sanitized data (KIMI K2.5: use sanitizedJobs)
+  console.log("🚨 EMERGENCY DEBUG: Sanitized jobs data:", sanitizedJobs);
+  console.log("🚨 EMERGENCY DEBUG: Total leads:", sanitizedJobs.length);
   console.log("🚨 EMERGENCY DEBUG: Professional count:", professionalJobs.length);
   console.log("🚨 EMERGENCY DEBUG: Blue-collar count:", blueCollarJobs.length);
   console.log("🚨 EMERGENCY DEBUG: Service & Domestic count:", serviceDomesticJobs.length);
@@ -751,9 +782,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
         {/* Right Column (span-4): Vetted Batches (INTERACTIVE) */}
         <div className="col-span-12 lg:col-span-4 space-y-6">
-           {/* Safety check: Ensure hrJobs exists before passing to SearchSummary */}
-           {hrJobs && Array.isArray(hrJobs) && hrJobs.length > 0 ? (
-             <SearchSummary jobs={hrJobs} onNodeClick={handleNodeClickSafe} onSectorClick={(sector) => onAddLog(`Sector filter: ${sector}`, 'info')} />
+           {/* KIMI K2.5: Pass sanitizedJobs to SearchSummary for crash protection */}
+           {sanitizedJobs && sanitizedJobs.length > 0 ? (
+             <SearchSummary jobs={sanitizedJobs as any} onNodeClick={handleNodeClickSafe} onSectorClick={(sector) => onAddLog(`Sector filter: ${sector}`, 'info')} />
            ) : (
              <div className="p-4 bg-slate-800 text-white rounded-lg">
                <div className="flex items-center gap-2">
@@ -804,7 +835,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
            </div>
 
           <div className="flex-1">
-              <CorridorFeed nodesActive={hrJobs.length} feesBlocked={logs.length} />
+              {/* KIMI K2.5: Use sanitizedJobs.length for crash protection */}
+              <CorridorFeed nodesActive={sanitizedJobs.length} feesBlocked={logs.length} />
            </div>
         </div>
       </div>

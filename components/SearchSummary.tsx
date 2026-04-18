@@ -76,6 +76,42 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
     return statsArray;
   }, [mappedRegionJobCounts]);
 
+  // KIMI K2.5 DATA SANITIZER: Force schema on stats array
+  interface SanitizedStat {
+    corridor_name: string;
+    total: number;
+    blue_collar: number;
+    professional: number;
+    service: number;
+  }
+
+  const sanitizedStats = React.useMemo(() => {
+    if (!stats || !Array.isArray(stats)) return [];
+    
+    return stats
+      .filter((item): item is [string, any] => {
+        // Filter corrupted nodes: must be array tuple with valid data
+        if (!item || typeof item !== 'object') return false;
+        if (!Array.isArray(item)) return false;
+        if (item.length < 2) return false;
+        const [key, data] = item;
+        if (typeof key !== 'string') return false;
+        if (!data || typeof data !== 'object') return false;
+        return true;
+      })
+      .map(([corridor_name, data]): SanitizedStat => {
+        // Force schema: every field MUST exist with fallback defaults
+        return {
+          corridor_name: typeof corridor_name === 'string' ? corridor_name : '',
+          total: safeNumber(data?.total, 0),
+          blue_collar: safeNumber(data?.blue_collar, 0),
+          professional: safeNumber(data?.professional, 0),
+          service: safeNumber(data?.service_domestic || data?.service, 0)
+        };
+      })
+      .filter(stat => stat.corridor_name !== ''); // Remove items with empty corridor names
+  }, [stats]);
+
   const sectorCounts = React.useMemo(() => {
     return Object.values(mappedRegionJobCounts).reduce((acc: { blueCollarCount: number; professionalCount: number; serviceDomesticCount: number }, curr: any) => ({
       blueCollarCount: acc.blueCollarCount + (curr.blue_collar || 0),
@@ -158,12 +194,13 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
   }, [feesBlocked]);
 
   // STRIKE 1: Null-Coalescing Fortress - Data Ready Check with Skeleton
+  // KIMI K2.5: Use sanitizedStats instead of raw stats for safety
   const isDataReady = React.useMemo(() => {
-    return stats && Array.isArray(stats) && stats.length > 0 && totalLeads > 0;
-  }, [stats, totalLeads]);
+    return sanitizedStats && sanitizedStats.length > 0 && totalLeads > 0;
+  }, [sanitizedStats, totalLeads]);
 
-  // V4.5 ABSOLUTE GUARD: Prevent render if stats is invalid (kept as last resort)
-  if (!stats || !Array.isArray(stats)) return null;
+  // KIMI K2.5: Guard against empty sanitized stats
+  if (!sanitizedStats || sanitizedStats.length === 0) return null;
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 flex flex-col h-full space-y-6">
@@ -223,19 +260,20 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
         )}
         
         <div className="space-y-4 max-h-[400px] overflow-y-auto scrollbar-hide">
-          {safeArray<[string, any]>(stats).length > 0 ? (
-            safeArray<[string, any]>(stats).map(([region, data]) => {
-              // K2.5 DEFENSIVE RENDER: Hard fallback to 0 for all numeric properties
-              const total = safeNumber(typeof data === 'number' ? data : (data as any)?.total, 0);
-              const bcCount = safeNumber((data as any)?.blue_collar, 0);
-              const profCount = safeNumber((data as any)?.professional, 0);
-              const serviceDomesticCount = safeNumber((data as any)?.service_domestic, 0);
+          {/* KIMI K2.5: Use sanitizedStats with forced schema */}
+          {sanitizedStats.length > 0 ? (
+            sanitizedStats.map((stat) => {
+              // KIMI K2.5: Schema is guaranteed - no need for excessive safeNumber calls
+              const total = stat.total;
+              const bcCount = stat.blue_collar;
+              const profCount = stat.professional;
+              const serviceDomesticCount = stat.service;
               
               // K2.5: Sanitize region name before display
-              const cleanRegion = sanitizeRegionName(region);
+              const cleanRegion = sanitizeRegionName(stat.corridor_name);
 
               return (
-                <div key={region} className="space-y-2">
+                <div key={stat.corridor_name} className="space-y-2">
                   <button 
                     onClick={() => onNodeClick?.(cleanRegion)}
                     className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-brand-500 hover:bg-brand-50 transition-all group active:scale-[0.98]"
