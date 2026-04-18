@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Job, getJobLocationString } from '../types';
-import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2 } from 'lucide-react';
+import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2, DollarSign, ShieldCheck } from 'lucide-react';
 import { sanitizeRegionName, safeNumber, safeArray } from '../utils/sanitize';
 
 interface SearchSummaryProps {
@@ -142,6 +142,16 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
   // V4.5 ABSOLUTE GUARD: Prevent render if stats is invalid
   if (!stats || !Array.isArray(stats)) return null;
 
+  // ARCHITECT'S DIRECTIVE 2: Impact Card - Calculate Ethical Impact
+  const verifiedLeads = jobs.filter(j => j.vetted === true || j.status === 'verified');
+  const totalVerified = verifiedLeads.length;
+  const feesBlocked = totalVerified * 2500; // $2,500 average exploitative fee per placement
+  const formattedFeesBlocked = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0
+  }).format(feesBlocked);
+
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 flex flex-col h-full space-y-6">
       <div className="space-y-4">
@@ -156,6 +166,25 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
               <span className="text-[9px] font-black text-amber-600 uppercase tracking-wider">{pendingCount} Pending Vetting</span>
             </div>
           )}
+        </div>
+        
+        {/* ARCHITECT'S DIRECTIVE 2: Ethical Impact Card */}
+        <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-lg mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-xl">
+                <ShieldCheck size={24} className="text-white" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-100">Ethical Impact (Fees Blocked)</p>
+                <p className="text-2xl font-black">{formattedFeesBlocked}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[9px] font-bold text-emerald-100">{totalVerified} Verified Placements</p>
+              <p className="text-[8px] text-emerald-200">Based on avg. $2,500 exploitative fee blocked</p>
+            </div>
+          </div>
         </div>
         
         <div className="space-y-4 max-h-[400px] overflow-y-auto scrollbar-hide">

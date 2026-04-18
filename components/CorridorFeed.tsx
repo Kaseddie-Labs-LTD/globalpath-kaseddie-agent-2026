@@ -27,6 +27,14 @@ interface CorridorFeedProps {
 export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlocked, leads = [] }) => {
   const [items, setItems] = useState<FeedItem[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // ARCHITECT'S DIRECTIVE 1: Ghost Exorcism - Mounting guard to prevent race conditions
+  const isMounted = useRef(true);
+  
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const mapLocationToNode = (location: any) => {
     const loc = getJobLocationString(location).toLowerCase();
@@ -60,6 +68,9 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
   );
 
   useEffect(() => {
+    // ARCHITECT'S DIRECTIVE 1: Ghost Exorcism - Only execute if component is still mounted
+    if (!isMounted.current) return;
+    
     // K2.5 NULL GUARD: Ensure statsData.stats is a valid array before mapping
     if (statsData && Array.isArray(statsData.stats)) {
       const newItems: FeedItem[] = safeArray<any>(statsData.stats).map((s: any) => {
@@ -74,7 +85,10 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
           type: 'sync'
         };
       });
-      setItems(prev => [...newItems, ...prev].slice(0, 50));
+      // ARCHITECT'S DIRECTIVE 1: Check mount status before state update
+      if (isMounted.current) {
+        setItems(prev => [...newItems, ...prev].slice(0, 50));
+      }
     }
   }, [statsData]);
 

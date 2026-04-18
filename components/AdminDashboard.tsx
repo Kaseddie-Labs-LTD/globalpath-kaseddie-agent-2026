@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RecruitmentBatch, AgentLogEntry, Job, getJobLocationString } from '../types';
 import { 
@@ -158,6 +158,14 @@ const INITIAL_PORTALS: VendorPortal[] = [
 ];
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, onAuditJob, onPitch, batches, setBatches, selectedBatch, setSelectedBatch, onAddLog, onExit, onNodeClick, onRefresh, isUplinking, mutateLeads }) => {
+  // ARCHITECT'S DIRECTIVE 1: Ghost Exorcism - Mounting guard for SWR/mutate operations
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+  
   // Helper function to determine category from multiple fields (matches App.tsx logic)
   const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'service_domestic' | 'general' => {
     // Check category field first with LOOSE MAPPING (case-insensitive, partial matches)
@@ -259,13 +267,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
   const handleRefreshData = async () => {
     if (!onRefresh) return;
+    // ARCHITECT'S DIRECTIVE 1: Check mount status before state updates
+    if (!isMounted.current) return;
     setIsRefreshing(true);
     onAddLog("OVERSIGHT: Triggering manual node telemetry refresh...", "thinking");
     try {
       await onRefresh();
-      onAddLog("OVERSIGHT: Telemetry refresh complete.", "success");
+      // ARCHITECT'S DIRECTIVE 1: Verify still mounted before logging/updating state
+      if (isMounted.current) {
+        onAddLog("OVERSIGHT: Telemetry refresh complete.", "success");
+      }
     } finally {
-      setIsRefreshing(false);
+      if (isMounted.current) {
+        setIsRefreshing(false);
+      }
     }
   };
 
@@ -351,6 +366,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   };
 
   const handleClearCache = async () => {
+    // ARCHITECT'S DIRECTIVE 1: Check mount status before operations
+    if (!isMounted.current) return;
     onAddLog("CACHE CLEAR: Clearing SWR cache and refreshing data...", "thinking");
     
     try {
@@ -359,12 +376,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
       
       // Force immediate refresh
       setTimeout(() => {
-        mutateLeads();
-        onAddLog("CACHE CLEAR: SWR cache cleared, forcing fresh data fetch...", "success");
+        // ARCHITECT'S DIRECTIVE 1: Verify still mounted before SWR operations
+        if (isMounted.current) {
+          mutateLeads();
+          onAddLog("CACHE CLEAR: SWR cache cleared, forcing fresh data fetch...", "success");
+        }
       }, 100);
     } catch (error) {
       console.error('Cache clear error:', error);
-      onAddLog(`CACHE CLEAR ERROR: ${error}`, "error");
+      // ARCHITECT'S DIRECTIVE 1: Only log error if still mounted
+      if (isMounted.current) {
+        onAddLog("CACHE CLEAR ERROR: Failed to clear cache", "error");
+      }
     }
   };
 
