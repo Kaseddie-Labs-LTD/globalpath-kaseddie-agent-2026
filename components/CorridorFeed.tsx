@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import useSWR from 'swr';
-import { Terminal, Activity, Globe, Zap, ShieldCheck, Search, Cpu } from 'lucide-react';
+import { Terminal, Activity, Globe, Zap, ShieldCheck, Search, Cpu, Loader2 } from 'lucide-react';
 import { fetchGlobalJobs, fetchLuxembourgLeads } from '../services/apify';
 import { Job, getJobLocationString } from '../types';
 import { fetcher } from '../constants/api';
@@ -57,12 +57,13 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
     return 'Global Corridor';
   };
 
-  const { data: statsData } = useSWR('/corridor-stats',
+  const { data: statsData, error: statsError } = useSWR('/corridor-stats',
     fetcher,
     {
       refreshInterval: 10000,
       revalidateOnFocus: false,  // K2.5: Already correct - prevents focus revalidation loops
-      shouldRetryOnError: false, // K2.5: Prevent error loops on backend cold start
+      shouldRetryOnError: true,  // FIX 1: Silent Error Bypass - Enable retry on error
+      errorRetryCount: 3,        // FIX 1: Retry up to 3 times before giving up
       dedupingInterval: 5000
     }
   );
@@ -163,6 +164,17 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, [items]);
+
+  // FIX 1: Silent Error Bypass - Guard against rendering before data handshake is green
+  if (!statsData && !statsError) {
+    return (
+      <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 shadow-2xl h-[600px] flex flex-col items-center justify-center p-6">
+        <Loader2 size={48} className="text-brand-500 animate-spin mb-4" />
+        <p className="text-[10px] uppercase font-black tracking-[0.3em] text-slate-500">Calibrating Corridor Sensors...</p>
+        <p className="text-[8px] text-slate-600 mt-2">Waiting for backend handshake</p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 shadow-2xl h-[600px] flex flex-col overflow-hidden relative group">
