@@ -74,18 +74,21 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
     
     // K2.5 NULL GUARD: Ensure statsData.stats is a valid array before mapping
     if (statsData && Array.isArray(statsData.stats)) {
-      const newItems: FeedItem[] = safeArray<any>(statsData.stats).map((s: any) => {
-        // K2.5: Sanitize region name and use safeNumber for count
-        const cleanRegion = sanitizeRegionName(s?.region);
-        const count = safeNumber(s?.count, 0);
-        return {
-          id: `stat-${cleanRegion}-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          node: `${cleanRegion.toUpperCase().slice(0, 3)}-NODE`,
-          message: `Active Node Sync: ${count} leads identified in ${cleanRegion} corridor.`,
-          type: 'sync'
-        };
-      });
+      // BULLETPROOF MAP GUARD: Filter out half-empty nodes before mapping
+      const newItems: FeedItem[] = safeArray<any>(statsData.stats)
+        .filter(s => s && (s.region || s.name) && (s.count !== undefined && s.count !== null)) // Ensure valid data
+        .map((s: any) => {
+          // K2.5: Sanitize region name and use safeNumber for count
+          const cleanRegion = sanitizeRegionName(s?.region || s?.name);
+          const count = safeNumber(s?.count, 0);
+          return {
+            id: `stat-${cleanRegion}-${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString(),
+            node: `${cleanRegion.toUpperCase().slice(0, 3)}-NODE`,
+            message: `Active Node Sync: ${count} leads identified in ${cleanRegion} corridor.`,
+            type: 'sync'
+          };
+        });
       // ARCHITECT'S DIRECTIVE 1: Check mount status before state update
       if (isMounted.current) {
         setItems(prev => [...newItems, ...prev].slice(0, 50));
