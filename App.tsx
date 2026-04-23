@@ -95,7 +95,8 @@ function App() {
   const navigateToAdmin = useCallback(() => {
     try {
       setIsGatekeeperMode(!isGatekeeperMode);
-      setView(isGatekeeperMode ? AppView.DASHBOARD : AppView.ADMIN_DASHBOARD);
+      // @ts-ignore - APRIL 23: Temporary bypass of circular ref (Je culprit fix)
+      setView(isGatekeeperMode ? "DASHBOARD" : "ADMIN_DASHBOARD");
     } catch (error) {
       console.error('Admin navigation error:', error);
       addLog('NAVIGATION ERROR: Failed to access admin dashboard. Clearing session...', 'error', 'SYSTEM');
