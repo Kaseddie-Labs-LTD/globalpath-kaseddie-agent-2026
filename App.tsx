@@ -13,7 +13,8 @@ import { SafetyReportModal } from './components/SafetyReportModal';
 import { ApplicationSuccessModal } from './components/ApplicationSuccessModal';
 import { CorridorFeed } from './components/CorridorFeed';
 import { SearchSummary } from './components/SearchSummary';
-import { AdminDashboard } from './components/AdminDashboard';
+// APRIL 23: Lazy Switch - Load AdminDashboard only when needed
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 import { HRPortal } from './components/HRPortal';
 import { AdminSecurityGate } from './components/AdminSecurityGate';
 import { B2BPitchModal } from './components/B2BPitchModal';
@@ -1027,31 +1028,41 @@ function App() {
              )}
             {view === AppView.ADMIN_DASHBOARD && (
                isAdminAuthenticated ? (
-                <AdminDashboard 
-                  isAdminAuthenticated={isAdminAuthenticated} 
-                  logs={logs} 
-                  hrJobs={jobs.filter(job => 
-  job.status?.toLowerCase() === 'verified' || 
-  job.status?.toLowerCase() === 'live' || 
-  job.vetted === true ||
-  job.status?.toLowerCase() === 'active'
-)} 
-                  onAuditJob={async (j) => setSafetyReport({ report: await analyzeJobSafety(j), job: j })} 
-                  batches={batches} 
-                  setBatches={setBatches} 
-                  selectedBatch={null} 
-                  setSelectedBatch={() => {}} 
-                  onAddLog={addLog} 
-                  onPitch={async (j) => { 
-                    setPitchContext({ job: j });
-                    addLog(`LIFECYCLE TRANSITION: Moving ${j.company} to Active Outreach in HR Portal.`, "success", "WORKFLOW");
-                  }}
-                  mutateLeads={mutateLeads}
-                  onExit={() => setView(AppView.DASHBOARD)} 
-                  onNodeClick={handleNodeClick} 
-                  onRefresh={() => handleRefreshPulse(undefined, undefined, true)} 
-                  isUplinking={isUplinking}
-                />
+                // APRIL 23: Wrap lazy-loaded AdminDashboard in Suspense
+                <React.Suspense fallback={
+                  <div className="flex-1 flex items-center justify-center bg-slate-950">
+                    <div className="text-center">
+                      <Loader2 size={48} className="text-brand-500 animate-spin mx-auto mb-4" />
+                      <p className="text-[10px] uppercase font-black tracking-[0.3em] text-slate-500">Calibrating Admin Uplink...</p>
+                    </div>
+                  </div>
+                }>
+                  <AdminDashboard 
+                    isAdminAuthenticated={isAdminAuthenticated} 
+                    logs={logs} 
+                    hrJobs={jobs.filter(job => 
+    job.status?.toLowerCase() === 'verified' || 
+    job.status?.toLowerCase() === 'live' || 
+    job.vetted === true ||
+    job.status?.toLowerCase() === 'active'
+  )} 
+                    onAuditJob={async (j) => setSafetyReport({ report: await analyzeJobSafety(j), job: j })} 
+                    batches={batches} 
+                    setBatches={setBatches} 
+                    selectedBatch={null} 
+                    setSelectedBatch={() => {}} 
+                    onAddLog={addLog} 
+                    onPitch={async (j) => { 
+                      setPitchContext({ job: j });
+                      addLog(`LIFECYCLE TRANSITION: Moving ${j.company} to Active Outreach in HR Portal.`, "success", "WORKFLOW");
+                    }}
+                    mutateLeads={mutateLeads}
+                    onExit={() => setView(AppView.DASHBOARD)} 
+                    onNodeClick={handleNodeClick} 
+                    onRefresh={() => handleRefreshPulse(undefined, undefined, true)} 
+                    isUplinking={isUplinking}
+                  />
+                </React.Suspense>
                ) : (
                  <AdminSecurityGate onAuthenticated={() => setIsAdminAuthenticated(true)} />
                )
