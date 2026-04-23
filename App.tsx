@@ -90,6 +90,25 @@ function App() {
   const [isGeneratingPitch, setIsGeneratingPitch] = useState(false); // Network bottleneck: pause polling during AI pitch generation
   const [pitchErrorMessage, setPitchErrorMessage] = useState<string | null>(null); // AI UX: Error message for pitch generation failures
   
+  // APRIL 23: Try/Catch wrapper for safe admin navigation
+  const navigateToAdmin = useCallback(() => {
+    try {
+      setIsGatekeeperMode(!isGatekeeperMode);
+      setView(isGatekeeperMode ? AppView.DASHBOARD : AppView.ADMIN_DASHBOARD);
+    } catch (error) {
+      console.error('Admin navigation error:', error);
+      addLog('NAVIGATION ERROR: Failed to access admin dashboard. Clearing session...', 'error', 'SYSTEM');
+      // Clear potentially corrupted session data
+      try {
+        sessionStorage.removeItem('gp_admin_auth');
+        localStorage.removeItem('gp_kaseddie_profile');
+      } catch {}
+      setIsAdminAuthenticated(false);
+      setIsGatekeeperMode(false);
+      setView(AppView.DASHBOARD);
+    }
+  }, [isGatekeeperMode, isAdminAuthenticated, addLog]);
+  
   const [regionIndex, setRegionIndex] = useState(0);
   const [sectorIndex, setSectorIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(ROTATION_INTERVAL_SECONDS);
@@ -858,7 +877,8 @@ function App() {
           ))}
         </nav>
         <div className="absolute bottom-0 w-full p-4">
-            <button onClick={() => { setIsGatekeeperMode(!isGatekeeperMode); setView(isGatekeeperMode ? AppView.DASHBOARD : AppView.ADMIN_DASHBOARD); }} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-[10px] font-black uppercase tracking-widest bg-slate-800 rounded-xl border border-slate-700 hover:bg-slate-700 transition-all">
+            {/* APRIL 23: Use safe navigation wrapper with try/catch */}
+            <button onClick={navigateToAdmin} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-[10px] font-black uppercase tracking-widest bg-slate-800 rounded-xl border border-slate-700 hover:bg-slate-700 transition-all">
                 <div className="flex items-center gap-2"><Lock size={14} /> {isGatekeeperMode ? 'Exit Admin' : 'Admin Login'}</div>
             </button>
         </div>
