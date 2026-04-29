@@ -32,7 +32,9 @@ import ComplianceDashboard from './src/components/ComplianceDashboard';
 // Service & Type Imports
 import { analyzeJobSafety, verifyDocument, generateB2BPitch, enhanceJobDescription, summarizeJobRequirements } from './services/ai';
 import { fetchGlobalJobs, fetchLuxembourgLeads } from './services/apify';
-import { UserProfile, Job, AgentLogEntry, AppView, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
+// APRIL 29: Use primitive-types for AppView to avoid circular dependency TDZ issues
+import { AppView } from './primitive-types';
+import { UserProfile, Job, AgentLogEntry, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
 import { API_BASE, fetcher, sanitizeEndpoint } from './constants/api';
 
 const KASEDDIE_SIGNATURE = "GlobalPath Kaseddie Agent";
@@ -66,7 +68,8 @@ function App() {
   const [pendingVettingCount, setPendingVettingCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const [view, setView] = useState<AppView>(AppView.DASHBOARD);
+  // APRIL 29: Lazy init to prevent TDZ - use string literal instead of enum reference
+  const [view, setView] = useState<AppView>(() => 'DASHBOARD' as AppView);
   
   const [profile, setProfile] = useState<UserProfile>(() => {
     try {
