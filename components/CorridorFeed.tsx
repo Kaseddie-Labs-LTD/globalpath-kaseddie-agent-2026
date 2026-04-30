@@ -77,12 +77,13 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
       // BULLETPROOF MAP GUARD: Filter out half-empty nodes before mapping
       const newItems: FeedItem[] = safeArray<any>(statsData.stats)
         .filter(s => s && (s.region || s.name) && (s.count !== undefined && s.count !== null)) // Ensure valid data
-        .map((s: any) => {
+        .map((s: any, index: number) => {
           // K2.5: Sanitize region name and use safeNumber for count
           const cleanRegion = sanitizeRegionName(s?.region || s?.name);
           const count = safeNumber(s?.count, 0);
+          // APRIL 30: Add index to prevent duplicate keys when Date.now() is same millisecond
           return {
-            id: `stat-${cleanRegion}-${Date.now()}`,
+            id: `stat-${cleanRegion}-${Date.now()}-${index}`,
             timestamp: new Date().toLocaleTimeString(),
             node: `${cleanRegion.toUpperCase().slice(0, 3)}-NODE`,
             message: `Active Node Sync: ${count} leads identified in ${cleanRegion} corridor.`,

@@ -262,7 +262,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
         <div className="space-y-4 max-h-[400px] overflow-y-auto scrollbar-hide">
           {/* KIMI K2.5: Use sanitizedStats with forced schema */}
           {sanitizedStats.length > 0 ? (
-            sanitizedStats.map((stat) => {
+            sanitizedStats.map((stat, index) => {
               // KIMI K2.5: Schema is guaranteed - no need for excessive safeNumber calls
               const total = stat.total;
               const bcCount = stat.blue_collar;
@@ -272,8 +272,9 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
               // K2.5: Sanitize region name before display
               const cleanRegion = sanitizeRegionName(stat.corridor_name);
 
+              // APRIL 30: Unique key using index to prevent duplicate key errors
               return (
-                <div key={stat.corridor_name} className="space-y-2">
+                <div key={`${stat.corridor_name}-${index}`} className="space-y-2">
                   <button 
                     onClick={() => onNodeClick?.(cleanRegion)}
                     className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-brand-500 hover:bg-brand-50 transition-all group active:scale-[0.98]"
