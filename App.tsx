@@ -14,7 +14,8 @@ import { ApplicationSuccessModal } from './components/ApplicationSuccessModal';
 import { CorridorFeed } from './components/CorridorFeed';
 import { SearchSummary } from './components/SearchSummary';
 // APRIL 23: Lazy Switch - Load AdminDashboard only when needed
-const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
+// APRIL 30: Fix - Use named export pattern since AdminDashboard is exported as 'export const'
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 import { HRPortal } from './components/HRPortal';
 import { AdminSecurityGate } from './components/AdminSecurityGate';
 import { B2BPitchModal } from './components/B2BPitchModal';
