@@ -112,7 +112,7 @@ function App() {
       setIsGatekeeperMode(false);
       setView(AppView.DASHBOARD);
     }
-  }, [isGatekeeperMode, isAdminAuthenticated, addLog]);
+  }, [isGatekeeperMode, isAdminAuthenticated]); // APRIL 30: Removed addLog - function declaration is stable
   
   const [regionIndex, setRegionIndex] = useState(0);
   const [sectorIndex, setSectorIndex] = useState(0);
@@ -141,6 +141,21 @@ function App() {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [isUplinking, setIsUplinking] = useState(false);
   const leadsTableRef = useRef<HTMLDivElement>(null);
+
+  // APRIL 30: Function declaration (hoisted) to prevent TDZ when referenced by callbacks above
+  function addLog(message: string, type: AgentLogEntry['type'], step: string = 'PROCESS', actionable?: boolean, actionLabel?: string, onAction?: () => void) {
+    setLogs(prev => [...prev, { 
+        id: Math.random().toString(), 
+        timestamp: new Date(), 
+        step, 
+        message, 
+        type, 
+        signature: KASEDDIE_SIGNATURE,
+        actionable,
+        actionLabel,
+        onAction
+    }]);
+  }
 
   // --- 1. Helper Functions / Memos (Region Logic & Categorization) ---
 
@@ -303,19 +318,8 @@ function App() {
     return counts;
   }, [jobs, computeRegionLabelFromLocation, categorizeJob]);
 
-  const addLog = useCallback((message: string, type: AgentLogEntry['type'], step: string = 'PROCESS', actionable?: boolean, actionLabel?: string, onAction?: () => void) => {
-    setLogs(prev => [...prev, { 
-        id: Math.random().toString(), 
-        timestamp: new Date(), 
-        step, 
-        message, 
-        type, 
-        signature: KASEDDIE_SIGNATURE,
-        actionable,
-        actionLabel,
-        onAction
-    }]);
-  }, []);
+  // APRIL 30: addLog moved to top of scope as function declaration (line ~143)
+  // Old location was here - removed to prevent duplicate definition
 
   const handleNodeClick = useCallback((region: string, category: 'All' | 'blue_collar' | 'professional' | 'service_domestic' = 'All', keyword: string = '') => {
     startTransition(() => {
