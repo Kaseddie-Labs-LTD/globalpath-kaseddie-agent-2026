@@ -736,9 +736,11 @@ def ensure_collection_exists():
 
 # THE UNIVERSAL HANDSHAKE: CORS configuration for multi-instance stability
 # Add both primary and -1 variant to ensure total stability across Render deployments
+# APRIL 30: Added custom domain globalpathkaseddieagent.com
 origins = [
     "https://globalpath-kaseddie-agent-2026.onrender.com",
     "https://globalpath-kaseddie-agent-2026-1.onrender.com",  # ✅ Add the new variant
+    "https://globalpathkaseddieagent.com",  # ✅ APRIL 30: Custom domain
     "http://localhost:5173",
     "http://localhost:3000",
 ]
