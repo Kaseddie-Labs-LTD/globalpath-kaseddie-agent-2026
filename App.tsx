@@ -67,7 +67,8 @@ const initialBatches: RecruitmentBatch[] = [
 function App() {
   const [mounted, setMounted] = useState(false);
   const [pendingVettingCount, setPendingVettingCount] = useState(0);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isApifySyncing, setIsApifySyncing] = useState(false);
+  const [isPulseSyncing, setIsPulseSyncing] = useState(false);
   const [isPending, startTransition] = useTransition();
   // APRIL 29: Lazy init to prevent TDZ - use string literal instead of enum reference
   const [view, setView] = useState<AppView>(() => 'DASHBOARD' as AppView);
@@ -602,94 +603,103 @@ function App() {
   }, [swrStats, swrLeads, computeRegionLabelFromLocation]);
 
   const handleRefreshPulse = useCallback(async (forcedRegion?: string, forcedSector?: string, force = false) => {
-    console.log(' [REFRESH]: Triggering pulse refresh - forcedRegion:', forcedRegion, 'forcedSector:', forcedSector, 'force:', force);
-    
-    // shouldFetch guard: Stop recursive loops and prevent crashes
-    const shouldFetch = force || (agentState === 'IDLE' && !isPending && !serviceNotice);
-    if (!shouldFetch) {
-      console.log(' [GUARD]: Skipping refresh - conditions not met');
+    if (isPulseSyncing) {
+      console.log(' [GUARD]: Skipping refresh - pulse already syncing');
       return;
     }
-    
-    setAgentState('SCANNING_CORRIDORS');
-    const targetRegion = forcedRegion || MARATHON_REGIONS[regionIndex];
-    const targetSector = forcedSector || MARATHON_SECTORS[sectorIndex];
-    
-    addLog(`Initiating Local Sync: Triggering Apify Fetcher for ${targetSector} nodes...`, "thinking", "ROTATION");
-    
-    // Optimistic UI: Immediately set a "Pending" state if we know there are new leads coming
-    // or just show that a sync is active.
-    setAgentState('SCANNING_CORRIDORS');
-    setIsSyncing(true);
-    setPendingVettingCount(157); // Optimistic estimate based on previous logs
-    
+    setIsPulseSyncing(true);
     try {
-      // 1. Trigger Backend Sync (Apify -> Qdrant) - Now returns immediately
-      const syncRes = await fetcher(sanitizeEndpoint('sync-apify-leads'), { method: 'POST' });
-      const syncData = await syncRes.json();
-      
-      if (syncData.status === 'Accepted') {
-        addLog(`OVERSIGHT: ${syncData.message}`, "info", "SYNC");
-        addLog(`HUB: Rotating sectors. ${pendingVettingCount} nodes are currently being vetted.`, "success", "SYNC");
+      console.log(' [REFRESH]: Triggering pulse refresh - forcedRegion:', forcedRegion, 'forcedSector:', forcedSector, 'force:', force);
+    
+      // shouldFetch guard: Stop recursive loops and prevent crashes
+      const shouldFetch = force || (agentState === 'IDLE' && !isPending && !serviceNotice);
+      if (!shouldFetch) {
+        console.log(' [GUARD]: Skipping refresh - conditions not met');
+        return;
       }
-
-      // 2. Refresh SWR data to get the latest (including any leads that were already processed)
-      console.log('🔄 [REFRESH]: Refreshing SWR data after sync');
-      mutateStats();
-      mutateLeads();
-
-      // 3. (Legacy/Fallback) Still keep some local fetching for immediate UI feedback if needed
-      // or just rely on the backend now. For now, let's keep it hybrid as requested.
-      const [found, luxLeads] = await Promise.all([
-        fetchGlobalJobs(),
-        fetchLuxembourgLeads()
-      ]);
-      const combined = [...found, ...luxLeads];
-
-      startTransition(() => {
-        if (!combined || combined.length === 0) {
-          // No new jobs; proceed with cycle
-        } else {
-          const fetchedJobs = combined.map(j => {
-            const node = computeRegionLabelFromLocation(j);
-            const category = categorizeJob({...j, node}); 
-            return { 
-              ...j, 
-              status: j.status || 'live',
-              node,
-              category,
-              gpLeadId: j.gpLeadId || `GP-${targetRegion.toUpperCase()}-${Date.now().toString().slice(-6)}`
-            };
-          });
-
-          if (fetchedJobs && fetchedJobs.length > 0) {
-            setJobs(prev => {
-              const existingIds = new Set(prev.map(j => j.id));
-              const uniqueNew = fetchedJobs.filter(j => j.id && !existingIds.has(j.id));
-              
-              if (uniqueNew && uniqueNew.length > 0) {
-                addLog(`LOCAL TELEMETRY: UI Node Map updated with ${uniqueNew.length} leads.`, "success", "MARATHON");
-                return [...uniqueNew, ...prev].slice(0, 500);
-              }
-              return prev;
-            });
-          }
+      
+      setAgentState('SCANNING_CORRIDORS');
+      const targetRegion = forcedRegion || MARATHON_REGIONS[regionIndex];
+      const targetSector = forcedSector || MARATHON_SECTORS[sectorIndex];
+      
+      addLog(`Initiating Local Sync: Triggering Apify Fetcher for ${targetSector} nodes...`, "thinking", "ROTATION");
+      
+      // Optimistic UI: Immediately set a "Pending" state if we know there are new leads coming
+      // or just show that a sync is active.
+      setAgentState('SCANNING_CORRIDORS');
+      setIsApifySyncing(true);
+      setPendingVettingCount(157); // Optimistic estimate based on previous logs
+      
+      try {
+        // 1. Trigger Backend Sync (Apify -> Qdrant) - Now returns immediately
+        const syncRes = await fetcher(sanitizeEndpoint('sync-apify-leads'), { method: 'POST' });
+        const syncData = await syncRes.json();
+        
+        if (syncData.status === 'Accepted') {
+          addLog(`OVERSIGHT: ${syncData.message}`, "info", "SYNC");
+          addLog(`HUB: Rotating sectors. ${pendingVettingCount} nodes are currently being vetted.`, "success", "SYNC");
         }
-        
-        setRegionIndex((prev) => (prev + 1) % MARATHON_REGIONS.length);
-        setSectorIndex((prev) => (prev + 1) % MARATHON_SECTORS.length);
-        
+  
+        // 2. Refresh SWR data to get the latest (including any leads that were already processed)
+        console.log('🔄 [REFRESH]: Refreshing SWR data after sync');
+        mutateStats();
+        mutateLeads();
+  
+        // 3. (Legacy/Fallback) Still keep some local fetching for immediate UI feedback if needed
+        // or just rely on the backend now. For now, let's keep it hybrid as requested.
+        const [found, luxLeads] = await Promise.all([
+          fetchGlobalJobs(),
+          fetchLuxembourgLeads()
+        ]);
+        const combined = [...found, ...luxLeads];
+  
+        startTransition(() => {
+          if (!combined || combined.length === 0) {
+            // No new jobs; proceed with cycle
+          } else {
+            const fetchedJobs = combined.map(j => {
+              const node = computeRegionLabelFromLocation(j);
+              const category = categorizeJob({...j, node}); 
+              return { 
+                ...j, 
+                status: j.status || 'live',
+                node,
+                category,
+                gpLeadId: j.gpLeadId || `GP-${targetRegion.toUpperCase()}-${Date.now().toString().slice(-6)}`
+              };
+            });
+  
+            if (fetchedJobs && fetchedJobs.length > 0) {
+              setJobs(prev => {
+                const existingIds = new Set(prev.map(j => j.id));
+                const uniqueNew = fetchedJobs.filter(j => j.id && !existingIds.has(j.id));
+                
+                if (uniqueNew && uniqueNew.length > 0) {
+                  addLog(`LOCAL TELEMETRY: UI Node Map updated with ${uniqueNew.length} leads.`, "success", "MARATHON");
+                  return [...uniqueNew, ...prev].slice(0, 500);
+                }
+                return prev;
+              });
+            }
+          }
+          
+          setRegionIndex((prev) => (prev + 1) % MARATHON_REGIONS.length);
+          setSectorIndex((prev) => (prev + 1) % MARATHON_SECTORS.length);
+          
+          setAgentState('IDLE');
+          setTimeLeft(ROTATION_INTERVAL_SECONDS);
+        });
+      } catch (err) {
         setAgentState('IDLE');
         setTimeLeft(ROTATION_INTERVAL_SECONDS);
-      });
-    } catch (err) {
-      setAgentState('IDLE');
-      setTimeLeft(ROTATION_INTERVAL_SECONDS);
-      addLog("RECOVERY: Backend sync issue. Using cached telemetry.", "error", "RECOVERY");
-      setServiceNotice("Service Syncing Local Brain");
-      setTimeout(() => setServiceNotice(null), 8000);
+        addLog("RECOVERY: Backend sync issue. Using cached telemetry.", "error", "RECOVERY");
+        setServiceNotice("Service Syncing Local Brain");
+        setTimeout(() => setServiceNotice(null), 8000);
+      }
+    } finally {
+      setIsPulseSyncing(false);
     }
-  }, [regionIndex, sectorIndex, agentState, isPending, addLog, computeRegionLabelFromLocation, categorizeJob, fetchStats]);
+  }, [regionIndex, sectorIndex, agentState, isPending, addLog, computeRegionLabelFromLocation, categorizeJob, fetchStats, isPulseSyncing]);
 
   // --- 3. Effect Hooks ---
 
@@ -713,7 +723,9 @@ function App() {
     intervalRef.current = window.setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          handleRefreshPulse();
+          if (!isPulseSyncing) { // Only trigger if not already syncing
+            handleRefreshPulse();
+          }
           return ROTATION_INTERVAL_SECONDS;
         }
         return prev - 1;
@@ -803,13 +815,13 @@ function App() {
     if (swrLeads && swrLeads.leads && isSyncing) {
       // If we were syncing and we now have leads, clear the pending state
       // (This is a bit naive but works for the demo)
-      setIsSyncing(false);
+      setIsApifySyncing(false);
       setPendingVettingCount(0);
     }
     try {
       (window as any).ChatbotBridge?.setLeads?.(jobs);
     } catch {}
-  }, [swrLeads, isSyncing, jobs]);
+  }, [swrLeads, isApifySyncing, jobs]);
 
   if (!mounted) return null;
 
