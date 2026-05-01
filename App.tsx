@@ -733,7 +733,7 @@ function App() {
     setMounted(true); 
     if (!initialPulseRef.current) {
       addLog("ASR Full-Spectrum Rotation online. Hub capacity stabilizing.", "success", "INIT");
-      handleRefreshPulse(undefined, undefined, true);
+      handleRefreshPulse(undefined, undefined, false);
       initialPulseRef.current = true;
     }
   }, [handleRefreshPulse, addLog]);

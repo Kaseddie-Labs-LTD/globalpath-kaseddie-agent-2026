@@ -3,15 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { RecruitmentBatch, AgentLogEntry, Job, getJobLocationString } from '../types';
 import { 
   ShieldAlert, ShieldCheck, Users, Activity, 
-  Lock, Zap, Globe, MapPin, DollarSign,
-  Building2, Loader2, Terminal, ExternalLink, Plus, Share2, Check, ChevronRight, Sparkles, RefreshCw
+  Zap, Globe, MapPin, DollarSign,
+  Building2, Loader2, Terminal, Share2, Check, ChevronRight, Sparkles, RefreshCw
 } from 'lucide-react';
 import { CorridorFeed } from './CorridorFeed';
 import { SearchSummary } from './SearchSummary';
-import { API_BASE, fetcher } from '../constants/api';
+import { fetcher } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
 import { safeArray } from '../utils/sanitize'; // K2.5: Defensive array utility
-import { categorizeJob, JobSector } from '../utils/jobCategorization';
+import { categorizeJob } from '../utils/jobCategorization';
 
 interface VendorPortal {
   id: string;
@@ -43,7 +43,6 @@ interface AdminDashboardProps {
 interface JobItemProps {
   job: Job; 
   onPitch: (job: Job) => void | Promise<void>; 
-  onAddLog: (message: string, type: AgentLogEntry['type']) => void;
   onCopyB2BLink: (jobId: string) => void;
   onSelectForMarketing?: (job: Job) => void;
   pitchingId: string | null;
@@ -54,7 +53,6 @@ interface JobItemProps {
 const JobItem: React.FC<JobItemProps> = ({ 
   job, 
   onPitch, 
-  onAddLog, 
   onCopyB2BLink, 
   onSelectForMarketing,
   pitchingId, 
@@ -167,11 +165,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     };
   }, []);
   
-  // Helper function to determine category from multiple fields (matches App.tsx logic)
-  // Using the centralized categorizeJob from utils/jobCategorization.ts
-  // const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'service_domestic' | 'general' => {
-  //   // ... (removed local implementation)
-  // };
+
 
   // KIMI K2.5 DATA SANITIZER: Force schema on jobs array - filters corrupted nodes
   interface SanitizedJob {
@@ -212,7 +206,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
         };
       })
       .filter(job => job.id !== ''); // Remove items with empty IDs
-  }, [hrJobs, getJobCategory]);
+  }, [hrJobs]);
 
   useEffect(() => {
     // KIMI K2.5: Use sanitizedJobs for logging to prevent errors on corrupted data
@@ -542,12 +536,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                 </button>
                 <div className="divide-y divide-slate-50">
                   {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                  {safeArray<Job>(displayProfessionalJobs).length > 0 ? safeArray<Job>(displayProfessionalJobs).map((job) => (
+                  {safeArray<Job>(displayProfessionalJobs).length > 0 ? safeArray<Job>(displayProfessionalJobs).map((job: Job) => (
                     <JobItem 
                       key={job.id} 
                       job={job} 
                       onPitch={handlePitchLead}
-                      onAddLog={onAddLog}
                       onCopyB2BLink={handleCopyB2BLink}
                       onSelectForMarketing={handleSelectForMarketing}
                       pitchingId={pitchingId}
@@ -577,12 +570,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                 </button>
                 <div className="divide-y divide-slate-50">
                   {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                  {safeArray<Job>(displayBlueCollarJobs).length > 0 ? safeArray<Job>(displayBlueCollarJobs).map((job) => (
+                  {safeArray<Job>(displayBlueCollarJobs).length > 0 ? safeArray<Job>(displayBlueCollarJobs).map((job: Job) => (
                     <JobItem 
                       key={job.id} 
                       job={job} 
                       onPitch={handlePitchLead}
-                      onAddLog={onAddLog}
                       onCopyB2BLink={handleCopyB2BLink}
                       onSelectForMarketing={handleSelectForMarketing}
                       pitchingId={pitchingId}
@@ -612,12 +604,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                 </button>
                 <div className="divide-y divide-slate-50">
                   {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                  {safeArray<Job>(serviceDomesticJobs).length > 0 ? safeArray<Job>(serviceDomesticJobs).map((job) => (
+                  {safeArray<Job>(serviceDomesticJobs).length > 0 ? safeArray<Job>(serviceDomesticJobs).map((job: Job) => (
                     <JobItem 
                       key={job.id} 
                       job={job} 
                       onPitch={handlePitchLead}
-                      onAddLog={onAddLog}
                       onCopyB2BLink={handleCopyB2BLink}
                       onSelectForMarketing={handleSelectForMarketing}
                       pitchingId={pitchingId}
@@ -645,12 +636,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                     </div>
                     <div className="divide-y divide-slate-50">
                       {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                      {safeArray<Job>(displayOtherJobs).map((job) => (
+                      {safeArray<Job>(displayOtherJobs).map((job: Job) => (
                         <JobItem 
                           key={job.id} 
                           job={job} 
                           onPitch={handlePitchLead}
-                          onAddLog={onAddLog}
                           onCopyB2BLink={handleCopyB2BLink}
                           onSelectForMarketing={handleSelectForMarketing}
                           pitchingId={pitchingId}
@@ -670,7 +660,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                     <h3 className="text-sm font-black uppercase tracking-[0.2em]">Oversight Log</h3>
                  </div>
                  <div className="space-y-4 font-mono text-[11px] overflow-y-auto scrollbar-hide flex-1">
-                    {logs.slice().reverse().map(log => (
+                    {logs.slice().reverse().map((log: AgentLogEntry) => (
                       <div key={log.id} className="flex gap-4 border-l border-slate-800 pl-4 py-1 hover:bg-white/5 transition-colors">
                          <span className="text-slate-600">[{log.timestamp.toLocaleTimeString()}]</span>
                          <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'error' ? 'text-red-400' : 'text-slate-400'}>{log.message}</span>
@@ -689,7 +679,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {portals.map(portal => (
+                {portals.map((portal: VendorPortal) => (
                   <div key={portal.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-200 hover:border-brand-300 transition-all group">
                     <div className="flex justify-between items-start mb-4">
                        <div className="p-3 bg-white rounded-2xl shadow-sm"><Globe size={20} className="text-brand-600" /></div>
@@ -763,7 +753,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                 <Users size={20} className="text-brand-600" /> Vetted Batches
               </h3>
               <div className="space-y-4">
-                {batches.map(batch => (
+                {batches.map((batch: RecruitmentBatch) => (
                   <button 
                     key={batch.id} 
                     onClick={() => setSelectedBatch(batch)}
@@ -775,7 +765,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   >
                     <div className="flex justify-between items-center mb-3">
                       <span className="font-black text-slate-900 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                        {batch.corridor}
+                        {batch.corridor || 'Unknown Corridor'}
                         {selectedBatch?.id === batch.id && <Zap size={10} className="text-brand-600 animate-pulse" />}
                       </span>
                       <div className="flex items-center gap-1.5">
@@ -786,7 +776,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                     <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
                       <div 
                         className={`h-full transition-all duration-1000 ${selectedBatch?.id === batch.id ? 'bg-brand-600 animate-pulse' : 'bg-brand-500'}`} 
-                        style={{ width: `${(batch.verifiedCount / batch.size) * 100}%` }}
+                        style={{ width: `${batch.size > 0 ? (batch.verifiedCount / batch.size) * 100 : 0}%` }}
                       ></div>
                     </div>
                     <div className="mt-2 text-[8px] font-black text-slate-400 uppercase tracking-widest flex justify-between">
