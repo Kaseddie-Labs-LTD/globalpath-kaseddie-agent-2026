@@ -9,7 +9,7 @@ window.console.error = (msg: unknown) => {
     if (s.includes('extension')) return;
   } catch {}
   // eslint-disable-next-line no-console
-  console.log(msg);
+  console.log(String(msg));
 };
 
 // Kaseddie Bridge (replaces DigitalOcean Chatbot Bridge)
