@@ -812,7 +812,7 @@ function App() {
   }, [swrLeads, computeRegionLabelFromLocation, categorizeJob, addLog]);
 
   useEffect(() => {
-    if (swrLeads && swrLeads.leads && isSyncing) {
+    if (swrLeads && swrLeads.leads && isApifySyncing) {
       // If we were syncing and we now have leads, clear the pending state
       // (This is a bit naive but works for the demo)
       setIsApifySyncing(false);
