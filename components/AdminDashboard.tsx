@@ -11,6 +11,7 @@ import { SearchSummary } from './SearchSummary';
 import { API_BASE, fetcher } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
 import { safeArray } from '../utils/sanitize'; // K2.5: Defensive array utility
+import { categorizeJob, JobSector } from '../utils/jobCategorization';
 
 interface VendorPortal {
   id: string;
@@ -167,73 +168,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   }, []);
   
   // Helper function to determine category from multiple fields (matches App.tsx logic)
-  const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'service_domestic' | 'general' => {
-    // Check category field first with LOOSE MAPPING (case-insensitive, partial matches)
-    if (job.category) {
-      const cat = job.category.toLowerCase();
-      // Loose mapping: handle various naming conventions
-      if (cat.includes('professional') || cat === 'professional') return 'professional';
-      if (cat.includes('blue') || cat.includes('collar') || cat === 'blue_collar') return 'blue_collar';
-      if (cat.includes('service') || cat.includes('domestic') || cat === 'service_domestic') return 'service_domestic';
-    }
-    
-    // Enhanced categorization matching App.tsx logic
-    const title = (job.title || job.positionName || '').toLowerCase();
-    const description = (job.description || '').toLowerCase();
-    const interests = (job.interests || '').toLowerCase();
-    const text = `${title} ${description} ${interests}`;
-
-    // 1. SERVICE & DOMESTIC (New Category)
-    if (
-      text.includes('cleaner') || text.includes('housekeeper') ||
-      text.includes('maid') || text.includes('maids') || text.includes('nanny') || 
-      text.includes('domestic') || text.includes('janitor') || text.includes('caregiver') ||
-      text.includes('care assistant') || text.includes('cleaners')
-    ) {
-      return 'service_domestic';
-    }
-
-    // 2. DOMESTIC & HOSPITALITY (The "Missing" Leads)
-    if (
-      text.includes('housekeeping') || text.includes('chef') || 
-      text.includes('cook') || text.includes('caregiver') ||
-      text.includes('care home') || text.includes('care assistant') ||
-      text.includes('support worker')
-    ) {
-      return 'blue_collar';
-    }
-
-    // 2. LOGISTICS
-    if (
-      text.includes('driver') || text.includes('delivery') || 
-      text.includes('transport') || text.includes('warehouse') ||
-      text.includes('delivery driver') || text.includes('helper') ||
-      text.includes('merchandiser') || text.includes('shelf')
-    ) {
-      return 'blue_collar';
-    }
-
-    // 3. IT & DIGITAL
-    if (
-      text.includes('engineer') || text.includes('developer') || 
-      text.includes('ai') || text.includes('software') ||
-      text.includes('it specialist') || text.includes('cybersecurity') ||
-      text.includes('analyst') || text.includes('consultant') ||
-      text.includes('manager') || text.includes('associate') ||
-      text.includes('executive') || text.includes('pwc') || 
-      text.includes('deloitte') || text.includes('officer') ||
-      text.includes('procurement') || text.includes('logistics manager') ||
-      text.includes('supply chain') || text.includes('nurse') || 
-      text.includes('doctor') || text.includes('physician') ||
-      text.includes('hospitality') || text.includes('hotel') ||
-      text.includes('goodyear associate') || text.includes('events management specialist')
-    ) {
-      return 'professional';
-    }
-
-    // Default fallback - assume blue collar for missing data
-    return 'blue_collar';
-  };
+  // Using the centralized categorizeJob from utils/jobCategorization.ts
+  // const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'service_domestic' | 'general' => {
+  //   // ... (removed local implementation)
+  // };
 
   // KIMI K2.5 DATA SANITIZER: Force schema on jobs array - filters corrupted nodes
   interface SanitizedJob {
@@ -265,7 +203,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
           id: typeof job.id === 'string' ? job.id : String(job.id || ''),
           title: typeof job.title === 'string' ? job.title : (typeof job.positionName === 'string' ? job.positionName : ''),
           company: typeof job.company === 'string' ? job.company : '',
-          category: getJobCategory(job),
+          category: categorizeJob(job),
           vetted: job.isVetted === true,
           status: typeof job.status === 'string' ? job.status : 'pending',
           corridor: typeof job.corridor === 'string' ? job.corridor : undefined,
