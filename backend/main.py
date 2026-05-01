@@ -51,7 +51,7 @@ from services.media_engine import generate_flux_image, generate_kling_video
 try:
     http_client = httpx.Client(timeout=180.0, limits=httpx.Limits(max_keepalive_connections=50, max_connections=100))
     groq_client = Groq(api_key=GROQ_KEY, http_client=http_client, max_retries=3)
-    llm = ChatGroq(api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec")
+    llm = ChatGroq(groq_api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec") # Use groq_api_key for ChatGroq
     print("Groq client initialized successfully with optimized connections")
 except Exception as e:
     print(f"Failed to initialize Groq client: {e}")
@@ -114,7 +114,7 @@ async def get_all_leads(
     Filter by category/corridor to reduce memory usage.
     """
     try:
-        print(f"🔍 [PAGINATED LEADS]: Fetching leads - limit={limit}, offset={offset}, category={category}, corridor={corridor}")
+        print(f"[PAGINATED LEADS]: Fetching leads - limit={limit}, offset={offset}, category={category}, corridor={corridor}")
         
         # Check collection exists first
         try:

@@ -249,7 +249,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   }
 
   const sanitizedJobs = React.useMemo(() => {
-    if (!hrJobs || !Array.isArray(hrJobs)) return [];
+    // Ensure hrJobs is an array before processing
+    if (!Array.isArray(hrJobs)) return [];
     
     return hrJobs
       .filter((job): job is Job => {
@@ -273,7 +274,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
         };
       })
       .filter(job => job.id !== ''); // Remove items with empty IDs
-  }, [hrJobs]);
+  }, [hrJobs, getJobCategory]);
 
   useEffect(() => {
     // KIMI K2.5: Use sanitizedJobs for logging to prevent errors on corrupted data
@@ -434,39 +435,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
   // PRIORITY SORT: Golden Corridor (GCC -> Western/Poland) and Luxembourg Node must appear at the top
   // KIMI K2.5: Use sanitizedJobs for safe sorting
-  const sortedHrJobs = [...sanitizedJobs].sort((a, b) => {
-    const priorityNodes = ['Premium Node', 'Premium Node (LUX)', 'Dubai Hub', 'Western Corridor'];
-    
-    const aNode = a.corridor || a.node || '';
-    const bNode = b.corridor || b.node || '';
+  const sortedHrJobs = React.useMemo(() => {
+    if (!sanitizedJobs || sanitizedJobs.length === 0) return [];
+    return [...sanitizedJobs].sort((a, b) => {
+      const priorityNodes = ['Premium Node', 'Premium Node (LUX)', 'Dubai Hub', 'Western Corridor'];
+      
+      const aNode = a.corridor || a.node || '';
+      const bNode = b.corridor || b.node || '';
 
-    const aPriorityIndex = priorityNodes.indexOf(aNode);
-    const bPriorityIndex = priorityNodes.indexOf(bNode);
+      const aPriorityIndex = priorityNodes.indexOf(aNode);
+      const bPriorityIndex = priorityNodes.indexOf(bNode);
 
-    if (aPriorityIndex !== -1 && bPriorityIndex !== -1) {
-      if (aNode === bNode) {
-        // Same node, sort by country priority
-        const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
-        const aCountryIndex = priorityCountries.indexOf(String(a.country || '').toLowerCase());
-        const bCountryIndex = priorityCountries.indexOf(String(b.country || '').toLowerCase());
-        return aCountryIndex - bCountryIndex;
+      if (aPriorityIndex !== -1 && bPriorityIndex !== -1) {
+        if (aNode === bNode) {
+          // Same node, sort by country priority
+          const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
+          const aCountryIndex = priorityCountries.indexOf(String(a.country || '').toLowerCase());
+          const bCountryIndex = priorityCountries.indexOf(String(b.country || '').toLowerCase());
+          return aCountryIndex - bCountryIndex;
+        }
+        return aPriorityIndex - bPriorityIndex;
       }
-      return aPriorityIndex - bPriorityIndex;
-    }
-    if (aPriorityIndex !== -1) return -1;
-    if (bPriorityIndex !== -1) return 1;
-    
-    // Secondary sort by country for Big Four fallback
-    const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
-    const aCountryIndex = priorityCountries.indexOf(String(a.country || '').toLowerCase());
-    const bCountryIndex = priorityCountries.indexOf(String(b.country || '').toLowerCase());
+      if (aPriorityIndex !== -1) return -1;
+      if (bPriorityIndex !== -1) return 1;
+      
+      // Secondary sort by country for Big Four fallback
+      const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
+      const aCountryIndex = priorityCountries.indexOf(String(a.country || '').toLowerCase());
+      const bCountryIndex = priorityCountries.indexOf(String(b.country || '').toLowerCase());
 
-    if (aCountryIndex !== -1 && bCountryIndex !== -1) return aCountryIndex - bCountryIndex;
-    if (aCountryIndex !== -1) return -1;
-    if (bCountryIndex !== -1) return 1;
+      if (aCountryIndex !== -1 && bCountryIndex !== -1) return aCountryIndex - bCountryIndex;
+      if (aCountryIndex !== -1) return -1;
+      if (bCountryIndex !== -1) return 1;
 
-    return 0;
-  });
+      return 0;
+    });
+  }, [sanitizedJobs]);
 
   // KIMI K2.5: Use sanitizedJobs.category which is already computed
   const professionalJobs = sortedHrJobs.filter(j => j.category === 'professional');
