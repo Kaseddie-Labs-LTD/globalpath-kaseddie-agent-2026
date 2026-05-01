@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 # Search for .env in the parent directory (Root)
 root_env = Path(__file__).resolve().parent.parent / '.env'
+print(f"Attempting to load .env from: {root_env}")
 load_dotenv(dotenv_path=root_env)
 
 # Initialize Groq client with fallback check
@@ -19,8 +20,8 @@ QDRANT_URL = os.getenv("QDRANT_URL") or "http://localhost:6333"
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 
 if not GROQ_KEY:
-    print("❌ ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
-    print("❌ Available environment variables:", [k for k in os.environ.keys() if 'GROQ' in k.upper()])
+    print("ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
+    print("Available environment variables:", [k for k in os.environ.keys() if 'GROQ' in k.upper()])
 else:
     print(f"Groq API Key loaded: {GROQ_KEY[:10]}...")
     print(f"Kaseddie Node Linked: ...{GROQ_KEY[-4:]}")
@@ -50,7 +51,7 @@ from services.media_engine import generate_flux_image, generate_kling_video
 try:
     http_client = httpx.Client(timeout=180.0, limits=httpx.Limits(max_keepalive_connections=50, max_connections=100))
     groq_client = Groq(api_key=GROQ_KEY, http_client=http_client, max_retries=3)
-    llm = ChatGroq(api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec", max_retries=3, timeout=180.0)
+    llm = ChatGroq(api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec")
     print("Groq client initialized successfully with optimized connections")
 except Exception as e:
     print(f"Failed to initialize Groq client: {e}")
@@ -284,7 +285,7 @@ PERSISTENT_STORAGE_PATH = os.environ.get('QDRANT_STORAGE_PATH', './qdrant_storag
 
 # Initialize Qdrant Client (Prefer Cloud URL, then persistent disk, never :memory:)
 if QDRANT_URL:
-    print(f"🔌 [PERSISTENT STORE]: Initializing Qdrant Client with Cloud URL: {QDRANT_URL}")
+    print(f"[PERSISTENT STORE]: Initializing Qdrant Client with Cloud URL: {QDRANT_URL}")
     qdrant_client = QdrantClient(
         url=QDRANT_URL,
         api_key=QDRANT_API_KEY,

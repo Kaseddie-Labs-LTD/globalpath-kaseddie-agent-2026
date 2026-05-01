@@ -475,6 +475,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const otherJobs = sortedHrJobs.filter(j => j.category !== 'professional' && j.category !== 'blue_collar' && j.category !== 'service_domestic');
   const totalLeadsCount = sanitizedJobs.length;
   
+  const feesBlockedCount = React.useMemo(() => {
+    return sanitizedJobs.filter(j => 
+      j.fee_blocked || 
+      (j as any).illegalFeeDetected || 
+      (j as any).complianceStatus === 'High Risk' || 
+      j.description?.toLowerCase().includes('fee') || 
+      j.requirements?.some(r => r.toLowerCase().includes('fee'))
+    ).length;
+  }, [sanitizedJobs]);
+  
   // EMERGENCY DEBUG: Log sanitized data (KIMI K2.5: use sanitizedJobs)
   console.log("🚨 EMERGENCY DEBUG: Sanitized jobs data:", sanitizedJobs);
   console.log("🚨 EMERGENCY DEBUG: Total leads:", sanitizedJobs.length);
@@ -848,7 +858,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
           <div className="flex-1">
               {/* KIMI K2.5: Use sanitizedJobs.length for crash protection */}
-              <CorridorFeed nodesActive={sanitizedJobs.length} feesBlocked={logs.length} />
+              <CorridorFeed nodesActive={sanitizedJobs.length} feesBlocked={feesBlockedCount} />
            </div>
         </div>
       </div>

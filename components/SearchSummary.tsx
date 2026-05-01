@@ -3,6 +3,7 @@ import React from 'react';
 import { Job, getJobLocationString } from '../types';
 import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2, DollarSign, ShieldCheck } from 'lucide-react';
 import { sanitizeRegionName, safeNumber, safeArray } from '../utils/sanitize';
+import { categorizeJob, JobSector } from '../utils/jobCategorization';
 
 interface SearchSummaryProps {
   jobs: Job[];
@@ -14,6 +15,7 @@ interface SearchSummaryProps {
 
 export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick, onSectorClick, regionJobCounts, pendingCount = 0 }) => {
   const mappedRegionJobCounts = React.useMemo(() => {
+    if (!jobs) return {};
     const counts: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }> = {
       'Dubai Hub': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
       'Premium Node': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
@@ -121,7 +123,8 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
   }, [mappedRegionJobCounts]);
 
   const sectorDistribution = React.useMemo(() => {
-    const sectors: Record<string, number> = {
+    if (!jobs) return [];
+    const sectors: Record<JobSector, number> = {
       'Logistics': 0,
       'IT & Digital': 0,
       'Manufacturing': 0,
@@ -131,43 +134,8 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
     };
 
     jobs.forEach(job => {
-      const title = (job.title || '').toLowerCase();
-      const description = (job.description || '').toLowerCase();
-      const company = (job.company || '').toLowerCase();
-      const loc = getJobLocationString(job.location).toLowerCase();
-      
-      // K2.5 OMEGA: Explicit Service & Domestic company mapping
-      const domesticCompanies = [
-        'the tidy troupe',
-        'authentic services', 
-        'cleaning',
-        'domestic'
-      ];
-      const isDomesticCompany = domesticCompanies.some(dc => company.includes(dc));
-      
-      // Service & Domestic detection (title/description OR company name)
-      if (title.includes('cleaner') || title.includes('housekeeper') || title.includes('maid') || title.includes('nanny') || title.includes('domestic') || title.includes('janitor') ||
-          description.includes('cleaner') || description.includes('housekeeper') || description.includes('maid') || description.includes('nanny') || description.includes('domestic') || description.includes('janitor') ||
-          isDomesticCompany) {
-        sectors['Service & Domestic']++;
-      }
-      // Only deep-dive into Western Corridor (Poland/Canada/etc) or all if preferred
-      // User specifically mentioned "those 100 Polish leads"
-      else if (title.includes('driver') || title.includes('warehouse') || title.includes('logistics') || title.includes('supply') || title.includes('forklift') || title.includes('delivery') ||
-          description.includes('driver') || description.includes('warehouse') || description.includes('logistics') || description.includes('supply') || description.includes('forklift') || description.includes('delivery')) {
-        sectors['Logistics']++;
-      } else if (title.includes('software') || title.includes('developer') || title.includes('it') || title.includes('digital') || title.includes('tech') || title.includes('engineer') ||
-                 description.includes('software') || description.includes('developer') || description.includes('it') || description.includes('digital') || description.includes('tech') || description.includes('engineer')) {
-        sectors['IT & Digital']++;
-      } else if (title.includes('factory') || title.includes('production') || title.includes('manufacturing') || title.includes('operator') || title.includes('technician') || title.includes('machine') ||
-                 description.includes('factory') || description.includes('production') || description.includes('manufacturing') || description.includes('operator') || description.includes('technician') || description.includes('machine')) {
-        sectors['Manufacturing']++;
-      } else if (title.includes('nurse') || title.includes('care') || title.includes('health') || title.includes('medical') || title.includes('hospital') ||
-                 description.includes('nurse') || description.includes('care') || description.includes('health') || description.includes('medical') || description.includes('hospital')) {
-        sectors['Healthcare']++;
-      } else {
-        sectors['Other']++;
-      }
+      const sector = categorizeJob(job);
+      sectors[sector]++;
     });
 
     return Object.entries(sectors)

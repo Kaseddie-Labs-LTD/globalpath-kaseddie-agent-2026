@@ -4,6 +4,7 @@ import { ShieldCheck, Plane, Info, ExternalLink, Globe2, RefreshCw, Loader2, Spa
 import { fetchGlobalPulseData } from '../services/ai';
 import { getJobLocationString } from '../types';
 import { getCoordinates, getAllCoordinates } from '../utils/geoCoordinates';
+import { categorizeJob, JobSector } from '../utils/jobCategorization';
 
 const geoUrl = "https://raw.githubusercontent.com/lotusms/world-map-data/master/world.json";
 
@@ -315,7 +316,7 @@ export const GlobalPulseMap: React.FC<{
               />
 
               {/* Dynamic Job Markers with Neon Pulse - Active & Ghost Nodes */}
-              {jobs.filter(j => j.lat && j.lng).map((job, idx) => {
+              {jobs.filter(j => j.lat && j.lng && (categorizeJob(j) === 'Logistics' || categorizeJob(j) === 'Service & Domestic')).map((job, idx) => {
                 const locationData = getCoordinates(getJobLocationString(job.location));
                 const isActiveNode = locationData && (
                   locationData.country === 'Luxembourg' || 

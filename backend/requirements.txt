@@ -2,10 +2,10 @@ fastapi
 uvicorn
 groq
 qdrant-client
-python-dotenv
+python-dotenv==1.1.1
 apify-client
 python-multipart
-pydantic
+pydantic==2.11.9
 pydantic-settings
 
 aiohttp==3.9.3
@@ -15,6 +15,7 @@ openai
 anthropic
 replicate==1.0.4
 httpx-sse
+httpx==0.28.1
 langchain
 langchain-groq
 langchain-huggingface
