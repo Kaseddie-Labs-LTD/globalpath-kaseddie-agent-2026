@@ -1,10 +1,11 @@
 // API Base URL configuration
 // THE UNIVERSAL HANDSHAKE: Explicitly using primary backend URL (without -1 variant)
 // Backend CORS is configured to accept both primary and -1 origins
-const isProd = import.meta.env.PROD;
-export const BACKEND_URL = isProd 
-  ? 'https://globalpath-kaseddie-agent-2026.onrender.com/api' // ✅ Primary backend (NOT the -1 variant)
-  : '/api'; // Local Proxy
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+export const BACKEND_URL = isLocal
+  ? 'http://127.0.0.1:10000/api' // Your Local Python Backend Port
+  : `https://globalpath-kaseddie-agent-2026.onrender.com/api`; // Your Production Backend
 
 export const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
