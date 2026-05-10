@@ -1082,6 +1082,7 @@ function App() {
                     onNodeClick={handleNodeClick} 
                     onRefresh={() => handleRefreshPulse(undefined, undefined, true)} 
                     isUplinking={isUplinking}
+                    totalLeadsFromSWR={swrStats?.total || 0}
                   />
                 </React.Suspense>
                ) : (
