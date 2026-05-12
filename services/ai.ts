@@ -1,7 +1,7 @@
 import { Job, SafetyReport, B2BPitch, VerificationReport } from "../types";
 import { doJSONCompletion, doTextCompletion } from "./doClient";
 import * as gemini from "./gemini";
-import { API_BASE } from "../constants/api";
+import { API_BASE, fetcher } from "../constants/api";
 
 const brandBlue = '#031B4E';
 const brandGold = '#EAB308';

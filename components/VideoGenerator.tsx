@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Video, Sparkles, Loader2, Play, Download, Globe, Zap, AlertCircle, MapPin, Briefcase } from 'lucide-react';
+import { API_BASE, fetcher } from '../constants/api';
 
 export const VideoGenerator: React.FC = () => {
   const [jobTitle, setJobTitle] = useState('');

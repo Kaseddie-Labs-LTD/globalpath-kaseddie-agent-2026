@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react';
 import { AgentLogEntry } from '../../types';
+import { fetcher } from '../../constants/api';
 
 // API Base URL from environment
 const API_BASE = import.meta.env.VITE_API_URL;
