@@ -38,7 +38,7 @@ export class ErrorBoundary extends Component<Props, State> {
           </div>
           <h3 className="text-lg font-black text-red-900 mb-2">Dashboard Error</h3>
           <p className="text-sm text-red-700 text-center mb-4">
-            Something went wrong with the dashboard. The system has been stabilized.
+            Handshake Interrupted: Please verify backend status and refresh.
           </p>
           <button 
             onClick={() => window.location.reload()} 
