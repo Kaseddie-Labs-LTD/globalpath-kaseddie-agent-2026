@@ -1628,6 +1628,59 @@ async def ingest_lead(lead: Lead):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class AuditSync(BaseModel):
+    audit_id: str
+    company_name: str
+    risk_level: str
+    status: str
+    raw_text: str
+
+@api_router.post("/sync-audit")
+async def sync_audit_to_qdrant(payload: AuditSync):
+    try:
+        # Convert raw text to vector
+        emb_model = get_embeddings()
+        vector = emb_model.embed_query(payload.raw_text)
+        
+        coll_name = "oversight_sentinel_vectors"
+        # Ensure collection exists
+        try:
+            coll_info = qdrant_client.get_collection(collection_name=coll_name)
+            vector_size = coll_info.config.params.vectors.size
+        except Exception:
+            vector_size = len(vector)
+            qdrant_client.create_collection(
+                collection_name=coll_name,
+                vectors_config=models.VectorParams(size=vector_size, distance=models.Distance.COSINE)
+            )
+
+        # Pad/truncate vector to match collection's requirements
+        if len(vector) < vector_size:
+            vector = vector + [0.0] * (vector_size - len(vector))
+        elif len(vector) > vector_size:
+            vector = vector[:vector_size]
+
+        qdrant_client.upsert(
+            collection_name=coll_name,
+            points=[
+                models.PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector,
+                    payload={
+                        "id": payload.audit_id,
+                        "companyName": payload.company_name,
+                        "riskLevel": payload.risk_level,
+                        "status": payload.status,
+                        "rawText": payload.raw_text,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            ]
+        )
+        return {"success": True, "message": "Audit synced to Qdrant successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 class SearchQuery(BaseModel):
     query_text: str
     limit: int = 5
