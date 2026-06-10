@@ -958,7 +958,9 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or os.getenv("VITE_ADMIN_PASSWORD")
 # production to keep sessions valid across restarts / replicas.
 JWT_SECRET = os.getenv("JWT_SECRET")
 if not JWT_SECRET:
-    raise ValueError("JWT_SECRET environment variable is missing!")
+    # Fallback to a secure random secret if not set - don't crash server!
+    print("⚠️ [AUTH] JWT_SECRET not configured! Using per-process random secret (sessions will not persist across restarts).")
+    JWT_SECRET = secrets.token_urlsafe(64)
 JWT_TTL_SECONDS = int(os.getenv("ADMIN_JWT_TTL_SECONDS", "3600"))  # 1 hour default
 
 
@@ -2770,13 +2772,24 @@ async def force_verify_all_leads(admin: dict = Depends(require_admin_token)):
 async def admin_login(req: AdminLoginRequest):
     """
     Validate the admin password and return a short-lived HS256 token.
-    Returns 401 on failure, 503 if the server has no admin password configured.
+    Returns 401 on failure, 500 if server auth config is incomplete.
     """
-    if not ADMIN_PASSWORD:
-        # Fail closed: never authenticate when no password is configured server-side.
+    # Check both required credentials
+    if not ADMIN_PASSWORD or not JWT_SECRET:
+        # Fail closed: never authenticate when no password/JWT secret configured server-side.
+        missing = []
+        if not ADMIN_PASSWORD:
+            missing.append("ADMIN_PASSWORD/VITE_ADMIN_PASSWORD")
+        if not JWT_SECRET:
+            missing.append("JWT_SECRET")
+        print(f"⚠️ [AUTH] Admin login failed! Missing required env vars: {', '.join(missing)}")
         raise HTTPException(
-            status_code=503,
-            detail="Admin authentication is not configured on the server.",
+            status_code=500,
+            detail={
+                "status": "error",
+                "message": "Admin authentication configuration incomplete on server.",
+                "missing_config": missing
+            }
         )
 
     submitted = (req.password or "").encode("utf-8")
