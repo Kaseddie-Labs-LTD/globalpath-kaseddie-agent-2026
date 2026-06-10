@@ -130,7 +130,7 @@ function App() {
   // OOM PROTECTION: Pagination state for leads (prevent loading all 1,000 at once)
   const [leadsOffset, setLeadsOffset] = useState(0);
   const [hasMoreLeads, setHasMoreLeads] = useState(true);
-  const LEADS_PAGE_SIZE = 100; // Only load 100 leads at a time
+  const LEADS_PAGE_SIZE = 1000; // Load up to 1000 leads at once to get full dataset
   const [enrollmentInterestJob, setEnrollmentInterestJob] = useState<{ title: string; company?: string } | null>(null);
   const [recentLead, setRecentLead] = useState<{ name: string; job: string; company?: string } | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
@@ -426,10 +426,17 @@ function App() {
         
         // OOM PROTECTION: Track if there are more leads to load
         const leadsArray = data?.leads || [];
-        setHasMoreLeads(data?.next_offset !== null);
+        const moreLeadsRemaining = data?.next_offset !== null;
+        setHasMoreLeads(moreLeadsRemaining);
         
-        console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})`);
-        console.log(`✅ [PAGINATED]: Has more leads: ${data?.next_offset !== null}`);
+        console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})');
+        console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}');
+        
+        // Auto-fetch next page if there are more leads
+        if (moreLeadsRemaining) {
+          console.log('🔄 [AUTO-FETCH: Loading next page of leads...');
+          setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);
+        }
         
         if (leadsArray.length === 0 && leadsOffset === 0) {
           console.error('🚨 CRITICAL: SWR returned 0 leads at offset 0');
