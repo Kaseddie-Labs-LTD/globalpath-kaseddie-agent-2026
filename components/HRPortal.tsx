@@ -27,7 +27,7 @@ interface HRPortalProps {
   initialPitchText?: string;
   onPitchLead?: (prompt: string) => void;
   onSearchLeads?: (query: string) => Promise<{ summary: string; leads: Job[] }>;
-  onGenerateB2BPitch?: (title: string, company: string, salary?: string, country?: string, category?: string) => Promise<string>;
+  onGenerateB2BPitch?: (title: string, company: string, salary?: string, country?: string, category?: string, location?: string) => Promise<string>;
   onLog?: (message: string, type: AgentLogEntry['type'], step?: string) => void;
   isGeneratingPitch?: boolean; // AI UX: Visual feedback during pitch generation
   pitchErrorMessage?: string | null; // AI UX: Error display for failed generation
@@ -687,7 +687,7 @@ export const HRPortal: React.FC<HRPortalProps> = ({
                 <div className="space-y-3">
                   {hrJobs.filter(j => j && j.source && j.source.includes('HR')).length > 0 ? hrJobs.filter(j => j && j.source && j.source.includes('HR')).map(job => {
                     // Fuzzy search for Luxembourg drivers and blue-collar roles
-                    const locationMatch = fuzzyMatch(job.location || '', 'luxembourg');
+                    const locationMatch = fuzzyMatch(getJobLocationString(job.location), 'luxembourg');
                     const roleMatch = fuzzyMatch(job.title || '', 'driver') || fuzzyMatch(job.title || '', 'chauffeur') || fuzzyMatch(job.description || '', 'driver');
                     const tagsMatch = job.tags?.some((tag: string) => fuzzyMatch(tag, 'blue-collar') || fuzzyMatch(tag, 'blue collar'));
                     

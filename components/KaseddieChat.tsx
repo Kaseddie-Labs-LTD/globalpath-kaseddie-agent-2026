@@ -12,7 +12,7 @@ const KaseddieChat = () => {
     if (!input.trim() || isThinking) return;
     
     setIsThinking(true);
-    const newMessage = { role: 'user', content: input };
+    const newMessage = { role: 'user', content: input, isStreaming: false };
     setHistory([...history, newMessage]);
     setInput("");
 
@@ -58,13 +58,13 @@ const KaseddieChat = () => {
         } else {
           // Fallback for non-streaming response
           const data = await res.json();
-          setHistory(prev => [...prev, { role: 'assistant', content: data.reply }]);
+          setHistory(prev => [...prev, { role: 'assistant', content: data.reply, isStreaming: false }]);
         }
       } else {
-        setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.' }]);
+        setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
       }
     } catch (error) {
-      setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.' }]);
+      setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
     } finally {
       setIsThinking(false);
     }

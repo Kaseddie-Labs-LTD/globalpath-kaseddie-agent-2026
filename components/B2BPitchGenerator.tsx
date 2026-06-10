@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Zap, Send, Loader2, Sparkles, Building2, Briefcase, Copy, Check, DollarSign, Globe, MessageSquare, Mail, ExternalLink } from 'lucide-react';
-import { AgentLogEntry, Job } from '../types';
+import { AgentLogEntry, Job, getJobLocationString } from '../types';
 
 interface B2BPitchGeneratorProps {
   onGenerate: (title: string, company: string, salary?: string, country?: string, category?: string, location?: string) => Promise<string>;
@@ -88,7 +88,7 @@ GlobalPath Outreach Command Center
         finalSalary, 
         selectedLead?.country, 
         selectedLead?.category,
-        selectedLead?.location
+        getJobLocationString(selectedLead?.location)
       );
       setPitch(generatedPitch);
       setStatusMessage('Complete');

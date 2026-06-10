@@ -86,19 +86,19 @@ export const EnrollmentForm: React.FC<EnrollmentFormProps> = ({ onEnroll, initia
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="full-name" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Full Name</label>
-            <input id="full-name" name="fullName" autocomplete="name" value={form.fullName} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" required />
+            <input id="full-name" name="fullName" autoComplete="name" value={form.fullName} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" required />
           </div>
           <div>
             <label htmlFor="company" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Company</label>
-            <input id="company" name="company" autocomplete="organization" value={form.company} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" />
+            <input id="company" name="company" autoComplete="organization" value={form.company} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" />
           </div>
           <div>
             <label htmlFor="industry" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Industry</label>
-            <input id="industry" name="industry" autocomplete="organization-title" value={form.industry} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" />
+            <input id="industry" name="industry" autoComplete="organization-title" value={form.industry} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" />
           </div>
           <div>
             <label htmlFor="email" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Email</label>
-            <input id="email" type="email" name="email" autocomplete="email" value={form.email} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" required />
+            <input id="email" type="email" name="email" autoComplete="email" value={form.email} onChange={handleChange} className="w-full mt-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none" required />
           </div>
           <div className="md:col-span-2">
             <label htmlFor="phone-number" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Phone Number</label>
@@ -110,7 +110,7 @@ export const EnrollmentForm: React.FC<EnrollmentFormProps> = ({ onEnroll, initia
               </select>
               <input 
                 id="phone-number"
-                autocomplete="tel-national"
+                autoComplete="tel-national"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none"

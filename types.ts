@@ -4,6 +4,8 @@ export interface JobLocation {
   country?: string;
   formattedAddress?: string;
   fullAddress?: string;
+  address?: string;
+  region?: string;
 }
 
 export interface Job {
@@ -38,7 +40,7 @@ export interface Job {
   hrContact?: string;
   employerEmail?: string;
   postedBy?: string;
-  status?: 'pending_audit' | 'live' | 'flagged' | 'vetted' | 'vetting_pending';
+  status?: 'pending_audit' | 'live' | 'flagged' | 'vetted' | 'vetting_pending' | 'verified' | 'pending';
   safetyScore?: number;
   recommendation?: string;
   isHighValue?: boolean;
@@ -54,6 +56,15 @@ export interface Job {
   category?: 'blue_collar' | 'professional' | 'service_domestic';
   node?: string;
   corridor?: string;
+  // Additional properties for admin dashboard and compatibility
+  name?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  tags?: string[];
+  fee_blocked?: boolean;
+  illegalFeeDetected?: boolean;
+  vetted?: boolean;
 }
 
 export const getJobLocationString = (location: string | JobLocation | undefined): string => {

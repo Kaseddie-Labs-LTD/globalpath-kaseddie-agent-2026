@@ -134,7 +134,7 @@ function App() {
   const [enrollmentInterestJob, setEnrollmentInterestJob] = useState<{ title: string; company?: string } | null>(null);
   const [recentLead, setRecentLead] = useState<{ name: string; job: string; company?: string } | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
-  const [activeCategory, setActiveCategory] = useState<'All' | 'blue_collar' | 'professional'>('All');
+  const [activeCategory, setActiveCategory] = useState<'All' | 'blue_collar' | 'professional' | 'service_domestic'>('All');
   const [jobGridKeyword, setJobGridKeyword] = useState<string>('');
   const [jobGridScrollTrigger, setJobGridScrollTrigger] = useState<number>(0);
   const [serviceNotice, setServiceNotice] = useState<string | null>(null);
@@ -429,12 +429,12 @@ function App() {
         const moreLeadsRemaining = data?.next_offset !== null;
         setHasMoreLeads(moreLeadsRemaining);
         
-        console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})');
-        console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}');
+        console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})`);
+        console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
         
         // Auto-fetch next page if there are more leads
         if (moreLeadsRemaining) {
-          console.log('🔄 [AUTO-FETCH: Loading next page of leads...');
+          console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
           setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);
         }
         
