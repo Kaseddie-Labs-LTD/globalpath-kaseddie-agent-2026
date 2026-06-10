@@ -929,6 +929,7 @@ def ensure_collection_exists():
 origins = [
     "https://globalpath-kaseddie-agent-2026.onrender.com",
     "https://globalpath-kaseddie-agent-2026-1.onrender.com",  # ✅ Add the new variant
+    "https://globalpath-kaseddie-agent-2026-1-oa1d.onrender.com",  # ✅ New Production Frontend
     "https://globalpathkaseddieagent.com",  # ✅ APRIL 30: Custom domain
     "http://localhost:5173",
     "http://localhost:3000",
