@@ -69,9 +69,9 @@ async def get_grounded_contact_data(company_name: str, job_title: str) -> dict:
     try:
         print(f"🔎 [GROUNDING]: Cross-referencing web for decision makers at '{company_name}'...")
         
-        # Initialize model with Search Grounding tool (Pro for deep parsing)
+        # Initialize model with Search Grounding tool (Gemini 2.5 Pro for deep parsing)
         model = genai.GenerativeModel(
-            model_name='gemini-1.5-pro',
+            model_name='gemini-2.5-pro',
             tools=[{'google_search_retrieval': {}}]
         )
 
@@ -1910,6 +1910,109 @@ async def ingest_lead(lead: Lead):
             "message": "Lead ingested successfully",
             "lead_id": point_id
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class AuditSync(BaseModel):
+    audit_id: str
+    company_name: str
+    risk_level: str
+    status: str
+    raw_text: str
+
+@api_router.post("/sync-audit")
+async def sync_audit_to_qdrant(payload: AuditSync):
+    try:
+        # Convert raw text to vector
+        emb_model = get_embeddings()
+        vector = emb_model.embed_query(payload.raw_text)
+        
+        coll_name = "oversight_sentinel_vectors"
+        # Ensure collection exists
+        try:
+            coll_info = qdrant_client.get_collection(collection_name=coll_name)
+            vector_size = coll_info.config.params.vectors.size
+        except Exception:
+            vector_size = len(vector)
+            qdrant_client.create_collection(
+                collection_name=coll_name,
+                vectors_config=models.VectorParams(size=vector_size, distance=models.Distance.COSINE)
+            )
+
+        # Pad/truncate vector to match collection's requirements
+        if len(vector) < vector_size:
+            vector = vector + [0.0] * (vector_size - len(vector))
+        elif len(vector) > vector_size:
+            vector = vector[:vector_size]
+
+        qdrant_client.upsert(
+            collection_name=coll_name,
+            points=[
+                models.PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector,
+                    payload={
+                        "id": payload.audit_id,
+                        "companyName": payload.company_name,
+                        "riskLevel": payload.risk_level,
+                        "status": payload.status,
+                        "rawText": payload.raw_text,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            ]
+        )
+        return {"success": True, "message": "Audit synced to Qdrant successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class SearchQuery(BaseModel):
+    query_text: str
+    limit: int = 5
+
+@api_router.post("/search")
+async def semantic_search(payload: SearchQuery):
+    try:
+        # 1. Convert payload.query_text into a high-dimensional vector
+        emb_model = get_embeddings()
+        query_vector = emb_model.embed_query(payload.query_text)
+        
+        # Determine the target collection and its vector size
+        coll_name = "oversight_sentinel_vectors"
+        try:
+            coll_info = qdrant_client.get_collection(collection_name=coll_name)
+            vector_size = coll_info.config.params.vectors.size
+        except Exception:
+            coll_name = COLLECTION_NAME
+            try:
+                coll_info = qdrant_client.get_collection(collection_name=coll_name)
+                vector_size = coll_info.config.params.vectors.size
+            except Exception:
+                vector_size = len(query_vector)
+        
+        # Pad or truncate vector to match collection's requirements
+        if len(query_vector) < vector_size:
+            query_vector = query_vector + [0.0] * (vector_size - len(query_vector))
+        elif len(query_vector) > vector_size:
+            query_vector = query_vector[:vector_size]
+
+        # 2. Query Qdrant collection
+        results = qdrant_client.search(
+            collection_name=coll_name,
+            query_vector=query_vector,
+            limit=payload.limit
+        )
+        
+        # Convert Qdrant results to match expected structure
+        matches = []
+        for hit in results:
+            matches.append({
+                "id": hit.id,
+                "score": hit.score,
+                "payload": hit.payload
+            })
+            
+        return {"success": True, "matches": matches}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
