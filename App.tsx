@@ -579,7 +579,7 @@ function App() {
               return region.includes(corridorName) || corridorName.includes(region);
             });
             if (match) {
-              return { ...batch, size: match.count, verifiedCount: Math.floor(match.count * 0.9), status: 'verified' };
+              return { ...batch, size: match.count, verifiedCount: Math.floor(match.count * 0.9), status: 'verified' as const };
             }
             return batch;
           });
@@ -592,11 +592,11 @@ function App() {
             const batchesToFill = updatedBatches.filter(b => b.size === 0);
             if (batchesToFill.length > 0) {
               const fillSize = Math.floor(remaining / batchesToFill.length);
-              updatedBatches.forEach(b => {
+              batchesToFill.forEach(b => {
                 if (b.size === 0) {
                   b.size = fillSize;
                   b.verifiedCount = Math.floor(fillSize * 0.9);
-                  b.status = 'verified';
+                  b.status = 'verified' as const;
                 }
               });
             }
@@ -666,14 +666,15 @@ function App() {
           } else {
             const fetchedJobs = combined.map(j => {
               const node = computeRegionLabelFromLocation(j);
-              const category = categorizeJob({...j, node}); 
+              const category = categorizeJob({...j, node}) as 'blue_collar' | 'professional' | 'service_domestic'; 
+              const status = (j.status || 'live') as Job['status'];
               return { 
                 ...j, 
-                status: j.status || 'live',
+                status,
                 node,
                 category,
                 gpLeadId: j.gpLeadId || `GP-${targetRegion.toUpperCase()}-${Date.now().toString().slice(-6)}`
-              };
+              } as Job;
             });
   
             if (fetchedJobs && fetchedJobs.length > 0) {
