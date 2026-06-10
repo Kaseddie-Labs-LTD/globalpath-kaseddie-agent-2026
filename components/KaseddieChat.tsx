@@ -88,7 +88,7 @@ const KaseddieChat = () => {
   return (
     <div className={`kaseddie-uplink-floating ${isExpanded ? 'expanded' : 'collapsed'}`}>
       <div className="chat-header">
-        <div className="status-bar">● NODE_ACTIVE: GROQ_LLAMA_3</div>
+        <div className="status-bar">● NODE_ACTIVE: GEMINI_2.5</div>
         <div className="chat-controls">
           <button 
             className="minimize-btn" 

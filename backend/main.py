@@ -1602,35 +1602,35 @@ class ChatRequest(BaseModel):
     message: str
 
 @api_router.post("/chat")
-async def chat_with_groq(req: ChatRequest):
+async def chat_with_gemini(req: ChatRequest):
     """
-    Kaseddie Uplink Chat endpoint using Groq API.
+    Kaseddie Uplink Chat endpoint using Gemini 2.5 API.
     """
     try:
-        # Error logging: Check Groq API key and message data
-        print(f"🔍 [CHAT DEBUG]: Groq API Key loaded: {'YES' if GROQ_KEY else 'NO'}")
+        # Error logging: Check Gemini API key and message data
+        print(f"🔍 [CHAT DEBUG]: Gemini API Key loaded: {'YES' if GEMINI_API_KEY else 'NO'}")
         print(f"🔍 [CHAT DEBUG]: Message received: {req.message[:100]}...")
         print(f"🔍 [CHAT DEBUG]: Message length: {len(req.message)} chars")
         
-        # Use the Groq client to chat with Llama 3
-        print(f"🔍 [CHAT DEBUG]: Calling Groq API with model: llama-3.3-70b-versatile")
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "You are Kaseddie Agent, a B2B recruitment specialist for GlobalPath. You help with lead analysis, pitch generation, and recruitment strategy. Be concise and professional."
-                },
-                {
-                    "role": "user", 
-                    "content": req.message
-                }
+        # Use the Gemini client to chat with Gemini 2.5
+        print(f"🔍 [CHAT DEBUG]: Calling Gemini API with model: gemini-2.5-flash")
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[
+                types.Content(
+                    role='user',
+                    parts=[types.Part.from_text(f"""System: You are Kaseddie Agent, a B2B recruitment specialist for GlobalPath. You help with lead analysis, pitch generation, and recruitment strategy. Be concise and professional.
+
+User: {req.message}""")]
+                )
             ],
-            max_tokens=500,
-            temperature=0.7
+            config=types.GenerateContentConfig(
+                max_output_tokens=500,
+                temperature=0.7
+            )
         )
         
-        reply = response.choices[0].message.content or "I'm having trouble processing that request."
+        reply = response.text or "I'm having trouble processing that request."
         print(f"✅ [CHAT DEBUG]: Response sent ({len(reply)} chars)")
         
         return {"reply": reply}
@@ -1654,30 +1654,29 @@ class AgentChatRequest(BaseModel):
     message: str
 
 async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
-    """Generate streaming chat response using Groq Llama-3.3"""
+    """Generate streaming chat response using Gemini 2.5"""
     try:
-        completion = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "You are the Kaseddie AI Oversight Agent for GlobalPath. Use the provided 540 nodes and Ethical Rules to assist the user with lead analysis, recruitment strategy, and compliance questions. Be professional, concise, and helpful."
-                },
-                {
-                    "role": "user", 
-                    "content": message
-                }
+        stream = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[
+                types.Content(
+                    role='user',
+                    parts=[types.Part.from_text(f"""You are the Kaseddie AI Oversight Agent for GlobalPath. Use the provided 540 nodes and Ethical Rules to assist the user with lead analysis, recruitment strategy, and compliance questions. Be professional, concise, and helpful.
+
+User: {message}""")]
+                )
             ],
-            temperature=1,
-            max_completion_tokens=1024,
-            top_p=1,
-            stream=True,
-            stop=None
+            config=types.GenerateContentConfig(
+                max_output_tokens=1024,
+                temperature=1,
+                top_p=1
+            ),
+            stream=True
         )
         
-        for chunk in completion:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        for chunk in stream:
+            if chunk.text:
+                yield chunk.text
                 
     except Exception as e:
         yield f"Error: {str(e)}"
@@ -1685,13 +1684,13 @@ async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
 @api_router.post("/agent/chat")
 async def agent_chat_stream(req: AgentChatRequest):
     """
-    Kaseddie AI Agent streaming chat endpoint using Llama-3.3-70b-versatile model.
+    Kaseddie AI Agent streaming chat endpoint using Gemini 2.5 model.
     Provides real-time streaming responses for chatbot UI.
     """
     try:
         print(f"🔍 [AGENT CHAT]: Message received: {req.message[:100]}...")
         
-        if not groq_client:
+        if not gemini_client:
             return StreamingResponse(
                 iter(["AI service not available - please check configuration"]),
                 media_type="text/plain"
@@ -1723,9 +1722,8 @@ async def generate_marketing(job_request: dict):
         print(f"🎨 [MARKETING]: Generating content for {company} - {role} in {corridor}")
         
         # Create marketing prompt
-        system_prompt = "You are a GlobalPath marketing specialist. Create compelling, professional marketing copy for job opportunities. Focus on benefits, prestige, and clear call-to-action. Keep it under 150 words and make it suitable for WhatsApp sharing."
-        
-        user_prompt = f"""
+        full_prompt = f"""You are a GlobalPath marketing specialist. Create compelling, professional marketing copy for job opportunities. Focus on benefits, prestige, and clear call-to-action. Keep it under 150 words and make it suitable for WhatsApp sharing.
+
 Create compelling marketing copy for this job opportunity:
 
 Company: {company}
@@ -1748,19 +1746,18 @@ Requirements:
 Format the response as clean text ready for WhatsApp.
         """
         
-        print(f"🎨 [MARKETING]: Calling Groq Llama-3.3-70b-specdec for content generation...")
+        print(f"🎨 [MARKETING]: Calling Gemini 2.5 Flash for content generation...")
         
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-specdec",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=400,
-            temperature=0.7
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                max_output_tokens=400,
+                temperature=0.7
+            )
         )
         
-        marketing_content = response.choices[0].message.content or f"🚀 Exciting opportunity at {company}! We're seeking a talented {role} for our {corridor} operations. This role offers excellent growth potential and competitive benefits. Apply now to join our elite team! 📱 +256 784 428 821"
+        marketing_content = response.text or f"🚀 Exciting opportunity at {company}! We're seeking a talented {role} for our {corridor} operations. This role offers excellent growth potential and competitive benefits. Apply now to join our elite team! 📱 +256 784 428 821"
         
         print(f"✅ [MARKETING]: Generated {len(marketing_content)} characters of marketing content")
         print(f"✅ [MARKETING]: === MARKETING GENERATION COMPLETE ===")
