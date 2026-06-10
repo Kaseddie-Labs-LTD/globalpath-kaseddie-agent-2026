@@ -7,7 +7,7 @@ import time
 import json
 import random
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
@@ -2106,8 +2106,12 @@ async def sync_all_apify_datasets():
             print("Apify credentials or dataset IDs not found in environment.")
             return 0
             
-        # Initialize Apify Client with custom timeout for Kampala latency
-        client = ApifyClient(apify_token, timeout_secs=180)  # Increase to 3 minutes for high latency
+        # Initialize Apify Client with custom timeouts for Kampala latency
+        client = ApifyClient(
+            token=apify_token,
+            timeout_medium=timedelta(seconds=60),
+            timeout_long=timedelta(seconds=360)
+        )
         total_synced = 0
         
         # Semaphore to limit concurrent dataset syncs (Task requirement: limit to 2)
