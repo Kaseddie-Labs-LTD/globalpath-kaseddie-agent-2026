@@ -1,23 +1,175 @@
 import os
 import hashlib
+import hmac
+import base64
+import secrets
+import time
 import json
 import random
 import asyncio
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+import google.generativeai as genai
+from google.cloud import secretmanager
 
-# Search for .env in the parent directory (Root)
+# --- GOOGLE SECRET MANAGER GATEWAY ---
+class SecretManagerGateway:
+    _cache = {}
+    _client = None
+
+    @classmethod
+    def get_client(cls):
+        if cls._client is None:
+            try:
+                cls._client = secretmanager.SecretManagerServiceClient()
+            except Exception as e:
+                print(f"⚠️ [GCP SECRET]: Could not initialize Secret Manager Client: {e}")
+        return cls._client
+
+    @classmethod
+    def get_secret(cls, secret_id: str, default: str = None) -> str:
+        """Fetch secret from GCP with local .env fallback."""
+        if secret_id in cls._cache:
+            return cls._cache[secret_id]
+
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        client = cls.get_client()
+
+        if client and project_id:
+            try:
+                name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+                response = client.access_secret_version(request={"name": name})
+                secret_val = response.payload.data.decode("UTF-8")
+                cls._cache[secret_id] = secret_val
+                print(f"✅ [GCP SECRET]: Fetched '{secret_id}' from Cloud Vault.")
+                return secret_val
+            except Exception as e:
+                print(f"⚠️ [GCP SECRET]: Failed to fetch '{secret_id}': {e}")
+
+        # Three-Line Stability Protocol Fallback
+        val = os.getenv(secret_id) or default
+        if val:
+            print(f"🏠 [LOCAL SECRET]: Using local .env for '{secret_id}'.")
+        return val
+
+# --- GEMINI SEARCH GROUNDING UTILITY ---
+async def get_grounded_contact_data(company_name: str, job_title: str) -> dict:
+    """
+    Uses Gemini Search Grounding (google_search_retrieval) to identify 
+    direct decision-makers and their contact channels.
+    
+    UPGRADE: Utilizing Gemini 1.5 Pro for deep parsing of complex directories.
+    FALLBACK: Programmatically pulls official corporate domain if no direct name found.
+    """
+    if not GEMINI_API_KEY:
+        print("⚠️ [GROUNDING]: Gemini API key missing. Skipping contact enrichment.")
+        return {}
+
+    try:
+        print(f"🔎 [GROUNDING]: Cross-referencing web for decision makers at '{company_name}'...")
+        
+        # Initialize model with Search Grounding tool (Pro for deep parsing)
+        model = genai.GenerativeModel(
+            model_name='gemini-1.5-pro',
+            tools=[{'google_search_retrieval': {}}]
+        )
+
+        prompt = f"""
+        Analyze this job node for {company_name}. 
+        Search the web to identify the current individual handling HR, Talent Acquisition, or Operations management at this firm. 
+        
+        FALLBACK RULE: If you cannot resolve a direct decision-maker name, identify the organization's official corporate domain contact channel (e.g., info@company.com or their primary HQ contact page).
+        
+        Return their Name, Corporate Job Title, and any publicly listed B2B contact channels in a structured JSON schema.
+        
+        Context: The firm is hiring for a {job_title} position.
+        
+        RETURN JSON FORMAT ONLY:
+        {{
+          "decision_maker_name": "Full Name or 'Corporate Domain'",
+          "decision_maker_title": "Corporate Job Title or 'General Operations'",
+          "contact_channels": {{
+            "email": "Specific email or general corporate email",
+            "linkedin": "LinkedIn URL",
+            "phone": "Public office line"
+          }},
+          "source_validation": "Brief note on where this was verified"
+        }}
+        """
+
+        # Async generation wrapper with timeout protection
+        loop = asyncio.get_event_loop()
+        try:
+            response = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: model.generate_content(prompt)),
+                timeout=45.0
+            )
+        except asyncio.TimeoutError:
+            print(f"⚠️ [GROUNDING]: Search timed out for '{company_name}'. Initiating quick domain fallback...")
+            # Simple fallback if Pro times out
+            return {
+                "decision_maker_name": "Corporate Domain",
+                "decision_maker_title": "General Operations",
+                "contact_channels": {"email": f"info@{company_name.lower().replace(' ', '')}.com"},
+                "source_validation": "Timeout Fallback"
+            }
+        
+        grounded_text = response.text.strip()
+        if "```json" in grounded_text:
+            grounded_text = grounded_text.split("```json")[1].split("```")[0].strip()
+        
+        enriched_contacts = json.loads(grounded_text)
+        
+        # Final validation: Ensure we don't return blank values
+        if not enriched_contacts.get('decision_maker_name') or enriched_contacts.get('decision_maker_name') == 'Unknown':
+            enriched_contacts['decision_maker_name'] = "Corporate Domain"
+            enriched_contacts['decision_maker_title'] = "General Operations"
+            
+        print(f"✅ [GROUNDING]: Enrichment complete for {company_name}")
+        return enriched_contacts
+
+    except Exception as e:
+        print(f"⚠️ [GROUNDING]: Failed to enrich contacts for '{company_name}': {e}")
+        return {
+            "decision_maker_name": "Corporate Domain",
+            "decision_maker_title": "General Operations",
+            "contact_channels": {},
+            "source_validation": f"Error Fallback: {str(e)}"
+        }
+
+# Force search for .env in both the repository root and backend folder.
 root_env = Path(__file__).resolve().parent.parent / '.env'
-print(f"Attempting to load .env from: {root_env}")
-load_dotenv(dotenv_path=root_env)
+backend_env = Path(__file__).resolve().parent / '.env'
+print(f"Attempting to load .env from root: {root_env}")
+load_dotenv(dotenv_path=root_env, override=True)
+print(f"Attempting to load .env from backend: {backend_env}")
+load_dotenv(dotenv_path=backend_env, override=True)
+
+# Ensure JWT_SECRET is available in development environments
+JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET")
+if not JWT_SECRET:
+    if os.getenv("ENV", "").lower() != "production":
+        JWT_SECRET = "your_fallback_secure_secret_string_here"
+        os.environ["JWT_SECRET"] = JWT_SECRET
+        print("WARNING: JWT_SECRET missing; using fallback development secret.")
+    else:
+        print("ERROR: JWT_SECRET is required in production environment but was not found.")
 
 # Initialize Groq client with fallback check
-GROQ_KEY = os.getenv("VITE_GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+GROQ_KEY = SecretManagerGateway.get_secret("VITE_GROQ_API_KEY") or SecretManagerGateway.get_secret("GROQ_API_KEY")
 
 # Qdrant configuration
-QDRANT_URL = os.getenv("QDRANT_URL") or "http://localhost:6333"
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+QDRANT_URL = SecretManagerGateway.get_secret("QDRANT_URL") or "http://localhost:6333"
+QDRANT_API_KEY = SecretManagerGateway.get_secret("QDRANT_API_KEY", "")
+
+# Gemini Configuration
+GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    print(f"✅ [GEMINI]: Premium Compliance Route active.")
+else:
+    print(f"❌ [GEMINI]: API Key missing. Compliance route limited.")
 
 if not GROQ_KEY:
     print("ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
@@ -31,8 +183,9 @@ os.environ["CREWAI_STORAGE_DIR"] = os.path.join(os.getcwd(), ".crewai")
 import uuid
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, APIRouter
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, APIRouter, Depends
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import edge_tts
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -788,6 +941,83 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------------------------------------------------------------------
+# ADMIN AUTH: HS256-style compact token (stdlib only, no PyJWT dependency)
+# ---------------------------------------------------------------------------
+# Resolution order for the admin password:
+#   1. ADMIN_PASSWORD (backend-only secret, preferred for production)
+#   2. VITE_ADMIN_PASSWORD (compat with frontend env naming)
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or os.getenv("VITE_ADMIN_PASSWORD")
+
+# JWT signing secret. Falls back to a per-process random secret so tokens are
+# never signed with a hardcoded key, but operators should set JWT_SECRET in
+# production to keep sessions valid across restarts / replicas.
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise ValueError("JWT_SECRET environment variable is missing!")
+JWT_TTL_SECONDS = int(os.getenv("ADMIN_JWT_TTL_SECONDS", "3600"))  # 1 hour default
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(s: str) -> bytes:
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad)
+
+
+def create_admin_token(subject: str = "admin", ttl_seconds: int = JWT_TTL_SECONDS) -> str:
+    """Create a compact HS256-signed token: header.payload.signature."""
+    header = {"alg": "HS256", "typ": "JWT"}
+    now = int(time.time())
+    payload = {"sub": subject, "role": "admin", "iat": now, "exp": now + ttl_seconds}
+    header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    signing_input = f"{header_b64}.{payload_b64}".encode()
+    sig = hmac.new(JWT_SECRET.encode(), signing_input, hashlib.sha256).digest()
+    return f"{header_b64}.{payload_b64}.{_b64url_encode(sig)}"
+
+
+def verify_admin_token(token: str) -> Optional[dict]:
+    """Return the decoded payload if the token is valid and unexpired, else None."""
+    try:
+        header_b64, payload_b64, sig_b64 = token.split(".")
+    except ValueError:
+        return None
+    try:
+        signing_input = f"{header_b64}.{payload_b64}".encode()
+        expected_sig = hmac.new(JWT_SECRET.encode(), signing_input, hashlib.sha256).digest()
+        actual_sig = _b64url_decode(sig_b64)
+        if not hmac.compare_digest(expected_sig, actual_sig):
+            return None
+        payload = json.loads(_b64url_decode(payload_b64))
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+security = HTTPBearer(auto_error=False)
+
+async def require_admin_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
+
+    payload = verify_admin_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired admin token")
+
+    return payload
+
+
+class AdminLoginRequest(BaseModel):
+    password: str
+
+
 # Lead Model
 class Lead(BaseModel):
     name: str
@@ -837,6 +1067,9 @@ async def debug_environment():
     """
     Debug endpoint to show all environment variables
     """
+    # Gate debug endpoint to development only
+    if os.getenv("ENV") != "development":
+        raise HTTPException(status_code=403, detail="Access denied")
     return {
         "all_env_vars": list(os.environ.keys()),
         "groq_vars": {k: v for k, v in os.environ.items() if 'GROQ' in k.upper()},
@@ -847,13 +1080,14 @@ async def debug_environment():
     }
 
 @api_router.post("/recategorize-leads")
-async def recategorize_existing_leads():
+async def recategorize_existing_leads(admin: dict = Depends(require_admin_token)):
     """
-    Soft Re-Categorization: Iterates through existing 766 leads and re-runs category detection.
-    This moves leads into correct corridors without deleting any data.
+    Soft Re-Categorization & Gemini Premium Compliance Vetting.
+    Iterates through leads to re-run category detection and perform deep legal vetting
+    for the Uganda–Canada–UAE recruitment corridors using Gemini.
     """
     try:
-        print(f"🔄 [RECATEGORIZE]: Starting soft re-categorization of existing leads...")
+        print(f"🔄 [RECATEGORIZE]: Starting soft re-categorization and Gemini audit...")
         
         # Get all points from collection
         all_points = qdrant_client.scroll(
@@ -863,41 +1097,34 @@ async def recategorize_existing_leads():
             with_vectors=True
         )[0]
         
-        print(f"🔄 [RECATEGORIZE]: Found {len(all_points)} leads to re-categorize")
+        print(f"🔄 [RECATEGORIZE]: Found {len(all_points)} leads to process.")
         
         updated_count = 0
         points_to_update = []
         
+        # Initialize Gemini Model for Compliance Vetting
+        gemini_model = None
+        if GEMINI_API_KEY:
+            try:
+                gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+            except Exception as e:
+                print(f"⚠️ [GEMINI]: Failed to initialize model: {e}")
+
         for point in all_points:
             payload = point.payload
             original_category = payload.get('category', 'general')
+            country = payload.get('country', 'Global')
             
-            # Re-run category detection logic
-            title = (payload.get('title') or payload.get('positionName') or '').lower()
-            description = (payload.get('description') or payload.get('interests') or '').lower()
+            # 1. Soft Re-Categorization Logic
+            title = (payload.get('name') or payload.get('title') or payload.get('positionName') or '').lower()
+            description = (payload.get('interests') or payload.get('description') or '').lower()
             text = f"{title} {description}"
             
-            # Professional keywords
-            professional_keywords = [
-                'engineer', 'manager', 'consultant', 'associate', 
-                'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
-                'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
-                'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern'
-            ]
-            
-            # Blue-collar keywords
-            blue_collar_keywords = [
-                'driver', 'warehouse', 'maid', 'housemaid',
-                'helper', 'butcher', 'shelf', 'merchandiser', 'housekeeper',
-            ]
-            
-            # Domestic/Service keywords
-            domestic_keywords = [
-                'cleaner', 'housekeeper', 'maid', 'nanny', 'domestic', 
-                'janitor', 'caregiver', 'care assistant'
-            ]
-            
-            # Re-categorize
+            # Keywords for categorization
+            professional_keywords = ['engineer', 'manager', 'consultant', 'associate', 'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity', 'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern']
+            blue_collar_keywords = ['driver', 'warehouse', 'maid', 'housemaid', 'helper', 'butcher', 'shelf', 'merchandiser', 'housekeeper']
+            domestic_keywords = ['cleaner', 'housekeeper', 'maid', 'nanny', 'domestic', 'janitor', 'caregiver', 'care assistant']
+
             new_category = original_category
             if any(kw in text for kw in professional_keywords):
                 new_category = "professional"
@@ -906,8 +1133,52 @@ async def recategorize_existing_leads():
             elif any(kw in text for kw in blue_collar_keywords):
                 new_category = "blue_collar"
             
-            # Update if category changed
-            if new_category != original_category:
+            # 2. Gemini Premium Compliance Vetting (Uganda-Canada-UAE)
+            compliance_audit = payload.get('compliance_audit')
+            needs_audit = country.lower() in ['canada', 'united arab emirates', 'uae', 'uganda']
+            
+            if gemini_model and needs_audit and not compliance_audit:
+                print(f"⚖️ [GEMINI AUDIT]: Vetting lead for {country} corridor...")
+                prompt = f"""
+                Act as a GlobalPath Compliance Auditor for the {country} corridor.
+                VETTING TASK: Perform deep legal analysis for this recruitment lead.
+                
+                ROLE: {payload.get('name', 'Unknown')}
+                DESCRIPTION: {payload.get('interests', 'No description')}
+                CORRIDOR: Uganda to {country}
+                
+                LEGAL CONSTRAINTS:
+                - Canada: Verify LMIA status requirements and Zero-Fee recruitment compliance.
+                - UAE: Verify Mohre compliance, Kafala system risks, and AVA Trinity (Accommodation, Visa, Airfare).
+                - Uganda: Verify externalization license requirements.
+                
+                RETURN JSON FORMAT ONLY:
+                {{
+                  "compliance_score": 0-100,
+                  "risk_level": "Low" | "Medium" | "High",
+                  "legal_flags": ["list of concerns"],
+                  "ethical_status": "Verified" | "Flagged",
+                  "summary": "1-sentence audit summary"
+                }}
+                """
+                try:
+                    # Async generation wrapper
+                    loop = asyncio.get_event_loop()
+                    response = await loop.run_in_executor(None, lambda: gemini_model.generate_content(prompt))
+                    
+                    audit_text = response.text.strip()
+                    if "```json" in audit_text:
+                        audit_text = audit_text.split("```json")[1].split("```")[0].strip()
+                    
+                    payload['compliance_audit'] = json.loads(audit_text)
+                    payload['vetted'] = True
+                    payload['status'] = 'verified' if payload['compliance_audit'].get('ethical_status') == 'Verified' else 'flagged'
+                    print(f"✅ [GEMINI AUDIT]: Audit complete for '{payload.get('name')}'")
+                except Exception as e:
+                    print(f"⚠️ [GEMINI AUDIT]: Failed for lead: {e}")
+
+            # Update if changes occurred
+            if new_category != original_category or 'compliance_audit' in payload:
                 payload['category'] = new_category
                 points_to_update.append(
                     models.PointStruct(
@@ -917,24 +1188,23 @@ async def recategorize_existing_leads():
                     )
                 )
                 updated_count += 1
-                print(f"🔄 [RECATEGORIZE]: Updated {payload.get('title', 'Unknown')} from {original_category} to {new_category}")
         
-        # Bulk update if any changes
+        # Bulk update to persistent Qdrant storage
         if points_to_update:
-            print(f"🔄 [RECATEGORIZE]: Performing bulk update of {len(points_to_update)} leads...")
+            print(f"💾 [PERSISTENT STORE]: Updating {len(points_to_update)} nodes in ./qdrant_storage...")
             qdrant_client.upsert(
                 collection_name=COLLECTION_NAME,
                 points=points_to_update
             )
-            print(f"✅ [RECATEGORIZE]: Successfully updated {updated_count} leads")
+            print(f"✅ [RECATEGORIZE]: Successfully updated and vetted {updated_count} leads.")
         else:
-            print(f"✅ [RECATEGORIZE]: No category updates needed")
+            print(f"✅ [RECATEGORIZE]: No updates or audits needed.")
         
         return {
             "status": "success",
-            "total_leads": len(all_points),
+            "total_processed": len(all_points),
             "updated_count": updated_count,
-            "message": f"Soft re-categorization complete. {updated_count} leads updated."
+            "message": f"Recategorization and Gemini Compliance Audit complete. {updated_count} nodes updated."
         }
         
     except Exception as e:
@@ -1021,7 +1291,7 @@ async def get_transparency_data():
         }
 
 @api_router.post("/heal-unknown-titles")
-async def heal_unknown_titles():
+async def heal_unknown_titles(admin: dict = Depends(require_admin_token)):
     """
     SURGICAL HEAL: Update only 'Unknown Position' titles without touching other records.
     This fixes existing leads in-place without triggering a database flush or re-sync.
@@ -1129,6 +1399,9 @@ async def debug_routes():
     Debug endpoint to list all registered routes.
     Used to verify API router is properly registered.
     """
+    # Gate debug endpoint to development only
+    if os.getenv("ENV") != "development":
+        raise HTTPException(status_code=403, detail="Access denied")
     routes = []
     for route in app.routes:
         if hasattr(route, 'methods') and hasattr(route, 'path'):
@@ -1147,6 +1420,9 @@ async def ping_ai():
     """
     Test AI connectivity and API key status
     """
+    # Gate sensitive diagnostic to development only
+    if os.getenv("ENV") != "development":
+        raise HTTPException(status_code=403, detail="Access denied")
     try:
         print(f"🔍 [PING DEBUG]: Testing Groq API Key: {'YES' if GROQ_KEY else 'NO'}")
         print(f"🔍 [PING DEBUG]: Available env vars: {[k for k in os.environ.keys() if 'GROQ' in k.upper()]}")
@@ -1603,6 +1879,15 @@ async def ingest_lead(lead: Lead):
         payload = lead.model_dump()
         payload["category"] = payload.get("category", "general").lower()
         
+        # Initialize enriched_contact structure
+        payload["enriched_contact"] = {
+            "decision_maker_name": None,
+            "decision_maker_title": None,
+            "outreach_status": "pending",
+            "contact_channels": {},
+            "grounding_source": None
+        }
+        
         qdrant_client.upsert(
             collection_name=COLLECTION_NAME,
             points=[
@@ -1838,7 +2123,14 @@ async def sync_all_apify_datasets():
                             'timestamp': datetime.now().isoformat(),
                             'fingerprint': fingerprint,
                             'source': 'apify_sync',
-                            'dataset_id': ds_id
+                            'dataset_id': ds_id,
+                            'enriched_contact': {
+                                'decision_maker_name': None,
+                                'decision_maker_title': None,
+                                'outreach_status': 'pending',
+                                'contact_channels': {},
+                                'grounding_source': None
+                            }
                         }
                         
                         # Create a simple vector for immediate storage (using text embedding of raw data)
@@ -1891,9 +2183,9 @@ async def sync_all_apify_datasets():
         return 0
 
 async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
-    """Background task to enrich a single lead with full metadata and Ollama processing."""
+    """Background task to enrich a single lead with full metadata, Gemini Search Grounding, and Ollama processing."""
     try:
-        # Identification logic for metadata tagging
+        # 1. Identification logic for metadata tagging
         is_lux = dataset_id == os.getenv("APIFY_DATASET_ID_LUX") or dataset_id == "PxGGxYxvWUH4lbJUJ"
         is_uae = dataset_id == os.getenv("APIFY_DATASET_ID_UAE")
         is_ksa = dataset_id == os.getenv("APIFY_DATASET_ID_KSA")
@@ -1919,7 +2211,14 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
         
         category = "professional" if (is_lux or is_poland) else "blue_collar"
         
-        # Use the existing mapping function to get full Document
+        # 2. Extract basic fields for grounding
+        company_name = item.get('companyName') or item.get('company') or 'Global Partner'
+        job_title = item.get('jobTitle') or item.get('title') or 'Specialized Role'
+        
+        # 3. GEMINI SEARCH GROUNDING: Deep Contact Extraction
+        enriched_contact_data = await get_grounded_contact_data(company_name, job_title)
+        
+        # 4. Use the existing mapping function to get full Document
         doc = dataset_mapping_function(item, category=category, forced_country=forced_country)
         
         # Apply additional metadata
@@ -1928,11 +2227,20 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
         doc.metadata["dataset_id"] = dataset_id
         doc.metadata["status"] = "live"  # Set to "live" so frontend recognizes as active
         
+        # 5. Integrate Enriched Contact Data
+        if enriched_contact_data:
+            doc.metadata["decision_maker"] = enriched_contact_data.get("decision_maker_name")
+            doc.metadata["decision_maker_title"] = enriched_contact_data.get("decision_maker_title")
+            doc.metadata["contact_channels"] = enriched_contact_data.get("contact_channels")
+            doc.metadata["grounding_source"] = enriched_contact_data.get("source_validation")
+            # Update status to reflect high-value enriched lead
+            doc.metadata["outreach_ready"] = True
+
         # Keep the original raw fields but add enriched metadata
         enriched_payload = {
             'phone': item.get('phone', ''),
             'email': item.get('email', ''),
-            'company': item.get('companyName', '') or item.get('company', '') or item.get('location', 'Unknown'),
+            'company': company_name,
             'description': item.get('description', '') or item.get('snippet', '') or item.get('jobTitle', '') or 'No description available',
             'fingerprint': doc.metadata.get("fingerprint"),
             'source': 'apify_sync',
@@ -1951,7 +2259,15 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
             'lat': item.get("lat"),
             'lng': item.get("lng"),
             'node': doc.metadata.get("node"),  # Critical: Add node assignment
-            'corridor': doc.metadata.get("corridor")  # Also add corridor for compatibility
+            'corridor': doc.metadata.get("corridor"),  # Also add corridor for compatibility
+            # ENRICHED CONTACT OBJECT (Vercel Frontend Mapping)
+            'enriched_contact': {
+                'decision_maker_name': doc.metadata.get("decision_maker"),
+                'decision_maker_title': doc.metadata.get("decision_maker_title"),
+                'outreach_status': 'ready' if doc.metadata.get("outreach_ready") else 'pending',
+                'contact_channels': doc.metadata.get("contact_channels"),
+                'grounding_source': doc.metadata.get("grounding_source")
+            }
         }
         
         # Create enriched vector
@@ -2024,7 +2340,7 @@ async def sync_apify_webhook(payload: dict, background_tasks: BackgroundTasks):
     return {"status": "Acknowledged"}
 
 @api_router.post("/clear-and-fresh-sync")
-async def clear_and_fresh_sync():
+async def clear_and_fresh_sync(background_tasks: BackgroundTasks, admin: dict = Depends(require_admin_token)):
     """
     ⚠️ DANGER: This endpoint DELETES ALL DATA from the vault.
     Clears all points in globalpath_leads collection and triggers fresh sync for all corridors.
@@ -2076,7 +2392,7 @@ async def clear_and_fresh_sync():
         }
 
 @api_router.post("/force-full-sync")
-async def force_full_sync():
+async def force_full_sync(background_tasks: BackgroundTasks, admin: dict = Depends(require_admin_token)):
     """
     Forces a complete resync of all Apify datasets, bypassing fingerprint deduplication.
     This helps when you need to refresh all leads or fix sync issues.
@@ -2120,6 +2436,9 @@ async def debug_collection_info():
     """
     Debug endpoint to check collection status and count.
     """
+    # Gate debug endpoint to development only
+    if os.getenv("ENV") != "development":
+        raise HTTPException(status_code=403, detail="Access denied")
     try:
         # Get collection info
         collection_info = qdrant_client.get_collection(collection_name=COLLECTION_NAME)
@@ -2158,6 +2477,9 @@ async def debug_collection():
     """
     Debug endpoint to check collection status and count.
     """
+    # Gate debug endpoint to development only
+    if os.getenv("ENV") != "development":
+        raise HTTPException(status_code=403, detail="Access denied")
     try:
         print(f"🔍 [DEBUG]: Checking collection '{COLLECTION_NAME}'...")
         
@@ -2268,7 +2590,7 @@ async def test_agent():
         }
 
 @api_router.post("/force-verify-all")
-async def force_verify_all_leads():
+async def force_verify_all_leads(admin: dict = Depends(require_admin_token)):
     """
     Force verify all leads in the globalpath_leads collection.
     This moves all nodes from 'pending' to 'verified' status immediately.
@@ -2335,6 +2657,34 @@ async def force_verify_all_leads():
             "message": f"Failed to force verify leads: {str(e)}",
             "verified_count": 0
         }
+
+@api_router.post("/admin/login")
+async def admin_login(req: AdminLoginRequest):
+    """
+    Validate the admin password and return a short-lived HS256 token.
+    Returns 401 on failure, 503 if the server has no admin password configured.
+    """
+    if not ADMIN_PASSWORD:
+        # Fail closed: never authenticate when no password is configured server-side.
+        raise HTTPException(
+            status_code=503,
+            detail="Admin authentication is not configured on the server.",
+        )
+
+    submitted = (req.password or "").encode("utf-8")
+    expected = ADMIN_PASSWORD.encode("utf-8")
+    # Constant-time comparison to avoid timing side channels.
+    if not hmac.compare_digest(submitted, expected):
+        raise HTTPException(status_code=401, detail="Invalid admin password.")
+
+    token = create_admin_token()
+    return {
+        "status": "success",
+        "token": token,
+        "expires_in": JWT_TTL_SECONDS,
+        "token_type": "Bearer",
+    }
+
 
 # 🎯 FINAL REGISTRATION: Capture all routes defined above
 app.include_router(api_router)

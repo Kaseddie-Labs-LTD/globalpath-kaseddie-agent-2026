@@ -3,11 +3,30 @@
 // Backend CORS is configured to accept both primary and -1 origins
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-export const BACKEND_URL = isLocal
-  ? 'http://127.0.0.1:10000/api' // Your Local Python Backend Port
-  : `https://globalpath-kaseddie-agent-2026.onrender.com/api`; // Your Production Backend
+// Single source of truth resolution order:
+//   1. VITE_API_URL (build-time override — must already include /api when set)
+//   2. http://127.0.0.1:10000/api for local dev
+//   3. The deployed Render URL for production
+const VITE_API_URL = (import.meta as any)?.env?.VITE_API_URL as string | undefined;
 
-export const API_BASE = import.meta.env.VITE_API_URL || "/api";
+export const BACKEND_URL = VITE_API_URL
+  ? VITE_API_URL.replace(/\/+$/, '')
+  : (isLocal
+      ? 'http://127.0.0.1:10000/api'
+      : 'https://globalpath-kaseddie-agent-2026.onrender.com/api');
+
+export const API_BASE = VITE_API_URL || "/api";
+
+// Storage key for the admin JWT issued by /api/admin/login.
+export const ADMIN_TOKEN_STORAGE_KEY = 'gp_admin_auth_token';
+
+const getAdminAuthToken = (): string | null => {
+  try {
+    return sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
 
 // Sanitize endpoint to prevent URL duplication
 export const sanitizeEndpoint = (endpoint: string): string => {
@@ -38,16 +57,26 @@ export const fetcher = async (url: string, options?: RequestInit & { timeout?: n
 
   try {
     // STREAM CHUNKING: Add headers to prevent Render from killing connection during long AI processing
+    const callerHeaders = (options?.headers || {}) as Record<string, string>;
+    const adminToken = getAdminAuthToken();
+
+    const mergedHeaders: Record<string, string> = {
+      ...callerHeaders,
+      Accept: 'application/json',
+      Connection: 'keep-alive',
+    };
+
+    // Attach the admin Bearer token automatically, unless the caller already set one.
+    if (adminToken && !('Authorization' in mergedHeaders) && !('authorization' in mergedHeaders)) {
+      mergedHeaders.Authorization = `Bearer ${adminToken}`;
+    }
+
     const fetchOptions: RequestInit = {
       ...options,
       signal: controller.signal,
-      headers: {
-        ...options?.headers,
-        'Accept': 'application/json',
-        'Connection': 'keep-alive',
-      },
+      headers: mergedHeaders,
     };
-    
+
     const res = await fetch(fullUrl, fetchOptions);
     clearTimeout(timeoutId);
 

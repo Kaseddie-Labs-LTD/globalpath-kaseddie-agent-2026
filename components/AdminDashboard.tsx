@@ -38,7 +38,7 @@ interface AdminDashboardProps {
   onRefresh?: () => void;
   isUplinking?: boolean;
   mutateLeads?: (data?: any, shouldRevalidate?: boolean) => Promise<any>;
-  totalLeadsFromSWR: number;
+  totalLeadsFromSWR?: number;
 }
 
 interface JobItemProps {
@@ -307,36 +307,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const handleForceVerify = async () => {
     setIsForceVerifying(true);
     onAddLog("FORCE VERIFY: Starting mass verification of all leads...", "thinking");
-    
+
     try {
-      const response = await fetcher('/force-verify-all', {
+      // `fetcher` already resolves to parsed JSON. If a future refactor swaps in
+      // a raw Response, the `instanceof Response` branch will re-parse it
+      // explicitly with `await response.json()` instead of dereferencing a Promise.
+      const raw = await fetcher('/force-verify-all', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
       });
-      
-      const result = response;
-      
-      if (result.status === 'success') {
-        onAddLog(`FORCE VERIFY: Successfully verified ${result.verified_count} leads!`, "success");
-        onAddLog(`FORCE VERIFY: All nodes moved from 'Pending' to 'Active' status`, "success");
-        
-        // Trigger a refresh to see the updated data
+
+      const result: any =
+        raw && typeof (raw as any).json === 'function'
+          ? await (raw as Response).json()
+          : raw;
+
+      if (!result || typeof result !== 'object') {
+        onAddLog('FORCE VERIFY ERROR: Backend returned an unexpected payload.', 'error');
+        return;
+      }
+
+      if (result?.status === 'success') {
+        onAddLog(`FORCE VERIFY: Successfully verified ${result?.verified_count ?? 0} leads!`, 'success');
+        onAddLog("FORCE VERIFY: All nodes moved from 'Pending' to 'Active' status", 'success');
+
         if (onRefresh) {
           setTimeout(() => {
+            if (!isMounted.current) return;
             onRefresh();
-            onAddLog("FORCE VERIFY: Refreshing dashboard to show verified leads...", "info");
+            onAddLog('FORCE VERIFY: Refreshing dashboard to show verified leads...', 'info');
           }, 1000);
         }
       } else {
-        onAddLog(`FORCE VERIFY ERROR: ${result.message}`, "error");
+        onAddLog(`FORCE VERIFY ERROR: ${result?.message ?? 'Unknown backend error'}`, 'error');
       }
     } catch (error) {
       console.error('Force verify error:', error);
-      onAddLog(`FORCE VERIFY ERROR: Failed to connect to backend - ${error}`, "error");
+      onAddLog(`FORCE VERIFY ERROR: Failed to connect to backend - ${error}`, 'error');
     } finally {
-      setIsForceVerifying(false);
+      if (isMounted.current) setIsForceVerifying(false);
     }
   };
 
@@ -410,17 +421,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const blueCollarJobs = sortedHrJobs.filter(j => j.category === 'blue_collar');
   const serviceDomesticJobs = sortedHrJobs.filter(j => j.category === 'service_domestic');
   const otherJobs = sortedHrJobs.filter(j => j.category !== 'professional' && j.category !== 'blue_collar' && j.category !== 'service_domestic');
-  const totalLeadsCount = totalLeadsFromSWR;
-  
+  // Defensive: SWR data resolves asynchronously, so coerce to a safe number for
+  // every downstream calculation. Prevents NaN/undefined crashes on first render.
+  const safeTotalLeads = typeof totalLeadsFromSWR === 'number' && Number.isFinite(totalLeadsFromSWR)
+    ? totalLeadsFromSWR
+    : 0;
+  const totalLeadsCount = safeTotalLeads;
+
   const feesBlockedCount = React.useMemo(() => {
     // Assuming each blocked fee saves $2500
-    return totalLeadsFromSWR * 2500; 
-  }, [totalLeadsFromSWR]);
-  
+    return safeTotalLeads * 2500;
+  }, [safeTotalLeads]);
+
   const verifiedPlacementsCount = React.useMemo(() => {
     // Assuming 90% of total leads are verified placements
-    return Math.floor(totalLeadsFromSWR * 0.9);
-  }, [totalLeadsFromSWR]);
+    return Math.floor(safeTotalLeads * 0.9);
+  }, [safeTotalLeads]);
   
   // EMERGENCY DEBUG: Log sanitized data (KIMI K2.5: use sanitizedJobs)
   console.log("🚨 EMERGENCY DEBUG: Sanitized jobs data:", sanitizedJobs);

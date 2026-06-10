@@ -20,3 +20,5 @@ langchain
 langchain-groq
 langchain-huggingface
 sentence-transformers
+google-cloud-secret-manager
+google-generativeai
