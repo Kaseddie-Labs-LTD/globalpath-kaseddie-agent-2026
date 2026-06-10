@@ -957,7 +957,7 @@ function App() {
                 </div>
                 <div>
               {/* MISSION 3: Corridor Feed - Fees Blocked linked to Qdrant vetted count */}
-              <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => j.vetted === true || j.status === 'verified' || !(j as any).illegalFeeDetected).length} leads={jobs} />
+              <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} leads={jobs} />
                 </div>
                 <div>
                   <EnrollmentForm onEnroll={handleEnroll} initialLogisticsNeeds={enrollmentInterestJob?.title || ''} />
@@ -965,7 +965,7 @@ function App() {
                 <div>
                   {/* MISSION 3: Fees Blocked Counter - Linked to Qdrant Vetted/Zero-Fee Leads */}
                   <FeesBlockedCard 
-                    flaggedLeadsCount={jobs.filter(j => j.vetted === true || j.status === 'verified' || !(j as any).illegalFeeDetected).length} 
+                    flaggedLeadsCount={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} 
                     totalLeadsCount={(jobs || []).length} 
                     onClick={() => setView(AppView.BLOCK_REPORT)}
                   />
