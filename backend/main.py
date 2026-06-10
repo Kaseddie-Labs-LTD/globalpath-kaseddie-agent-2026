@@ -10,7 +10,8 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from google.cloud import secretmanager
 
 # --- GOOGLE SECRET MANAGER GATEWAY ---
@@ -56,25 +57,19 @@ class SecretManagerGateway:
 # --- GEMINI SEARCH GROUNDING UTILITY ---
 async def get_grounded_contact_data(company_name: str, job_title: str) -> dict:
     """
-    Uses Gemini Search Grounding (google_search_retrieval) to identify 
+    Uses Gemini Search Grounding (google_search) to identify 
     direct decision-makers and their contact channels.
     
-    UPGRADE: Utilizing Gemini 1.5 Pro for deep parsing of complex directories.
+    UPGRADE: Utilizing Gemini 2.5 Pro for deep parsing of complex directories.
     FALLBACK: Programmatically pulls official corporate domain if no direct name found.
     """
-    if not GEMINI_API_KEY:
-        print("⚠️ [GROUNDING]: Gemini API key missing. Skipping contact enrichment.")
+    if not GEMINI_API_KEY or not gemini_client:
+        print("⚠️ [GROUNDING]: Gemini API key or client missing. Skipping contact enrichment.")
         return {}
 
     try:
         print(f"🔎 [GROUNDING]: Cross-referencing web for decision makers at '{company_name}'...")
         
-        # Initialize model with Search Grounding tool (Gemini 2.5 Pro for deep parsing)
-        model = genai.GenerativeModel(
-            model_name='gemini-2.5-pro',
-            tools=[{'google_search_retrieval': {}}]
-        )
-
         prompt = f"""
         Analyze this job node for {company_name}. 
         Search the web to identify the current individual handling HR, Talent Acquisition, or Operations management at this firm. 
@@ -102,7 +97,13 @@ async def get_grounded_contact_data(company_name: str, job_title: str) -> dict:
         loop = asyncio.get_event_loop()
         try:
             response = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: model.generate_content(prompt)),
+                loop.run_in_executor(None, lambda: gemini_client.models.generate_content(
+                    model='gemini-2.5-pro',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        tools=[types.Tool(google_search=types.GoogleSearch())]
+                    )
+                )),
                 timeout=45.0
             )
         except asyncio.TimeoutError:
@@ -166,9 +167,11 @@ QDRANT_API_KEY = SecretManagerGateway.get_secret("QDRANT_API_KEY", "")
 # Gemini Configuration
 GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    print(f"✅ [GEMINI]: Premium Compliance Route active.")
+    # Initialize using the modern client structure
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK).")
 else:
+    gemini_client = None
     print(f"❌ [GEMINI]: API Key missing. Compliance route limited.")
 
 if not GROQ_KEY:
