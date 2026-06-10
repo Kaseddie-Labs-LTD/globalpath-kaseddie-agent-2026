@@ -279,8 +279,8 @@ async def get_all_leads(
             print(f"❌ [DEBUG]: Collection not found: {e}")
             return {"error": f"Collection not found: {e}", "collection_name": COLLECTION_NAME}
         
-        # OOM PROTECTION: Hard cap at 500 leads max per request
-        safe_limit = min(limit, 500)
+        # OOM PROTECTION: Hard cap at 10000 leads max per request
+        safe_limit = min(limit, 10000)
         
         # Build filter conditions for category/corridor
         filter_conditions = []
@@ -369,7 +369,7 @@ def aggregate_qdrant_data():
     try:
         scroll_result = qdrant_client.scroll(
             collection_name=COLLECTION_NAME,
-            limit=1000,
+            limit=10000,
             with_payload=True,
             with_vectors=False
         )
