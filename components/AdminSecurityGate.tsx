@@ -102,7 +102,11 @@ export const AdminSecurityGate: React.FC<AdminSecurityGateProps> = ({ onAuthenti
               disabled={isSubmitting}
               className="w-full bg-black/30 border border-white/20 rounded-xl py-3 px-4 text-sm outline-none disabled:opacity-50"
             />
-            {error && <div className="text-[10px] text-amber-300 font-black uppercase">{error}</div>}
+            {error && <div className="text-[10px] text-amber-300 font-black uppercase">
+              {typeof error === 'object' 
+                ? (error as any)?.message || (error as any)?.details || JSON.stringify(error) 
+                : error}
+            </div>}
             <button
               type="submit"
               disabled={isSubmitting || !password}

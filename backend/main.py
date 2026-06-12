@@ -7,6 +7,7 @@ import time
 import json
 import random
 import asyncio
+import jwt
 from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
