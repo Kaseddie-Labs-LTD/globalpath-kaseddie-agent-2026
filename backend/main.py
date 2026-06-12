@@ -2774,37 +2774,52 @@ async def admin_login(req: AdminLoginRequest):
     Validate the admin password and return a short-lived HS256 token.
     Returns 401 on failure, 500 if server auth config is incomplete.
     """
-    # Check both required credentials
-    if not ADMIN_PASSWORD or not JWT_SECRET:
-        # Fail closed: never authenticate when no password/JWT secret configured server-side.
-        missing = []
-        if not ADMIN_PASSWORD:
-            missing.append("ADMIN_PASSWORD/VITE_ADMIN_PASSWORD")
-        if not JWT_SECRET:
-            missing.append("JWT_SECRET")
-        print(f"⚠️ [AUTH] Admin login failed! Missing required env vars: {', '.join(missing)}")
+    try:
+        # Check both required credentials
+        if not ADMIN_PASSWORD or not JWT_SECRET:
+            # Fail closed: never authenticate when no password/JWT secret configured server-side.
+            missing = []
+            if not ADMIN_PASSWORD:
+                missing.append("ADMIN_PASSWORD/VITE_ADMIN_PASSWORD")
+            if not JWT_SECRET:
+                missing.append("JWT_SECRET")
+            print(f"⚠️ [AUTH] Admin login failed! Missing required env vars: {', '.join(missing)}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "status": "error",
+                    "message": "Admin authentication configuration incomplete on server.",
+                    "missing_config": missing
+                }
+            )
+
+        submitted = (req.password or "").encode("utf-8")
+        expected = ADMIN_PASSWORD.encode("utf-8")
+        # Constant-time comparison to avoid timing side channels.
+        if not hmac.compare_digest(submitted, expected):
+            raise HTTPException(status_code=401, detail="Invalid admin password.")
+
+        token = create_admin_token()
+        return {
+            "status": "success",
+            "token": token,
+            "expires_in": JWT_TTL_SECONDS,
+            "token_type": "Bearer",
+        }
+    except HTTPException:
+        # Re-raise HTTPExceptions so FastAPI can handle them normally
+        raise
+    except Exception as e:
+        print(f"❌ [AUTH] CRITICAL ADMIN LOGIN EXCEPTION: {str(e)}")
+        print(f"❌ [AUTH] Error type: {type(e).__name__}")
         raise HTTPException(
             status_code=500,
             detail={
                 "status": "error",
-                "message": "Admin authentication configuration incomplete on server.",
-                "missing_config": missing
+                "message": "Internal auth system failure",
+                "details": str(e)
             }
         )
-
-    submitted = (req.password or "").encode("utf-8")
-    expected = ADMIN_PASSWORD.encode("utf-8")
-    # Constant-time comparison to avoid timing side channels.
-    if not hmac.compare_digest(submitted, expected):
-        raise HTTPException(status_code=401, detail="Invalid admin password.")
-
-    token = create_admin_token()
-    return {
-        "status": "success",
-        "token": token,
-        "expires_in": JWT_TTL_SECONDS,
-        "token_type": "Bearer",
-    }
 
 
 # 🎯 FINAL REGISTRATION: Capture all routes defined above
