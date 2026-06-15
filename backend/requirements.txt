@@ -20,3 +20,4 @@ langchain-huggingface==0.0.3
 # We remove the heavy 'sentence-transformers' and let langchain-huggingface 
 # pull only the necessary light dependencies
 PyJWT==2.10.1
+google-genai==0.1.1
