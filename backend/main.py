@@ -188,7 +188,7 @@ import uuid
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, APIRouter, Depends
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import edge_tts
 from fastapi.middleware.cors import CORSMiddleware
@@ -245,14 +245,18 @@ app = FastAPI(
 )
 
 @app.get("/")
+@app.head("/")
 async def root():
     """Health check endpoint for Render/Port-Checkers"""
-    return {
-        "status": "online",
-        "agent": "Kaseddie v4.5",
-        "timestamp": datetime.now().isoformat(),
-        "corridors": ["GCC", "EU", "Western", "UK"]
-    }
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "online",
+            "agent": "Kaseddie Oversight V4.2",
+            "timestamp": datetime.now().isoformat(),
+            "corridors": ["GCC", "EU", "Western", "UK"]
+        }
+    )
 
 # INITIALIZE THE ROUTER (This must happen BEFORE any decorators use it)
 api_router = APIRouter(prefix="/api")
