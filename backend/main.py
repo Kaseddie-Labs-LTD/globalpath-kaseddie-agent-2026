@@ -23,6 +23,9 @@ class SecretManagerGateway:
     @classmethod
     def get_client(cls):
         if cls._client is None:
+            # Only attempt GCP connection when explicitly running in GCP
+            if not os.getenv("GOOGLE_CLOUD_PROJECT"):
+                return None
             try:
                 cls._client = secretmanager.SecretManagerServiceClient()
             except Exception as e:

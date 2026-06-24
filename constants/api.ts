@@ -1,21 +1,11 @@
 // API Base URL configuration
-// THE UNIVERSAL HANDSHAKE: Explicitly using primary backend URL (without -1 variant)
-// Backend CORS is configured to accept both primary and -1 origins
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-// Single source of truth resolution order:
-//   1. VITE_API_URL (build-time override — must already include /api when set)
-//   2. http://127.0.0.1:10000/api for local dev
-//   3. The deployed Render URL for production
 const VITE_API_URL = (import.meta as any)?.env?.VITE_API_URL as string | undefined;
 
 export const BACKEND_URL = VITE_API_URL
   ? VITE_API_URL.replace(/\/+$/, '')
-  : (isLocal
-      ? 'http://127.0.0.1:10000/api'
-      : 'https://globalpath-kaseddie-agent-2026.onrender.com/api');
+  : '/api';
 
-export const API_BASE = VITE_API_URL || "/api";
+export const API_BASE = "/api";
 
 // Storage key for the admin JWT issued by /api/admin/login.
 export const ADMIN_TOKEN_STORAGE_KEY = 'gp_admin_auth_token';
