@@ -1629,7 +1629,7 @@ async def chat_with_gemini(req: ChatRequest):
             contents=[
                 types.Content(
                     role='user',
-                    parts=[types.Part.from_text(f"""System: You are Kaseddie Agent, a B2B recruitment specialist for GlobalPath. You help with lead analysis, pitch generation, and recruitment strategy. Be concise and professional.
+                    parts=[types.Part.from_text(text=f"""System: You are Kaseddie Agent, a B2B recruitment specialist for GlobalPath. You help with lead analysis, pitch generation, and recruitment strategy. Be concise and professional.
 
 User: {req.message}""")]
                 )
@@ -1671,7 +1671,7 @@ async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
             contents=[
                 types.Content(
                     role='user',
-                    parts=[types.Part.from_text(f"""You are the Kaseddie AI Oversight Agent for GlobalPath. Use the provided 540 nodes and Ethical Rules to assist the user with lead analysis, recruitment strategy, and compliance questions. Be professional, concise, and helpful.
+                    parts=[types.Part.from_text(text=f"""You are the Kaseddie AI Oversight Agent for GlobalPath. Use the provided 540 nodes and Ethical Rules to assist the user with lead analysis, recruitment strategy, and compliance questions. Be professional, concise, and helpful.
 
 User: {message}""")]
                 )
