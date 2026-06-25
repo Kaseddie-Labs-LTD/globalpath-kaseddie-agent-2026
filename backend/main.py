@@ -190,8 +190,8 @@ os.environ["CREWAI_STORAGE_DIR"] = os.path.join(os.getcwd(), ".crewai")
 import uuid
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, APIRouter, Depends
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, APIRouter, Depends, Request
+from fastapi.responses import Response, FileResponse, StreamingResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import edge_tts
 from fastapi.middleware.cors import CORSMiddleware
@@ -2825,6 +2825,25 @@ async def admin_login(req: AdminLoginRequest):
             }
         )
 
+
+# --- REPLIT AUTH ROUTES ---
+from replit_auth import login_redirect, auth_callback, auth_logout, auth_user
+
+@app.get("/api/auth/login")
+async def route_auth_login(request: Request):
+    return await login_redirect(request)
+
+@app.get("/api/auth/callback")
+async def route_auth_callback(request: Request):
+    return await auth_callback(request)
+
+@app.get("/api/auth/logout")
+async def route_auth_logout(request: Request):
+    return await auth_logout(request)
+
+@app.get("/api/auth/user")
+async def route_auth_user(request: Request):
+    return await auth_user(request)
 
 # 🎯 FINAL REGISTRATION: Capture all routes defined above
 app.include_router(api_router)

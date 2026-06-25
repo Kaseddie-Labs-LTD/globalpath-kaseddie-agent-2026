@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useTransition, Suspense, useRef } from 'react';
+import { useAuth } from './hooks/useAuth';
 import useSWR from 'swr';
 import { LayoutDashboard, FileText, Briefcase, Menu, Globe, ShieldCheck, Loader2, User, MessageCircle, Globe2, RefreshCw, Cpu, Zap, Award, Lock, ShieldAlert, Building2, Terminal, ChevronRight, Users, Truck, ShoppingCart, UserPlus, HardHat, Timer, Activity, Plus, Mail, Phone, Settings, Video, Mic } from 'lucide-react';
 
@@ -65,6 +66,7 @@ const initialBatches: RecruitmentBatch[] = [
 ];
 
 function App() {
+  const { user: replitUser, isAuthenticated: isReplitAuthenticated } = useAuth();
   const [mounted, setMounted] = useState(false);
   const [pendingVettingCount, setPendingVettingCount] = useState(0);
   const [isApifySyncing, setIsApifySyncing] = useState(false);
@@ -935,9 +937,43 @@ function App() {
             <span className="hidden sm:inline">OVERSIGHT: AI Handshake Verified. System Active.</span>
             <span className="sm:hidden">SYSTEM ACTIVE</span>
            </div>
-           <div className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-lg border border-white/10 backdrop-blur-sm">
-              <Timer size={12} className="text-brand-400" />
-              <span className="text-[10px] font-black font-mono text-white/80">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</span>
+           <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-lg border border-white/10 backdrop-blur-sm">
+                <Timer size={12} className="text-brand-400" />
+                <span className="text-[10px] font-black font-mono text-white/80">{Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}</span>
+              </div>
+              {isReplitAuthenticated && replitUser ? (
+                <div className="flex items-center gap-1.5">
+                  {replitUser.profileImageUrl ? (
+                    <img
+                      src={replitUser.profileImageUrl}
+                      alt={replitUser.firstName || 'User'}
+                      className="w-6 h-6 rounded-full object-cover border border-white/20"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-brand-500/30 border border-brand-400/40 flex items-center justify-center">
+                      <User size={12} className="text-brand-300" />
+                    </div>
+                  )}
+                  <span className="hidden sm:inline text-[9px] font-bold text-white/70 max-w-[80px] truncate">
+                    {replitUser.firstName || replitUser.email || 'User'}
+                  </span>
+                  <a
+                    href="/api/auth/logout"
+                    className="text-[9px] font-black uppercase tracking-widest text-white/50 hover:text-white/90 border border-white/10 hover:border-white/30 px-2 py-0.5 rounded transition-all"
+                  >
+                    Sign Out
+                  </a>
+                </div>
+              ) : (
+                <a
+                  href="/api/auth/login"
+                  className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-brand-300 hover:text-brand-100 border border-brand-500/30 hover:border-brand-400/60 bg-brand-500/10 hover:bg-brand-500/20 px-3 py-1 rounded-lg transition-all"
+                >
+                  <Lock size={10} />
+                  <span className="hidden sm:inline">Sign In</span>
+                </a>
+              )}
            </div>
         </header>
 
