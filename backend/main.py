@@ -959,7 +959,7 @@ app.add_middleware(
 # Resolution order for the admin password:
 #   1. ADMIN_PASSWORD (backend-only secret, preferred for production)
 #   2. VITE_ADMIN_PASSWORD (compat with frontend env naming)
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or os.getenv("VITE_ADMIN_PASSWORD")
+ADMIN_PASSWORD = SecretManagerGateway.get_secret("ADMIN_PASSWORD") or os.getenv("VITE_ADMIN_PASSWORD")
 
 # JWT signing secret. Falls back to a per-process random secret so tokens are
 # never signed with a hardcoded key, but operators should set JWT_SECRET in
