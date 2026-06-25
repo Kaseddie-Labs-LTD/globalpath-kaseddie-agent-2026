@@ -103,7 +103,7 @@ async def get_grounded_contact_data(company_name: str, job_title: str) -> dict:
             response = await asyncio.wait_for(
                 loop.run_in_executor(None, lambda: gemini_client.models.generate_content(
                     model='gemini-2.5-pro',
-                    contents=prompt,
+                    contents=[prompt],
                     config=types.GenerateContentConfig(
                         tools=[types.Tool(google_search=types.GoogleSearch())]
                     )
@@ -1760,7 +1760,7 @@ Format the response as clean text ready for WhatsApp.
         
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=full_prompt,
+            contents=[full_prompt],
             config=types.GenerateContentConfig(
                 max_output_tokens=400,
                 temperature=0.7
