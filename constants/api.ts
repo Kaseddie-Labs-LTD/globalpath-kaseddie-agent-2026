@@ -3,7 +3,7 @@ const VITE_API_URL = (import.meta as any)?.env?.VITE_API_URL as string | undefin
 
 export const BACKEND_URL = VITE_API_URL
   ? VITE_API_URL.replace(/\/+$/, '')
-  : '/api';
+  : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api';
 
 export const API_BASE = "/api";
 
