@@ -8,12 +8,21 @@ import json
 import random
 import asyncio
 import jwt
+import logging
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.cloud import secretmanager
+
+# Set up a structured, clean logger format
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] 🚀 %(message)s",
+    datefmt="%H:%M:%S"
+)
+logger = logging.getLogger("globalpath")
 
 # --- GOOGLE SECRET MANAGER GATEWAY ---
 class SecretManagerGateway:
@@ -2129,7 +2138,7 @@ async def sync_all_apify_datasets():
                 try:
                     # Fetch dataset items directly using client with limit
                     items_list = client.dataset(ds_id).list_items(limit=150).items
-                    print(f'Successfully fetched {len(items_list)} items from Apify dataset {ds_id}')
+                    logger.info(f"APIFY DATASET FETCH: Retrieved {len(items_list)} items from dataset {ds_id}")
                     
                     # Step 1: Immediate save of raw data to Qdrant
                     raw_points_to_upsert = []
@@ -2202,7 +2211,7 @@ async def sync_all_apify_datasets():
                         description = item.get('description', '') or item.get('snippet', '') or item.get('jobTitle', '') or 'No description available'
                         
                         # DEBUG: Verify field extraction
-                        print(f"🔍 [FIELD EXTRACTION]: Company: '{company}' | Title: '{title}' | Description: '{description[:50]}...' | Phone: '{phone}' | Email: '{email}'")
+                        logger.info(f"FIELD EXTRACTION SUCCESS: {company} | Title: '{title}' | Description: '{description[:50]}...'")
                         
                         # Generate unique fingerprint for deduplication INCLUDES DATASET ID
                         # This ensures leads from different datasets can coexist without overwriting
