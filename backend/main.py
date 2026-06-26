@@ -1125,14 +1125,6 @@ async def recategorize_existing_leads(admin: dict = Depends(require_admin_token)
         
         updated_count = 0
         points_to_update = []
-        
-        # Initialize Gemini Model for Compliance Vetting
-        gemini_model = None
-        if GEMINI_API_KEY:
-            try:
-                gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-            except Exception as e:
-                print(f"⚠️ [GEMINI]: Failed to initialize model: {e}")
 
         for point in all_points:
             payload = point.payload
@@ -1161,7 +1153,7 @@ async def recategorize_existing_leads(admin: dict = Depends(require_admin_token)
             compliance_audit = payload.get('compliance_audit')
             needs_audit = country.lower() in ['canada', 'united arab emirates', 'uae', 'uganda']
             
-            if gemini_model and needs_audit and not compliance_audit:
+            if gemini_client and needs_audit and not compliance_audit:
                 print(f"⚖️ [GEMINI AUDIT]: Vetting lead for {country} corridor...")
                 prompt = f"""
                 Act as a GlobalPath Compliance Auditor for the {country} corridor.
@@ -1186,9 +1178,19 @@ async def recategorize_existing_leads(admin: dict = Depends(require_admin_token)
                 }}
                 """
                 try:
-                    # Async generation wrapper
+                    # Async generation wrapper using modern gemini_client
                     loop = asyncio.get_event_loop()
-                    response = await loop.run_in_executor(None, lambda: gemini_model.generate_content(prompt))
+                    response = await loop.run_in_executor(
+                        None, 
+                        lambda: gemini_client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=[prompt],
+                            config=types.GenerateContentConfig(
+                                max_output_tokens=1024,
+                                temperature=0.7
+                            )
+                        )
+                    )
                     
                     audit_text = response.text.strip()
                     if "```json" in audit_text:
