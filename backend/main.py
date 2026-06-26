@@ -1667,7 +1667,7 @@ class AgentChatRequest(BaseModel):
 async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
     """Generate streaming chat response using Gemini 2.5"""
     try:
-        stream = gemini_client.models.generate_content(
+        stream = gemini_client.models.generate_content_stream(
             model='gemini-2.5-flash',
             contents=[
                 types.Content(
@@ -1681,8 +1681,7 @@ User: {message}""")]
                 max_output_tokens=1024,
                 temperature=1,
                 top_p=1
-            ),
-            stream=True
+            )
         )
         
         for chunk in stream:
