@@ -2826,24 +2826,28 @@ async def admin_login(req: AdminLoginRequest):
         )
 
 
-# --- REPLIT AUTH ROUTES ---
-from replit_auth import login_redirect, auth_callback, auth_logout, auth_user
-
-@app.get("/api/auth/login")
-async def route_auth_login(request: Request):
-    return await login_redirect(request)
-
-@app.get("/api/auth/callback")
-async def route_auth_callback(request: Request):
-    return await auth_callback(request)
-
-@app.get("/api/auth/logout")
-async def route_auth_logout(request: Request):
-    return await auth_logout(request)
-
+# --- ADMIN AUTH ROUTES ---
 @app.get("/api/auth/user")
-async def route_auth_user(request: Request):
-    return await auth_user(request)
+async def route_auth_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """
+    Get authenticated user info using admin JWT token.
+    Returns user data if token is valid, 401 if not.
+    """
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    payload = verify_admin_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    # Return user data matching what useAuth.ts expects
+    return {
+        "sub": "admin",
+        "email": "admin@globalpath.com",
+        "firstName": "GlobalPath",
+        "lastName": "Admin",
+        "profileImageUrl": None
+    }
 
 # 🎯 FINAL REGISTRATION: Capture all routes defined above
 app.include_router(api_router)

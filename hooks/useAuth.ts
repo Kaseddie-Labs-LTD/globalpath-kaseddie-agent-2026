@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ADMIN_TOKEN_STORAGE_KEY } from '../constants/api';
 
 export interface ReplitUser {
   sub: string;
@@ -22,7 +23,18 @@ export function useAuth(): AuthState {
   });
 
   useEffect(() => {
-    fetch('/api/auth/user', { credentials: 'include' })
+    const token = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+    
+    if (!token) {
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+      return;
+    }
+
+    fetch('/api/auth/user', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
       .then(res => {
         if (res.status === 401) {
           setState({ user: null, isLoading: false, isAuthenticated: false });
