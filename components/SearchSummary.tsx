@@ -14,161 +14,191 @@ interface SearchSummaryProps {
 }
 
 export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick, onSectorClick, regionJobCounts, pendingCount = 0 }) => {
-  const mappedRegionJobCounts = React.useMemo(() => {
-    if (!jobs) return {};
-    const counts: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }> = {
-      'Dubai Hub': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
-      'Premium Node': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
-      'EU-Central (Germany)': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
-      'UK-Northern Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
-      'Western Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
-      'Global Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }
-    };
-
-    jobs.forEach(job => {
-      if (!job) return;
-      const loc = getJobLocationString(job.location).toLowerCase();
-      const category = job.category?.toLowerCase() || 'professional';
-      
-      // Updated sector mapping to include service_domestic
-      let sectorKey: 'blue_collar' | 'professional' | 'service_domestic';
-      if (category.includes('blue')) {
-        sectorKey = 'blue_collar';
-      } else if (category.includes('service')) {
-        sectorKey = 'service_domestic';
-      } else {
-        sectorKey = 'professional';
-      }
-
-      // LOGIC: Map specific nodes to Main Corridors
-      let corridor = 'Global Corridor';
-
-      if (loc.includes('uae') || loc.includes('qatar') || loc.includes('dubai') || loc.includes('abu dhabi') || loc.includes('gcc')) {
-        corridor = 'Dubai Hub';
-      } else if (loc.includes('luxembourg')) {
-        corridor = 'Premium Node';
-      } else if (loc.includes('germany') || loc.includes('berlin') || loc.includes('deutschland') || loc.includes('munich') || loc.includes('deu')) {
-        corridor = 'EU-Central (Germany)';
-      } else if (loc.includes('uk') || loc.includes('london') || loc.includes('united kingdom') || loc.includes('manchester')) {
-        corridor = 'UK-Northern Corridor';
-      } else if (loc.includes('canada') || loc.includes('usa') || loc.includes('toronto') || loc.includes('poland') || loc.includes('europe')) {
-        corridor = 'Western Corridor';
-      }
-
-      if (counts[corridor]) {
-        counts[corridor].total++;
-        counts[corridor][sectorKey]++;
-      }
-    });
-
-    return counts;
-  }, [jobs]);
-
-  const stats = React.useMemo(() => {
-    const statsArray = Object.entries(mappedRegionJobCounts)
-      .filter(([_, data]) => (data as any).total > 0)
-      .sort((a, b) => (b[1] as any).total - (a[1] as any).total);
-    
-    // Stats Array Validation: Check both structures
-    if (!statsArray || !Array.isArray(statsArray)) {
-      console.warn(' [VALIDATION]: stats array is not valid, using fallback');
-      return [];
-    }
-    
-    return statsArray;
-  }, [mappedRegionJobCounts]);
-
-  // KIMI K2.5 DATA SANITIZER: Force schema on stats array
-  interface SanitizedStat {
-    corridor_name: string;
-    total: number;
-    blue_collar: number;
-    professional: number;
-    service: number;
-  }
-
-  const sanitizedStats = React.useMemo(() => {
-    if (!stats || !Array.isArray(stats)) return [];
-    
-    return stats
-      .filter((item): item is [string, any] => {
-        // Filter corrupted nodes: must be array tuple with valid data
-        if (!item || typeof item !== 'object') return false;
-        if (!Array.isArray(item)) return false;
-        if (item.length < 2) return false;
-        const [key, data] = item;
-        if (typeof key !== 'string') return false;
-        if (!data || typeof data !== 'object') return false;
-        return true;
-      })
-      .map(([corridor_name, data]): SanitizedStat => {
-        // Force schema: every field MUST exist with fallback defaults
-        return {
-          corridor_name: typeof corridor_name === 'string' ? corridor_name : '',
-          total: safeNumber(data?.total, 0),
-          blue_collar: safeNumber(data?.blue_collar, 0),
-          professional: safeNumber(data?.professional, 0),
-          service: safeNumber(data?.service_domestic || data?.service, 0)
+  try {
+    const mappedRegionJobCounts = React.useMemo(() => {
+      try {
+        if (!jobs || !Array.isArray(jobs)) return {};
+        const counts: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }> = {
+          'Dubai Hub': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+          'Premium Node': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+          'EU-Central (Germany)': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+          'UK-Northern Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+          'Western Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 },
+          'Global Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }
         };
-      })
-      .filter(stat => stat.corridor_name !== ''); // Remove items with empty corridor names
-  }, [stats]);
 
-  const sectorCounts = React.useMemo(() => {
-    return Object.values(mappedRegionJobCounts).reduce((acc: { blueCollarCount: number; professionalCount: number; serviceDomesticCount: number }, curr: any) => ({
-      blueCollarCount: acc.blueCollarCount + (curr.blue_collar || 0),
-      professionalCount: acc.professionalCount + (curr.professional || 0),
-      serviceDomesticCount: acc.serviceDomesticCount + (curr.service_domestic || 0)
-    }), { blueCollarCount: 0, professionalCount: 0, serviceDomesticCount: 0 });
-  }, [mappedRegionJobCounts]);
+        safeArray(jobs).forEach(job => {
+          if (!job) return;
+          const loc = getJobLocationString(job?.location).toLowerCase();
+          const category = String(job?.category || 'professional').toLowerCase();
+          
+          // Updated sector mapping to include service_domestic
+          let sectorKey: 'blue_collar' | 'professional' | 'service_domestic';
+          if (category.includes('blue')) {
+            sectorKey = 'blue_collar';
+          } else if (category.includes('service')) {
+            sectorKey = 'service_domestic';
+          } else {
+            sectorKey = 'professional';
+          }
 
-  const sectorDistribution = React.useMemo(() => {
-    if (!jobs) return [];
-    const sectors: Record<JobSector, number> = {
-      'Logistics': 0,
-      'IT & Digital': 0,
-      'Manufacturing': 0,
-      'Healthcare': 0,
-      'Service & Domestic': 0,
-      'Other': 0
-    };
+          // LOGIC: Map specific nodes to Main Corridors
+          let corridor = 'Global Corridor';
 
-    jobs.forEach(job => {
-      const sector = categorizeJob(job);
-      sectors[sector]++;
-    });
+          if (loc.includes('uae') || loc.includes('qatar') || loc.includes('dubai') || loc.includes('abu dhabi') || loc.includes('gcc')) {
+            corridor = 'Dubai Hub';
+          } else if (loc.includes('luxembourg')) {
+            corridor = 'Premium Node';
+          } else if (loc.includes('germany') || loc.includes('berlin') || loc.includes('deutschland') || loc.includes('munich') || loc.includes('deu')) {
+            corridor = 'EU-Central (Germany)';
+          } else if (loc.includes('uk') || loc.includes('london') || loc.includes('united kingdom') || loc.includes('manchester')) {
+            corridor = 'UK-Northern Corridor';
+          } else if (loc.includes('canada') || loc.includes('usa') || loc.includes('toronto') || loc.includes('poland') || loc.includes('europe')) {
+            corridor = 'Western Corridor';
+          }
 
-    return Object.entries(sectors)
-      .filter(([_, count]) => count > 0)
-      .sort((a, b) => b[1] - a[1]);
-  }, [jobs]);
+          if (counts[corridor]) {
+            counts[corridor].total++;
+            counts[corridor][sectorKey]++;
+          }
+        });
 
-  // STRIKE 2: Logic/Render Separation - Calculate Ethical Impact OUTSIDE JSX with safeNumber
-  const totalLeads = safeNumber(jobs?.length, 0);
-  const verifiedLeads = jobs?.filter(j => j?.vetted === true || j?.status === 'verified') || [];
-  const totalVerified = safeNumber(verifiedLeads?.length, 0);
-  // SILENT FAILURE PROTECTION: If calculation fails, defaults to 0
-  const feesBlocked = safeNumber(totalVerified, 0) * 2500;
-  const formattedFeesBlocked = React.useMemo(() => {
-    try {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 0
-      }).format(feesBlocked);
-    } catch {
-      return '$0'; // Silent fallback
+        return counts;
+      } catch (error) {
+        console.error("SearchSummary mappedRegionJobCounts error:", error);
+        return {};
+      }
+    }, [jobs]);
+
+    const stats = React.useMemo(() => {
+      try {
+        const statsArray = Object.entries(mappedRegionJobCounts)
+          .filter(([_, data]) => (data as any)?.total > 0)
+          .sort((a, b) => (safeNumber((b[1] as any)?.total, 0)) - safeNumber((a[1] as any)?.total, 0));
+        
+        // Stats Array Validation: Check both structures
+        if (!statsArray || !Array.isArray(statsArray)) {
+          console.warn(' [VALIDATION]: stats array is not valid, using fallback');
+          return [];
+        }
+        
+        return statsArray;
+      } catch (error) {
+        console.error("SearchSummary stats error:", error);
+        return [];
+      }
+    }, [mappedRegionJobCounts]);
+
+    // KIMI K2.5 DATA SANITIZER: Force schema on stats array
+    interface SanitizedStat {
+      corridor_name: string;
+      total: number;
+      blue_collar: number;
+      professional: number;
+      service: number;
     }
-  }, [feesBlocked]);
 
-  // STRIKE 1: Null-Coalescing Fortress - Data Ready Check with Skeleton
-  // KIMI K2.5: Use sanitizedStats instead of raw stats for safety
-  const isDataReady = React.useMemo(() => {
-    return sanitizedStats && sanitizedStats.length > 0 && totalLeads > 0;
-  }, [sanitizedStats, totalLeads]);
+    const sanitizedStats = React.useMemo(() => {
+      try {
+        if (!stats || !Array.isArray(stats)) return [];
+        
+        return stats
+          .filter((item): item is [string, any] => {
+            // Filter corrupted nodes: must be array tuple with valid data
+            if (!item || typeof item !== 'object') return false;
+            if (!Array.isArray(item)) return false;
+            if (item.length < 2) return false;
+            const [key, data] = item;
+            if (typeof key !== 'string') return false;
+            if (!data || typeof data !== 'object') return false;
+            return true;
+          })
+          .map(([corridor_name, data]): SanitizedStat => {
+            // Force schema: every field MUST exist with fallback defaults
+            return {
+              corridor_name: typeof corridor_name === 'string' ? corridor_name : '',
+              total: safeNumber(data?.total, 0),
+              blue_collar: safeNumber(data?.blue_collar, 0),
+              professional: safeNumber(data?.professional, 0),
+              service: safeNumber(data?.service_domestic || data?.service, 0)
+            };
+          })
+          .filter(stat => stat.corridor_name !== ''); // Remove items with empty corridor names
+      } catch (error) {
+        console.error("SearchSummary sanitizedStats error:", error);
+        return [];
+      }
+    }, [stats]);
 
-  // KIMI K2.5: Guard against empty sanitized stats
-  if (!sanitizedStats || sanitizedStats.length === 0) return null;
+    const sectorCounts = React.useMemo(() => {
+      try {
+        return Object.values(mappedRegionJobCounts).reduce((acc: { blueCollarCount: number; professionalCount: number; serviceDomesticCount: number }, curr: any) => ({
+          blueCollarCount: acc.blueCollarCount + safeNumber(curr?.blue_collar, 0),
+          professionalCount: acc.professionalCount + safeNumber(curr?.professional, 0),
+          serviceDomesticCount: acc.serviceDomesticCount + safeNumber(curr?.service_domestic, 0)
+        }), { blueCollarCount: 0, professionalCount: 0, serviceDomesticCount: 0 });
+      } catch (error) {
+        console.error("SearchSummary sectorCounts error:", error);
+        return { blueCollarCount: 0, professionalCount: 0, serviceDomesticCount: 0 };
+      }
+    }, [mappedRegionJobCounts]);
+
+    const sectorDistribution = React.useMemo(() => {
+      try {
+        if (!jobs) return [];
+        const sectors: Record<JobSector, number> = {
+          'Logistics': 0,
+          'IT & Digital': 0,
+          'Manufacturing': 0,
+          'Healthcare': 0,
+          'Service & Domestic': 0,
+          'Other': 0
+        };
+
+        safeArray(jobs).forEach(job => {
+          try {
+            const sector = categorizeJob(job);
+            sectors[sector]++;
+          } catch (e) {
+            console.error("SearchSummary categorizeJob error:", e);
+          }
+        });
+
+        return Object.entries(sectors)
+          .filter(([_, count]) => safeNumber(count, 0) > 0)
+          .sort((a, b) => safeNumber(b[1], 0) - safeNumber(a[1], 0));
+      } catch (error) {
+        console.error("SearchSummary sectorDistribution error:", error);
+        return [];
+      }
+    }, [jobs]);
+
+    // STRIKE 2: Logic/Render Separation - Calculate Ethical Impact OUTSIDE JSX with safeNumber
+    const totalLeads = safeNumber(safeArray(jobs)?.length, 0);
+    const verifiedLeads = safeArray(jobs)?.filter(j => j?.vetted === true || j?.status === 'verified') || [];
+    const totalVerified = safeNumber(verifiedLeads?.length, 0);
+    // SILENT FAILURE PROTECTION: If calculation fails, defaults to 0
+    const feesBlocked = safeNumber(totalVerified, 0) * 2500;
+    const formattedFeesBlocked = React.useMemo(() => {
+      try {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          maximumFractionDigits: 0
+        }).format(feesBlocked);
+      } catch {
+        return '$0'; // Silent fallback
+      }
+    }, [feesBlocked]);
+
+    // STRIKE 1: Null-Coalescing Fortress - Data Ready Check with Skeleton
+    // KIMI K2.5: Use sanitizedStats instead of raw stats for safety
+    const isDataReady = React.useMemo(() => {
+      return sanitizedStats && sanitizedStats.length > 0 && totalLeads > 0;
+    }, [sanitizedStats, totalLeads]);
+
+    // KIMI K2.5: Guard against empty sanitized stats
+    if (!sanitizedStats || sanitizedStats.length === 0) return null;
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 flex flex-col h-full space-y-6">
@@ -333,9 +363,13 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
       <div className="pt-4 border-t border-slate-100 mt-auto">
         <div className="flex justify-between items-center">
           <span className="text-[10px] font-black text-slate-400 uppercase">Verified Active Nodes</span>
-          <span className="text-sm font-black text-slate-900">{jobs.length}</span>
+          <span className="text-sm font-black text-slate-900">{safeArray(jobs)?.length || 0}</span>
         </div>
       </div>
     </div>
   );
+  } catch (error) {
+    console.error("SearchSummary component error:", error);
+    return null;
+  }
 };

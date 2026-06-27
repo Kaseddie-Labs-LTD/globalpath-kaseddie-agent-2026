@@ -5,6 +5,7 @@ import { fetchGlobalPulseData } from '../services/ai';
 import { getJobLocationString } from '../types';
 import { getCoordinates, getAllCoordinates } from '../utils/geoCoordinates';
 import { categorizeJob, JobSector } from '../utils/jobCategorization';
+import { safeArray, safeNumber } from '../utils/sanitize';
 
 const geoUrl = "https://raw.githubusercontent.com/lotusms/world-map-data/master/world.json";
 
@@ -38,112 +39,150 @@ export const GlobalPulseMap: React.FC<{
   regionJobCounts?: Record<string, { total: number; blue_collar: number; professional: number }>;
   jobs?: import('../types').Job[];
 }> = ({ addLog, onSelectRegion, regionJobCounts, jobs = [] }) => {
-  const [pulseData, setPulseData] = useState<Record<string, CountryStats>>(initialPulseData);
-  const [geoData, setGeoData] = useState<any>(null);
-  const [hovered, setHovered] = useState<CountryStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [geoLoading, setGeoLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  try {
+    const [pulseData, setPulseData] = useState<Record<string, CountryStats>>(initialPulseData);
+    const [geoData, setGeoData] = useState<any>(null);
+    const [hovered, setHovered] = useState<CountryStats | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [geoLoading, setGeoLoading] = useState(true);
+    const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  const [comparing, setComparing] = useState<[string, string] | null>(null);
+    const [comparing, setComparing] = useState<[string, string] | null>(null);
 
-  useEffect(() => {
-    // Fetch geography data manually to avoid render-time suspension (fixes Error 525)
-    fetch(geoUrl)
-      .then(res => res.json())
-      .then(data => {
-        setGeoData(data);
-        setGeoLoading(false);
-      })
-      .catch(err => {
-        console.error("Map Data Load Error:", err);
-        setGeoLoading(false);
-      });
-  }, []);
+    useEffect(() => {
+      // Fetch geography data manually to avoid render-time suspension (fixes Error 525)
+      fetch(geoUrl)
+        .then(res => res.json())
+        .then(data => {
+          setGeoData(data);
+          setGeoLoading(false);
+        })
+        .catch(err => {
+          console.error("Map Data Load Error:", err);
+          setGeoLoading(false);
+        });
+    }, []);
 
-  // Process jobs array to calculate actual node counts
-  useEffect(() => {
-    if (jobs && jobs.length > 0) {
-      const jobCoordinates = getAllCoordinates(jobs.map(job => getJobLocationString(job.location)));
-      const regionCounts: Record<string, number> = {};
-      
-      jobCoordinates.forEach(coord => {
-        const region = mapCountryToRegion(coord.country);
-        regionCounts[region] = (regionCounts[region] || 0) + 1;
-      });
-      
-      // Update pulseData with actual node counts
-      setPulseData(prev => {
-        const updated = { ...prev };
-        Object.entries(regionCounts).forEach(([region, count]) => {
-          // Find countries in this region
-          const countries = Object.entries(prev).filter(([countryId, data]: [string, CountryStats]) => {
-            const mappedRegion = mapCountryToRegion(countryId);
-            return mappedRegion === region;
+    // Process jobs array to calculate actual node counts
+    useEffect(() => {
+      try {
+        const safeJobs = safeArray(jobs);
+        if (safeJobs && safeJobs.length > 0) {
+          const jobCoordinates = getAllCoordinates(safeJobs.map(job => getJobLocationString(job?.location)));
+          const regionCounts: Record<string, number> = {};
+          
+          jobCoordinates.forEach(coord => {
+            const region = mapCountryToRegion(coord.country);
+            regionCounts[region] = (regionCounts[region] || 0) + 1;
           });
           
-          countries.forEach(([countryId, countryData]) => {
-            if (updated[countryId]) {
-              updated[countryId] = {
-                ...updated[countryId],
-                // Add actual node count to the data
-                nodeCount: count
-              };
-            }
+          // Update pulseData with actual node counts
+          setPulseData(prev => {
+            const updated = { ...prev };
+            Object.entries(regionCounts).forEach(([region, count]) => {
+              // Find countries in this region
+              const countries = Object.entries(prev).filter(([countryId, data]: [string, CountryStats]) => {
+                const mappedRegion = mapCountryToRegion(countryId);
+                return mappedRegion === region;
+              });
+              
+              countries.forEach(([countryId, countryData]) => {
+                if (updated[countryId]) {
+                  updated[countryId] = {
+                    ...updated[countryId],
+                    // Add actual node count to the data
+                    nodeCount: count
+                  };
+                }
+              });
+            });
+            return updated;
           });
-        });
-        return updated;
-      });
-      
-      addLog?.(`SAFETY MAP: Processed ${jobs.length} leads, updated node counts for ${Object.keys(regionCounts).length} regions`, "success");
-    }
-  }, [jobs, addLog]);
-
-  // Real-Time Professional Mapping: Global Density Heatmap
-  const calculateGlobalDensity = (leads: import('../types').Job[]) => {
-    return leads.reduce((acc: Record<string, number>, job) => {
-      const locationData = getCoordinates(getJobLocationString(job.location));
-      if (locationData) {
-        const key = `${locationData.coordinates.lat.toFixed(1)},${locationData.coordinates.lng.toFixed(1)}`; 
-        acc[key] = (acc[key] || 0) + 1;
+          
+          addLog?.(`SAFETY MAP: Processed ${safeJobs.length} leads, updated node counts for ${Object.keys(regionCounts).length} regions`, "success");
+        }
+      } catch (error) {
+        console.error("GlobalPulseMap jobs processing error:", error);
       }
-      return acc;
-    }, {});
-  };
+    }, [jobs, addLog]);
 
-  // Get global density for heatmap visualization
-  const globalDensity = React.useMemo(() => {
-    return calculateGlobalDensity(jobs || []);
-  }, [jobs]);
+    // Real-Time Professional Mapping: Global Density Heatmap
+    const calculateGlobalDensity = (leads: import('../types').Job[]) => {
+      try {
+        const safeLeads = safeArray(leads);
+        return safeLeads.reduce((acc: Record<string, number>, job) => {
+          try {
+            const locationData = getCoordinates(getJobLocationString(job?.location));
+            if (locationData) {
+              const key = `${locationData.coordinates.lat.toFixed(1)},${locationData.coordinates.lng.toFixed(1)}`; 
+              acc[key] = (acc[key] || 0) + 1;
+            }
+            return acc;
+          } catch (e) {
+            console.error("calculateGlobalDensity job error:", e);
+            return acc;
+          }
+        }, {});
+      } catch (error) {
+        console.error("calculateGlobalDensity error:", error);
+        return {};
+      }
+    };
 
-  const getCountryColor = (countryId: string) => {
-    const data = pulseData[countryId];
-    if (!data) return "#f1f5f9";
-    if (countryId === "UGA") return "#0ea5e9"; // Origin
-    
-    const score = (data.safety + data.visaApproval) / 2;
-    if (score > 80) return "#10b981"; // Emerald
-    if (score > 60) return "#f59e0b"; // Amber
-    return "#ef4444"; // Red
-  };
-  const mapCountryToRegion = (id: string) => {
-    const k = id.toUpperCase();
-    if (['ARE', 'QAT', 'KWT', 'BHR', 'SAU', 'OMN'].includes(k)) return 'GCC Corridor';
-    if (k === 'LUX') return 'Luxembourg Node';
-    if (k === 'DEU') return 'EU-Central (Germany)';
-    if (k === 'GBR') return 'UK-Northern Corridor';
-    if (['POL', 'CAN', 'USA', 'FRA', 'NLD', 'TUR'].includes(k)) return 'Western Corridor';
-    return 'Global Corridor';
-  };
+    // Get global density for heatmap visualization
+    const globalDensity = React.useMemo(() => {
+      return calculateGlobalDensity(jobs || []);
+    }, [jobs]);
 
-  // Fuzzy Matcher for Dubai Hub - Fix data mapping mismatch
-  const getDubaiHubCount = () => {
-    const dubaiVariants = ['dubai', 'uae', 'united arab emirates', 'abu dhabi', 'sharjah', 'ajman'];
-    return jobs.filter(job => {
-      const location = getJobLocationString(job.location).toLowerCase();
-      return dubaiVariants.some(variant => location.includes(variant));
-    }).length;
-  };
+    const getCountryColor = (countryId: string) => {
+      try {
+        const data = pulseData[countryId];
+        if (!data) return "#f1f5f9";
+        if (countryId === "UGA") return "#0ea5e9"; // Origin
+        
+        const score = (safeNumber(data.safety, 0) + safeNumber(data.visaApproval, 0)) / 2;
+        if (score > 80) return "#10b981"; // Emerald
+        if (score > 60) return "#f59e0b"; // Amber
+        return "#ef4444"; // Red
+      } catch (error) {
+        console.error("getCountryColor error:", error);
+        return "#f1f5f9";
+      }
+    };
+    const mapCountryToRegion = (id: string) => {
+      try {
+        const k = String(id || '').toUpperCase();
+        if (['ARE', 'QAT', 'KWT', 'BHR', 'SAU', 'OMN'].includes(k)) return 'GCC Corridor';
+        if (k === 'LUX') return 'Luxembourg Node';
+        if (k === 'DEU') return 'EU-Central (Germany)';
+        if (k === 'GBR') return 'UK-Northern Corridor';
+        if (['POL', 'CAN', 'USA', 'FRA', 'NLD', 'TUR'].includes(k)) return 'Western Corridor';
+        return 'Global Corridor';
+      } catch (error) {
+        console.error("mapCountryToRegion error:", error);
+        return 'Global Corridor';
+      }
+    };
+
+    // Fuzzy Matcher for Dubai Hub - Fix data mapping mismatch
+    const getDubaiHubCount = () => {
+      try {
+        const dubaiVariants = ['dubai', 'uae', 'united arab emirates', 'abu dhabi', 'sharjah', 'ajman'];
+        const safeJobs = safeArray(jobs);
+        return safeJobs.filter(job => {
+          try {
+            const location = getJobLocationString(job?.location).toLowerCase();
+            return dubaiVariants.some(variant => location.includes(variant));
+          } catch (e) {
+            console.error("getDubaiHubCount job error:", e);
+            return false;
+          }
+        }).length;
+      } catch (error) {
+        console.error("getDubaiHubCount error:", error);
+        return 0;
+      }
+    };
 
   const handleRefreshPulse = async () => {
     setLoading(true);
@@ -316,62 +355,66 @@ export const GlobalPulseMap: React.FC<{
               />
 
               {/* Dynamic Job Markers with Neon Pulse - Active & Ghost Nodes */}
-              {jobs.filter(j => j.lat && j.lng && (categorizeJob(j) === 'Logistics' || categorizeJob(j) === 'Service & Domestic')).map((job, idx) => {
-                const locationData = getCoordinates(getJobLocationString(job.location));
-                const isActiveNode = locationData && (
-                  locationData.country === 'Luxembourg' || 
-                  locationData.country === 'Poland' || 
-                  locationData.country === 'Germany' || 
-                  locationData.country === 'Canada'
-                );
-                
-                return (
-                  <Marker key={`${job.id}-${idx}`} coordinates={[job.lng!, job.lat!]}>
-                    <g className="animate-pulse">
-                      {/* Core Marker */}
-                      <circle 
-                        r={2.5} 
-                        fill={isActiveNode 
-                          ? (job.category === 'blue_collar' ? '#10b981' : '#38bdf8') 
-                          : '#64748b' // Grey for Ghost Nodes
-                        } 
-                      />
-                      
-                      {/* Multiple Pulse Layers for Neon Effect */}
-                      <circle 
-                        r={6} 
-                        fill="none" 
-                        stroke={isActiveNode 
-                          ? (job.category === 'blue_collar' ? '#10b981' : '#38bdf8') 
-                          : '#64748b'
-                        } 
-                        strokeWidth={1} 
-                        className="animate-ping opacity-40" 
-                      />
-                      <circle 
-                        r={12} 
-                        fill="none" 
-                        stroke={isActiveNode 
-                          ? (job.category === 'blue_collar' ? '#10b981' : '#38bdf8') 
-                          : '#64748b'
-                        } 
-                        strokeWidth={0.5} 
-                        className="animate-pulse opacity-20" 
-                      />
-                      
-                      {/* Static Glow */}
-                      <circle 
-                        r={4} 
-                        fill={isActiveNode 
-                          ? (job.category === 'blue_collar' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.3)') 
-                          : 'rgba(100, 116, 139, 0.3)' // Grey glow for Ghost Nodes
-                        } 
-                        className="blur-[2px]"
-                      />
-                    </g>
-                  </Marker>
-                );
-              })}
+              {safeArray(jobs).filter(j => j?.lat && j?.lng).map((job, idx) => {
+                try {
+                  const category = categorizeJob(job);
+                  if (category !== 'Logistics' && category !== 'Service & Domestic') return null;
+                  
+                  const locationData = getCoordinates(getJobLocationString(job?.location));
+                  const isActiveNode = locationData && (
+                    locationData.country === 'Luxembourg' || 
+                    locationData.country === 'Poland' || 
+                    locationData.country === 'Germany' || 
+                    locationData.country === 'Canada'
+                  );
+                  
+                  const jobCategory = String(job?.category || 'professional');
+                  const markerColor = isActiveNode 
+                    ? (jobCategory === 'blue_collar' ? '#10b981' : '#38bdf8') 
+                    : '#64748b';
+                  
+                  return (
+                    <Marker key={`${job?.id || Math.random()}-${idx}`} coordinates={[job?.lng!, job?.lat!]}>
+                      <g className="animate-pulse">
+                        {/* Core Marker */}
+                        <circle 
+                          r={2.5} 
+                          fill={markerColor} 
+                        />
+                        
+                        {/* Multiple Pulse Layers for Neon Effect */}
+                        <circle 
+                          r={6} 
+                          fill="none" 
+                          stroke={markerColor} 
+                          strokeWidth={1} 
+                          className="animate-ping opacity-40" 
+                        />
+                        <circle 
+                          r={12} 
+                          fill="none" 
+                          stroke={markerColor} 
+                          strokeWidth={0.5} 
+                          className="animate-pulse opacity-20" 
+                        />
+                        
+                        {/* Static Glow */}
+                        <circle 
+                          r={4} 
+                          fill={isActiveNode 
+                            ? (jobCategory === 'blue_collar' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.3)') 
+                            : 'rgba(100, 116, 139, 0.3)' // Grey glow for Ghost Nodes
+                          } 
+                          className="blur-[2px]"
+                        />
+                      </g>
+                    </Marker>
+                  );
+                } catch (error) {
+                  console.error("GlobalPulseMap marker error:", error);
+                  return null;
+                }
+              }).filter(Boolean)}
             </ZoomableGroup>
           </ComposableMap>
 
@@ -455,7 +498,13 @@ export const GlobalPulseMap: React.FC<{
                       <Zap size={16} className="text-brand-600 mb-1 group-hover:scale-110 transition-transform" />
                       <span className="text-[10px] font-black text-slate-900">Blue Collar</span>
                       <span className="text-[12px] font-black text-brand-600">
-                        {jobs.filter(j => (getJobLocationString(j.location).includes(hovered.name) || j.country === hovered.name) && j.category === 'blue_collar').length}
+                        {safeArray(jobs).filter(j => {
+                          try {
+                            return (getJobLocationString(j?.location).includes(hovered.name) || j?.country === hovered.name) && j?.category === 'blue_collar';
+                          } catch (e) {
+                            return false;
+                          }
+                        }).length}
                       </span>
                     </button>
                     <button 
@@ -465,7 +514,13 @@ export const GlobalPulseMap: React.FC<{
                       <Users size={16} className="text-emerald-600 mb-1 group-hover:scale-110 transition-transform" />
                       <span className="text-[10px] font-black text-slate-900">Professional</span>
                       <span className="text-[12px] font-black text-emerald-600">
-                        {jobs.filter(j => (getJobLocationString(j.location).includes(hovered.name) || j.country === hovered.name) && j.category === 'professional').length}
+                        {safeArray(jobs).filter(j => {
+                          try {
+                            return (getJobLocationString(j?.location).includes(hovered.name) || j?.country === hovered.name) && j?.category === 'professional';
+                          } catch (e) {
+                            return false;
+                          }
+                        }).length}
                       </span>
                     </button>
                   </div>
@@ -602,4 +657,13 @@ export const GlobalPulseMap: React.FC<{
       </div>
     </div>
   );
+  } catch (error) {
+    console.error("GlobalPulseMap component error:", error);
+    return (
+      <div className="h-[600px] flex flex-col items-center justify-center bg-slate-900 rounded-[2.5rem] text-white">
+        <X className="text-red-500 mb-4" size={48} />
+        <p className="text-sm font-black uppercase tracking-[0.2em]">Map Error</p>
+      </div>
+    );
+  }
 };
