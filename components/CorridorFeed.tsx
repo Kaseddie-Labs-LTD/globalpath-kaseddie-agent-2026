@@ -37,24 +37,34 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
   }, []);
 
   const mapLocationToNode = (location: any) => {
-    const loc = getJobLocationString(location).toLowerCase();
-    if (loc.includes('dubai') || loc.includes('uae') || loc.includes('saudi') || loc.includes('ksa')) return 'DBI-HUB';
-    if (loc.includes('poland')) return 'WST-POL';
-    if (loc.includes('qatar') || loc.includes('doha')) return 'GCC-DOH';
-    if (loc.includes('germany') || loc.includes('berlin') || loc.includes('deu')) return 'EU-BER';
-    if (loc.includes('luxembourg')) return 'PRM-NODE';
-    if (loc.includes('canada') || loc.includes('toronto')) return 'CAN-TOR';
-    if (loc.includes('kuwait')) return 'GCC-KWI';
-    return 'GLB-NODE';
+    try {
+      const loc = getJobLocationString(location).toLowerCase();
+      if (loc.includes('dubai') || loc.includes('uae') || loc.includes('saudi') || loc.includes('ksa')) return 'DBI-HUB';
+      if (loc.includes('poland')) return 'WST-POL';
+      if (loc.includes('qatar') || loc.includes('doha')) return 'GCC-DOH';
+      if (loc.includes('germany') || loc.includes('berlin') || loc.includes('deu')) return 'EU-BER';
+      if (loc.includes('luxembourg')) return 'PRM-NODE';
+      if (loc.includes('canada') || loc.includes('toronto')) return 'CAN-TOR';
+      if (loc.includes('kuwait')) return 'GCC-KWI';
+      return 'GLB-NODE';
+    } catch (error) {
+      console.error("mapLocationToNode error:", error);
+      return 'GLB-NODE';
+    }
   };
   const mapCorridorLabel = (location: any) => {
-    const loc = getJobLocationString(location).toLowerCase();
-    if (loc.includes('dubai') || loc.includes('uae') || loc.includes('saudi') || loc.includes('ksa')) return 'Dubai Hub';
-    if (loc.includes('poland')) return 'Western Corridor';
-    if (loc.includes('luxembourg')) return 'Premium Node (LUX)';
-    if (loc.includes('germany') || loc.includes('berlin') || loc.includes('europe')) return 'Western Medical/Tech Corridor';
-    if (loc.includes('canada') || loc.includes('toronto')) return 'Infrastructure Corridor';
-    return 'Global Corridor';
+    try {
+      const loc = getJobLocationString(location).toLowerCase();
+      if (loc.includes('dubai') || loc.includes('uae') || loc.includes('saudi') || loc.includes('ksa')) return 'Dubai Hub';
+      if (loc.includes('poland')) return 'Western Corridor';
+      if (loc.includes('luxembourg')) return 'Premium Node (LUX)';
+      if (loc.includes('germany') || loc.includes('berlin') || loc.includes('europe')) return 'Western Medical/Tech Corridor';
+      if (loc.includes('canada') || loc.includes('toronto')) return 'Infrastructure Corridor';
+      return 'Global Corridor';
+    } catch (error) {
+      console.error("mapCorridorLabel error:", error);
+      return 'Global Corridor';
+    }
   };
 
   const { data: statsData, error: statsError } = useSWR('/corridor-stats',
@@ -72,96 +82,109 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
     // ARCHITECT'S DIRECTIVE 1: Ghost Exorcism - Only execute if component is still mounted
     if (!isMounted.current) return;
     
-    // K2.5 NULL GUARD: Ensure statsData.stats is a valid array before mapping
-    if (statsData && Array.isArray(statsData.stats)) {
-      // BULLETPROOF MAP GUARD: Filter out half-empty nodes before mapping
-      const newItems: FeedItem[] = safeArray<any>(statsData.stats)
-        .filter(s => s && (s.region || s.name) && (s.count !== undefined && s.count !== null)) // Ensure valid data
-        .map((s: any, index: number) => {
-          // K2.5: Sanitize region name and use safeNumber for count
-          const cleanRegion = sanitizeRegionName(s?.region || s?.name);
-          const count = safeNumber(s?.count, 0);
-          // APRIL 30: Add index to prevent duplicate keys when Date.now() is same millisecond
-          return {
-            id: `stat-${cleanRegion}-${Date.now()}-${index}`,
-            timestamp: new Date().toLocaleTimeString(),
-            node: `${cleanRegion.toUpperCase().slice(0, 3)}-NODE`,
-            message: `Active Node Sync: ${count} leads identified in ${cleanRegion} corridor.`,
-            type: 'sync'
-          };
-        });
-      // ARCHITECT'S DIRECTIVE 1: Check mount status before state update
-      if (isMounted.current) {
-        setItems(prev => [...newItems, ...prev].slice(0, 50));
+    try {
+      // K2.5 NULL GUARD: Ensure statsData.stats is a valid array before mapping
+      if (statsData && Array.isArray(statsData.stats)) {
+        // BULLETPROOF MAP GUARD: Filter out half-empty nodes before mapping
+        const newItems: FeedItem[] = safeArray<any>(statsData.stats)
+          .filter(s => s && (s.region || s.name) && (s.count !== undefined && s.count !== null)) // Ensure valid data
+          .map((s: any, index: number) => {
+            // K2.5: Sanitize region name and use safeNumber for count
+            const cleanRegion = sanitizeRegionName(s?.region || s?.name);
+            const count = safeNumber(s?.count, 0);
+            // APRIL 30: Add index to prevent duplicate keys when Date.now() is same millisecond
+            return {
+              id: `stat-${cleanRegion}-${Date.now()}-${index}`,
+              timestamp: new Date().toLocaleTimeString(),
+              node: `${(cleanRegion || 'SEC').toUpperCase().slice(0, 3)}-NODE`,
+              message: `Active Node Sync: ${count} leads identified in ${cleanRegion} corridor.`,
+              type: 'sync'
+            };
+          });
+        // ARCHITECT'S DIRECTIVE 1: Check mount status before state update
+        if (isMounted.current) {
+          setItems(prev => [...newItems, ...prev].slice(0, 50));
+        }
       }
+    } catch (error) {
+      console.error("CorridorFeed statsData error:", error);
     }
   }, [statsData]);
 
   useEffect(() => {
-    if ((leads || []).length > 0) {
-      // PRIORITY SORT: Golden Corridor (GCC, Western/Poland) and Luxembourg Node must appear at the top
-      const sortedLeads = [...(leads || [])].sort((a, b) => {
-        const priorityNodes = ['Premium Node', 'Premium Node (LUX)', 'Dubai Hub', 'Western Corridor'];
-        
-        const aNode = a.corridor || a.node || '';
-        const bNode = b.corridor || b.node || '';
+    try {
+      if ((leads || []).length > 0) {
+        // PRIORITY SORT: Golden Corridor (GCC, Western/Poland) and Luxembourg Node must appear at the top
+        const sortedLeads = [...(leads || [])].sort((a, b) => {
+          const priorityNodes = ['Premium Node', 'Premium Node (LUX)', 'Dubai Hub', 'Western Corridor'];
+          
+          const aNode = String(a?.corridor || a?.node || '');
+          const bNode = String(b?.corridor || b?.node || '');
 
-        const aPriorityIndex = priorityNodes.indexOf(aNode);
-        const bPriorityIndex = priorityNodes.indexOf(bNode);
+          const aPriorityIndex = priorityNodes.indexOf(aNode);
+          const bPriorityIndex = priorityNodes.indexOf(bNode);
 
-        if (aPriorityIndex !== -1 && bPriorityIndex !== -1) return aPriorityIndex - bPriorityIndex;
-        if (aPriorityIndex !== -1) return -1;
-        if (bPriorityIndex !== -1) return 1;
-        
-        // Secondary sort by country for Big Four fallback
-        const aCountry = String(a.country || '').toLowerCase();
-        const bCountry = String(b.country || '').toLowerCase();
-        const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
-        const aCountryIndex = priorityCountries.indexOf(aCountry);
-        const bCountryIndex = priorityCountries.indexOf(bCountry);
+          if (aPriorityIndex !== -1 && bPriorityIndex !== -1) return aPriorityIndex - bPriorityIndex;
+          if (aPriorityIndex !== -1) return -1;
+          if (bPriorityIndex !== -1) return 1;
+          
+          // Secondary sort by country for Big Four fallback
+          const aCountry = String(a?.country || '').toLowerCase();
+          const bCountry = String(b?.country || '').toLowerCase();
+          const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
+          const aCountryIndex = priorityCountries.indexOf(aCountry);
+          const bCountryIndex = priorityCountries.indexOf(bCountry);
 
-        if (aCountryIndex !== -1 && bCountryIndex !== -1) return aCountryIndex - bCountryIndex;
-        if (aCountryIndex !== -1) return -1;
-        if (bCountryIndex !== -1) return 1;
+          if (aCountryIndex !== -1 && bCountryIndex !== -1) return aCountryIndex - bCountryIndex;
+          if (aCountryIndex !== -1) return -1;
+          if (bCountryIndex !== -1) return 1;
 
-        return 0;
-      });
+          return 0;
+        });
 
-      const recent = sortedLeads.slice(0, 10).map(j => {
-        const node = `${mapLocationToNode(j.location)}-01`;
-        const safeCompany = String(j.company || 'Employer');
-        const corridor = mapCorridorLabel(j.location);
-        
-        // Ethical & Status Logic from backend metadata
-        const isFeeBlocked = (j as any).fee_blocked === true;
-        const isPending = j.status === 'vetting_pending' || j.status === 'pending';
-        
-        let type: FeedItem['type'] = 'verified';
-        let message = `Verified ${safeCompany} for ${corridor}.`;
-        
-        if (isFeeBlocked) {
-          type = 'verified';
-          message = `ETHICAL VERIFIED: ${safeCompany} confirmed Zero-Fee.`;
-        } else if (isPending) {
-          type = 'alert';
-          message = `AUDIT REQUIRED: Potential Fee Indicator at ${safeCompany}.`;
-        } else if (['blue_collar', 'essential'].includes(String(j.category).toLowerCase())) {
-          type = 'scanning';
-          message = `BLUE-COLLAR SYNC: Fresh pulse from ${safeCompany} node.`;
-        }
+        const recent = sortedLeads.slice(0, 10).map(j => {
+          try {
+            const node = `${mapLocationToNode(j?.location)}-01`;
+            const safeCompany = String(j?.company || 'Employer');
+            const corridor = mapCorridorLabel(j?.location);
+            
+            // Ethical & Status Logic from backend metadata
+            const isFeeBlocked = (j as any)?.fee_blocked === true;
+            const isPending = j?.status === 'vetting_pending' || j?.status === 'pending';
+            
+            let type: FeedItem['type'] = 'verified';
+            let message = `Verified ${safeCompany} for ${corridor}.`;
+            
+            if (isFeeBlocked) {
+              type = 'verified';
+              message = `ETHICAL VERIFIED: ${safeCompany} confirmed Zero-Fee.`;
+            } else if (isPending) {
+              type = 'alert';
+              message = `AUDIT REQUIRED: Potential Fee Indicator at ${safeCompany}.`;
+            } else if (['blue_collar', 'essential'].includes(String(j?.category).toLowerCase())) {
+              type = 'scanning';
+              message = `BLUE-COLLAR SYNC: Fresh pulse from ${safeCompany} node.`;
+            }
 
-        return {
-          id: `${j.id}-${Math.random().toString().slice(-6)}`,
-          timestamp: new Date().toLocaleTimeString(),
-          node,
-          message,
-          type,
-          category: j.category,
-          fee_blocked: isFeeBlocked,
-          status: j.status
-        };
-      });
-      setItems(prev => [...recent, ...prev].slice(0, 50));
+            return {
+              id: `${j?.id || Math.random().toString()}-${Math.random().toString().slice(-6)}`,
+              timestamp: new Date().toLocaleTimeString(),
+              node,
+              message,
+              type,
+              category: j?.category,
+              fee_blocked: isFeeBlocked,
+              status: j?.status
+            };
+          } catch (e) {
+            console.error("Error processing lead in CorridorFeed:", e, j);
+            return null;
+          }
+        }).filter((item): item is FeedItem => item !== null);
+        setItems(prev => [...recent, ...prev].slice(0, 50));
+      }
+    } catch (error) {
+      console.error("CorridorFeed leads error:", error);
     }
   }, [leads]);
 
