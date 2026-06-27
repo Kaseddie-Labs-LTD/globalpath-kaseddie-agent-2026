@@ -448,7 +448,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   console.log("🚨 EMERGENCY DEBUG: Other count:", otherJobs.length);
   
   // TEMPORARY DEBUG: Show absolutely everything for 60 seconds
-  const emergencyShowAll = false; // Set to true to bypass all filters
+  const emergencyShowAll = true; // Set to true to bypass all filters
   const displayProfessionalJobs = emergencyShowAll ? sortedHrJobs : professionalJobs;
   const displayBlueCollarJobs = emergencyShowAll ? [] : blueCollarJobs; // Keep empty to test sector assignment
   const displayOtherJobs = emergencyShowAll ? [] : otherJobs;
