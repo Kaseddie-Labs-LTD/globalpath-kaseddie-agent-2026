@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Job, getJobLocationString } from '../types';
-import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2, DollarSign, ShieldCheck } from 'lucide-react';
+import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2, DollarSign, ShieldCheck, Search } from 'lucide-react';
 import { sanitizeRegionName, safeNumber, safeArray } from '../utils/sanitize';
 import { categorizeJob, JobSector } from '../utils/jobCategorization';
 
