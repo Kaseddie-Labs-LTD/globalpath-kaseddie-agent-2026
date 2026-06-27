@@ -179,9 +179,13 @@ QDRANT_API_KEY = SecretManagerGateway.get_secret("QDRANT_API_KEY", "")
 
 # Gemini Configuration
 GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
+BRIGHT_DATA_PROXY_URL = SecretManagerGateway.get_secret("BRIGHT_DATA_PROXY_URL") or os.getenv("BRIGHT_DATA_PROXY_URL")
 if GEMINI_API_KEY:
-    # Initialize using the modern client structure
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    # Initialize using the modern client structure with Bright Data proxy to bypass Google IP blocks
+    client_kwargs = {"api_key": GEMINI_API_KEY}
+    if BRIGHT_DATA_PROXY_URL:
+        client_kwargs["http_options"] = {"proxy": BRIGHT_DATA_PROXY_URL}
+    gemini_client = genai.Client(**client_kwargs)
     print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK).")
 else:
     gemini_client = None
@@ -969,12 +973,12 @@ app.add_middleware(
 # Resolution order for the admin password:
 #   1. ADMIN_PASSWORD (backend-only secret, preferred for production)
 #   2. VITE_ADMIN_PASSWORD (compat with frontend env naming)
-ADMIN_PASSWORD = SecretManagerGateway.get_secret("ADMIN_PASSWORD") or os.getenv("VITE_ADMIN_PASSWORD")
+ADMIN_PASSWORD = SecretManagerGateway.get_secret("ADMIN_PASSWORD") or SecretManagerGateway.get_secret("VITE_ADMIN_PASSWORD")
 
 # JWT signing secret. Falls back to a per-process random secret so tokens are
 # never signed with a hardcoded key, but operators should set JWT_SECRET in
 # production to keep sessions valid across restarts / replicas.
-JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET") or os.getenv("JWT_SECRET")
 if not JWT_SECRET:
     # Fallback to a secure random secret if not set - don't crash server!
     print("⚠️ [AUTH] JWT_SECRET not configured! Using per-process random secret (sessions will not persist across restarts).")
