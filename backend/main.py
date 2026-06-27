@@ -362,6 +362,55 @@ async def get_all_leads(
         print(f"❌ [DEBUG]: Error in /leads endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def sanitize_region_name(name):
+    """
+    Sanitizes region names to prevent UI crashes from malformed data
+    Handles: JSON strings, Python None, null/undefined, objects, numbers, raw dictionaries
+    Returns: Clean string for UI display
+    """
+    if name is None or name == "None" or name == "null":
+        return "Secure Node"
+    if not isinstance(name, str):
+        str_name = str(name)
+        if str_name == "None" or str_name == "null" or str_name == "undefined" or str_name == "[object Object]":
+            return "Secure Node"
+        return str_name
+    
+    if not name or name.strip() == "":
+        return "Global Corridor"
+    
+    # Remove any raw dictionary text or JSON-like structures
+    import re
+    clean_name = re.sub(r'\{[\s\S]*\}', '', name)  # Remove entire JSON objects
+    clean_name = re.sub(r'_blue', '', clean_name, flags=re.IGNORECASE)  # Remove any blue flags (case insensitive)
+    clean_name = re.sub(r'_professional', '', clean_name, flags=re.IGNORECASE)  # Remove professional tags
+    clean_name = re.sub(r'blue_', '', clean_name, flags=re.IGNORECASE)  # Remove blue prefixes
+    clean_name = re.sub(r'\[.*?\]', '', clean_name)  # Remove array brackets
+    clean_name = re.sub(r'[\{\}\(\)\[\]]', '', clean_name)  # Remove any remaining brackets
+    clean_name = re.sub(r'[\'"]', '', clean_name)  # Remove quotes
+    clean_name = clean_name.strip()
+    
+    # Final cleanup: Ensure we have a valid region name
+    clean_name = clean_name.strip()
+    if not clean_name:
+        return "Global Corridor"
+    
+    # Normalize common region names
+    lower_clean_name = clean_name.lower()
+    if "uae" in lower_clean_name or "dubai" in lower_clean_name:
+        return "Dubai Hub"
+    if "poland" in lower_clean_name:
+        return "Western Corridor"
+    if "luxembourg" in lower_clean_name:
+        return "Premium Node (LUX)"
+    if "germany" in lower_clean_name or "europe" in lower_clean_name:
+        return "Western Medical/Tech Corridor"
+    if "canada" in lower_clean_name:
+        return "Infrastructure Corridor"
+    
+    return clean_name
+
+
 def aggregate_qdrant_data():
     """
     Aggregates Qdrant data to provide corridor statistics.
@@ -406,7 +455,7 @@ def aggregate_qdrant_data():
     for point in all_points:
         payload = point.payload
         if payload:
-            country = payload.get("country", "Global")
+            country = sanitize_region_name(payload.get("country", "Global"))
             category = payload.get("category", "general")
             
             # Only count leads that are 'live', 'verified', 'active', or 'vetted'
@@ -418,10 +467,14 @@ def aggregate_qdrant_data():
     # Convert to expected format
     result = []
     for key, count in stats.items():
-        country, category = key.rsplit("_", 1)
+        try:
+            country, category = key.rsplit("_", 1)
+        except:
+            country = key
+            category = "general"
         result.append({
-            "region": country,
-            "count": count
+            "region": sanitize_region_name(country),
+            "count": max(0, int(count) if isinstance(count, (int, float)) else 0)
         })
     
     print(f"🔍 [DEBUG]: Computed stats: {result}")
