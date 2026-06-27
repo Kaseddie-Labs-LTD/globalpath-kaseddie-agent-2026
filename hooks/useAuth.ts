@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ADMIN_TOKEN_STORAGE_KEY, sanitizeEndpoint } from '../constants/api';
+import { ADMIN_TOKEN_STORAGE_KEY, fetcher } from '../constants/api';
 
 export interface ReplitUser {
   sub: string;
@@ -31,18 +31,12 @@ export function useAuth(): AuthState {
         return;
       }
 
-      fetch(sanitizeEndpoint('/auth/user'), {
+      // Use our custom fetcher to get the correct BACKEND_URL!
+      fetcher('/auth/user', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
-        .then(res => {
-          if (!res.ok) {
-            setState({ user: null, isLoading: false, isAuthenticated: false });
-            return null;
-          }
-          return res.json();
-        })
         .then(data => {
           if (data && typeof data === 'object') {
             setState({ user: data as ReplitUser, isLoading: false, isAuthenticated: true });
