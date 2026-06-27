@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ADMIN_TOKEN_STORAGE_KEY } from '../constants/api';
+import { ADMIN_TOKEN_STORAGE_KEY, sanitizeEndpoint } from '../constants/api';
 
 export interface ReplitUser {
   sub: string;
@@ -23,33 +23,41 @@ export function useAuth(): AuthState {
   });
 
   useEffect(() => {
-    const token = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
-    
-    if (!token) {
-      setState({ user: null, isLoading: false, isAuthenticated: false });
-      return;
-    }
-
-    fetch('/api/auth/user', {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-      .then(res => {
-        if (res.status === 401) {
-          setState({ user: null, isLoading: false, isAuthenticated: false });
-          return null;
-        }
-        return res.json();
-      })
-      .then(data => {
-        if (data) {
-          setState({ user: data, isLoading: false, isAuthenticated: true });
-        }
-      })
-      .catch(() => {
+    try {
+      const token = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+      
+      if (!token) {
         setState({ user: null, isLoading: false, isAuthenticated: false });
-      });
+        return;
+      }
+
+      fetch(sanitizeEndpoint('/auth/user'), {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+        .then(res => {
+          if (!res.ok) {
+            setState({ user: null, isLoading: false, isAuthenticated: false });
+            return null;
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (data && typeof data === 'object') {
+            setState({ user: data as ReplitUser, isLoading: false, isAuthenticated: true });
+          } else {
+            setState({ user: null, isLoading: false, isAuthenticated: false });
+          }
+        })
+        .catch((err) => {
+          console.warn('Auth fetch failed (optional for dashboard)', err);
+          setState({ user: null, isLoading: false, isAuthenticated: false });
+        });
+    } catch (error) {
+      console.warn('Auth hook error (optional for dashboard)', error);
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+    }
   }, []);
 
   return state;
