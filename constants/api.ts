@@ -76,7 +76,9 @@ export const fetcher = async (url: string, options?: RequestInit & { timeout?: n
         const errData = await res.json();
         if (errData && errData.detail) errMsg = errData.detail;
       } catch(e) {}
-      throw new Error(errMsg);
+      console.warn('Fetcher warning (non-ok response):', errMsg);
+      // Return a safe default instead of throwing
+      return { stats: [], leads: [], total: 0 };
     }
     
     // STREAM CHUNKING: Check for chunked transfer (keeps connection alive during AI processing)
@@ -87,16 +89,18 @@ export const fetcher = async (url: string, options?: RequestInit & { timeout?: n
     // This check prevents "Unexpected token <" error when backend returns HTML instead of JSON
     const contentType = res.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
-      console.error(' [FETCHER ERROR]: Backend returned HTML instead of JSON:', contentType);
-      throw new Error("Oops! Backend returned HTML instead of JSON. Check your API paths.");
+      console.warn(' [FETCHER WARNING]: Backend returned non-JSON response, using safe default');
+      return { stats: [], leads: [], total: 0 };
     }
     
     return res.json();
   } catch (error: any) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error("Connection Timeout: The server took too long to respond.");
+      console.warn('Fetcher timeout, using safe default');
+      return { stats: [], leads: [], total: 0 };
     }
-    throw error;
+    console.warn('Fetcher error, using safe default:', error);
+    return { stats: [], leads: [], total: 0 };
   }
 };

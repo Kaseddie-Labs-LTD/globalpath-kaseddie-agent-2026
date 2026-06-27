@@ -197,8 +197,31 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
       return sanitizedStats && sanitizedStats.length > 0 && totalLeads > 0;
     }, [sanitizedStats, totalLeads]);
 
-    // KIMI K2.5: Guard against empty sanitized stats
-    if (!sanitizedStats || sanitizedStats.length === 0) return null;
+    // KIMI K2.5: Don't return null, render something even if no stats
+  if (!sanitizedStats || sanitizedStats.length === 0) {
+    return (
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 flex flex-col h-full space-y-6">
+        <div className="space-y-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <Globe size={16} className="text-brand-500" />
+              Hub Status: {jobs.length} Active Nodes
+            </h2>
+          </div>
+          <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+            <Search size={48} className="animate-bounce mb-4 opacity-20" />
+            <p className="text-[10px] uppercase font-black tracking-[0.3em]">Calibrating Corridor Sensors...</p>
+          </div>
+        </div>
+        <div className="pt-4 border-t border-slate-100 mt-auto">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black text-slate-400 uppercase">Verified Active Nodes</span>
+            <span className="text-sm font-black text-slate-900">{jobs.length}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 flex flex-col h-full space-y-6">

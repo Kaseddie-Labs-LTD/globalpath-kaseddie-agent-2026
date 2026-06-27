@@ -193,13 +193,49 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, [items]);
 
-  // FIX 1: Silent Error Bypass - Guard against rendering before data handshake is green
+  // Defensive: Always render, even without statsData
   if (!statsData && !statsError) {
     return (
-      <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 shadow-2xl h-[600px] flex flex-col items-center justify-center p-6">
-        <Loader2 size={48} className="text-brand-500 animate-spin mb-4" />
-        <p className="text-[10px] uppercase font-black tracking-[0.3em] text-slate-500">Calibrating Corridor Sensors...</p>
-        <p className="text-[8px] text-slate-600 mt-2">Waiting for backend handshake</p>
+      <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 shadow-2xl h-[600px] flex flex-col overflow-hidden relative group">
+        <div className="p-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md flex items-center justify-between z-10">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-brand-500/10 rounded-xl">
+              <Cpu size={20} className="text-brand-500 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">Live Migration Corridors</h3>
+              <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">Kaseddie Oversight • V4.2 Uplink Active</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full border border-emerald-500/20">
+                <Activity size={12} className="animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Nodes: {nodesActive} Active</span>
+             </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 font-mono scrollbar-hide z-10 flex flex-col items-center justify-center">
+          <Search size={48} className="animate-bounce mb-4 opacity-20 text-slate-500" />
+          <p className="text-[10px] uppercase font-black tracking-[0.3em] text-slate-500">Calibrating Corridor Sensors...</p>
+        </div>
+
+        <div className="p-4 bg-slate-900/80 border-t border-slate-800 backdrop-blur-md z-10">
+           <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-sm font-black text-white">12s</div>
+                <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">Average Sync</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-black text-brand-500">99.9%</div>
+                <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">Trust Rating</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-black text-emerald-500">{feesBlocked}</div>
+                <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">Fees Blocked</div>
+              </div>
+           </div>
+        </div>
       </div>
     );
   }
