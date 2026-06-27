@@ -554,15 +554,35 @@ function App() {
         }
       }
 
+      // Guard against entirely missing or malformed payloads using safeArray
+      const rawStats = safeArray(statsData?.stats || statsData);
+
+      const sanitizedStats = rawStats.map((stat: any) => {
+        try {
+          return {
+            region: typeof stat?.region === 'string' ? stat.region : 'Unknown',
+            count: typeof stat?.count === 'number' ? stat.count : 0,
+            ...stat
+          };
+        } catch (e) {
+          console.warn("[Handshake Sync]: Skipping individual malformed stat node element", e);
+          return null;
+        }
+      }).filter(Boolean);
+
+      // Force safe iteration during the dashboard initialization sequence
+      sanitizedStats.forEach((stat: any) => {
+        try {
+          console.log(`[Handshake Sync]: Processing node: "${stat?.region}" (count: ${stat?.count})`);
+        } catch (innerError) {
+          console.warn(`[Handshake Sync]: Bypassed unmapped structural key: "${stat?.region}"`, innerError);
+        }
+      });
+
       // Apply stats to batches (Dashboard progress bars) - 100% DEFENSIVE!
-      if (statsData && statsData.stats && Array.isArray(statsData.stats)) {
-        // Sanitize each backend stat to ensure valid structure
-        const backendStats = statsData.stats.map((s: any) => ({
-          region: typeof s?.region === 'string' ? s.region : 'Unknown',
-          count: typeof s?.count === 'number' ? s.count : 0
-        })).filter(s => s.region.length > 0); // Remove invalid entries
-        
-        const total = typeof statsData.total === 'number' ? statsData.total : safeArray(jobs).length;
+      if (sanitizedStats.length > 0) {
+        const backendStats = sanitizedStats;
+        const total = typeof statsData?.total === 'number' ? statsData.total : safeArray(jobs).length;
         
         // Handshake Recalibration: Count unique backend regions as Active Nodes
         const uniqueNodes = backendStats.length;
@@ -627,8 +647,11 @@ function App() {
           console.error('Error setting batches from stats', e);
         }
       }
-    } catch (err) {
-      console.error("❌ Critical Error in fetchStats:", err);
+
+      return sanitizedStats;
+    } catch (globalError) {
+      console.error("[Handshake Critical]: Fallback triggered to prevent dashboard crash", globalError);
+      return []; // Return empty safe array to let UI mount gracefully
     }
   }, [swrStats, swrLeads, computeRegionLabelFromLocation]);
 
