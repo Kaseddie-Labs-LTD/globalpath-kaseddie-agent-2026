@@ -166,7 +166,7 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
               message = `BLUE-COLLAR SYNC: Fresh pulse from ${safeCompany} node.`;
             }
 
-            return {
+            const feedItem: FeedItem = {
               id: `${j?.id || Math.random().toString()}-${Math.random().toString().slice(-6)}`,
               timestamp: new Date().toLocaleTimeString(),
               node,
@@ -176,11 +176,12 @@ export const CorridorFeed: React.FC<CorridorFeedProps> = ({ nodesActive, feesBlo
               fee_blocked: isFeeBlocked,
               status: j?.status
             };
+            return feedItem;
           } catch (e) {
             console.error("Error processing lead in CorridorFeed:", e, j);
             return null;
           }
-        }).filter((item): item is FeedItem => item !== null);
+        }).filter(item => item !== null) as FeedItem[];
         setItems(prev => [...recent, ...prev].slice(0, 50));
       }
     } catch (error) {
