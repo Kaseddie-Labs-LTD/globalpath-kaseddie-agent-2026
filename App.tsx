@@ -988,31 +988,39 @@ function App() {
             {view === AppView.DASHBOARD && (
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fadeIn">
                 <div className="space-y-6">
-                  <SearchSummary 
-                jobs={jobs} 
-                onNodeClick={handleNodeClick}
-                onSectorClick={(sector) => {
-                  handleNodeClick('All', 'All', sector === 'Other' ? '' : sector);
-                  addLog(`SECTOR FILTER: Activating deep-dive for ${sector} nodes.`, "info", "SEARCH");
-                }}
-                regionJobCounts={regionJobCounts} 
-                pendingCount={pendingVettingCount}
-              />
+                  <ErrorBoundary>
+                    <SearchSummary 
+                  jobs={jobs} 
+                  onNodeClick={handleNodeClick}
+                  onSectorClick={(sector) => {
+                    handleNodeClick('All', 'All', sector === 'Other' ? '' : sector);
+                    addLog(`SECTOR FILTER: Activating deep-dive for ${sector} nodes.`, "info", "SEARCH");
+                  }}
+                  regionJobCounts={regionJobCounts} 
+                  pendingCount={pendingVettingCount}
+                />
+                  </ErrorBoundary>
                 </div>
                 <div>
               {/* MISSION 3: Corridor Feed - Fees Blocked linked to Qdrant vetted count */}
-              <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} leads={jobs} />
+                  <ErrorBoundary>
+                    <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} leads={jobs} />
+                  </ErrorBoundary>
                 </div>
                 <div>
-                  <EnrollmentForm onEnroll={handleEnroll} initialLogisticsNeeds={enrollmentInterestJob?.title || ''} />
+                  <ErrorBoundary>
+                    <EnrollmentForm onEnroll={handleEnroll} initialLogisticsNeeds={enrollmentInterestJob?.title || ''} />
+                  </ErrorBoundary>
                 </div>
                 <div>
                   {/* MISSION 3: Fees Blocked Counter - Linked to Qdrant Vetted/Zero-Fee Leads */}
-                  <FeesBlockedCard 
-                    flaggedLeadsCount={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} 
-                    totalLeadsCount={(jobs || []).length} 
-                    onClick={() => setView(AppView.BLOCK_REPORT)}
-                  />
+                  <ErrorBoundary>
+                    <FeesBlockedCard 
+                      flaggedLeadsCount={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} 
+                      totalLeadsCount={(jobs || []).length} 
+                      onClick={() => setView(AppView.BLOCK_REPORT)}
+                    />
+                  </ErrorBoundary>
                 </div>
               </div>
             )}

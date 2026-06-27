@@ -11,6 +11,8 @@ interface StatsCardProps {
   onClick?: () => void;
 }
 
+import { safeNumber } from '../utils/sanitize';
+
 export const StatsCard: React.FC<StatsCardProps> = ({ 
   title, 
   value, 
@@ -28,6 +30,9 @@ export const StatsCard: React.FC<StatsCardProps> = ({
     purple: 'bg-purple-500 text-white'
   };
 
+  const safeValue = safeNumber(value, 0);
+  const safeTrend = trend !== undefined ? safeNumber(trend, 0) : undefined;
+
   return (
     <div 
       className={`bg-white rounded-2xl border border-slate-200 shadow-xl p-6 hover:shadow-2xl transition-all duration-300 ${onClick ? 'cursor-pointer hover:border-brand-500' : ''}`}
@@ -37,18 +42,18 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         <div className={`p-3 rounded-xl ${colorClasses[color as keyof typeof colorClasses]}`}>
           {icon}
         </div>
-        {trend !== undefined && (
+        {safeTrend !== undefined && (
           <div className={`flex items-center gap-1 text-sm font-black ${
-            trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-slate-600'
+            safeTrend > 0 ? 'text-green-600' : safeTrend < 0 ? 'text-red-600' : 'text-slate-600'
           }`}>
-            <TrendingUp size={14} className={trend < 0 ? 'rotate-180' : ''} />
-            {Math.abs(trend)}%
+            <TrendingUp size={14} className={safeTrend < 0 ? 'rotate-180' : ''} />
+            {Math.abs(safeTrend)}%
           </div>
         )}
       </div>
       
       <div className="space-y-1">
-        <h3 className="text-2xl font-black text-slate-900">{value.toLocaleString()}</h3>
+        <h3 className="text-2xl font-black text-slate-900">{safeValue.toLocaleString()}</h3>
         <p className="text-sm font-black text-slate-600 uppercase tracking-widest">{title}</p>
         {description && (
           <p className="text-xs text-slate-500 mt-2">{description}</p>
