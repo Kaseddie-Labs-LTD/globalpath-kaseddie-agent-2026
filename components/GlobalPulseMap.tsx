@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker, Line } from 'react-simple-maps';
 import { ShieldCheck, Plane, Info, ExternalLink, Globe2, RefreshCw, Loader2, Sparkles, Activity, Users, Zap, X } from 'lucide-react';
 import { fetchGlobalPulseData } from '../services/ai';
-import { getJobLocationString } from '../types';
+import { Job, getJobLocationString } from '../types';
 import { getCoordinates, getAllCoordinates } from '../utils/geoCoordinates';
 import { categorizeJob, JobSector } from '../utils/jobCategorization';
 import { safeArray, safeNumber } from '../utils/sanitize';
