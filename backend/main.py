@@ -2805,16 +2805,16 @@ async def admin_login(req: AdminLoginRequest):
             print(f"⚠️ [AUTH] Admin login failed! Missing required env vars: {', '.join(missing)}")
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "status": "error",
-                    "message": "Admin authentication configuration incomplete on server.",
-                    "missing_config": missing
-                }
+                detail="Admin authentication configuration incomplete on server."
             )
 
+        # Ensure we fetch and securely strip any trailing symbols or encoding variants
+        raw_password = ADMIN_PASSWORD
+        stored_password = raw_password.strip() if hasattr(raw_password, "strip") else str(raw_password)
+        
+        # Compare values safely using constant-time comparison
         submitted = (req.password or "").encode("utf-8")
-        expected = ADMIN_PASSWORD.encode("utf-8")
-        # Constant-time comparison to avoid timing side channels.
+        expected = stored_password.encode("utf-8")
         if not hmac.compare_digest(submitted, expected):
             raise HTTPException(status_code=401, detail="Invalid admin password.")
 
@@ -2833,11 +2833,7 @@ async def admin_login(req: AdminLoginRequest):
         print(f"❌ [AUTH] Error type: {type(e).__name__}")
         raise HTTPException(
             status_code=500,
-            detail={
-                "status": "error",
-                "message": "Internal auth system failure",
-                "details": str(e)
-            }
+            detail=f"Auth subsystem error: {str(e)}"
         )
 
 
