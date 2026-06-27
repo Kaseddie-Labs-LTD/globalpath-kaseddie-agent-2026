@@ -38,6 +38,7 @@ import { fetchGlobalJobs, fetchLuxembourgLeads } from './services/apify';
 import { AppView } from './primitive-types';
 import { UserProfile, Job, AgentLogEntry, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
 import { API_BASE, fetcher, sanitizeEndpoint } from './constants/api';
+import { safeArray } from './utils/sanitize';
 
 const KASEDDIE_SIGNATURE = "GlobalPath Kaseddie Agent";
 const ADMIN_PRIMARY = "+256784428821";
@@ -553,58 +554,78 @@ function App() {
         }
       }
 
-      // Apply stats to batches (Dashboard progress bars)
-      if (statsData && statsData.stats) {
-        const backendStats = statsData.stats;
-        const total = statsData.total || 0;
+      // Apply stats to batches (Dashboard progress bars) - 100% DEFENSIVE!
+      if (statsData && statsData.stats && Array.isArray(statsData.stats)) {
+        // Sanitize each backend stat to ensure valid structure
+        const backendStats = statsData.stats.map((s: any) => ({
+          region: typeof s?.region === 'string' ? s.region : 'Unknown',
+          count: typeof s?.count === 'number' ? s.count : 0
+        })).filter(s => s.region.length > 0); // Remove invalid entries
+        
+        const total = typeof statsData.total === 'number' ? statsData.total : safeArray(jobs).length;
         
         // Handshake Recalibration: Count unique backend regions as Active Nodes
         const uniqueNodes = backendStats.length;
         console.log(`📡 [Sensor Calibration]: ${uniqueNodes} Active Backend Nodes identified.`);
 
         // Synchronize the dashboard batches with backend stats
-        setBatches(prev => {
-          const updatedBatches = prev.map(batch => {
-            const corridorName = batch.corridor.split(' -> ')[0].toLowerCase();
-            const match = backendStats.find((s: any) => {
-              const region = s.region.toLowerCase();
-              // Handshake Mapping: Align backend keys with frontend labels
-              if ((region === 'gcc' || region === 'uae' || region === 'dubai') && corridorName.includes('dubai')) return true;
-              if ((region === 'uk' || region === 'united kingdom') && corridorName.includes('uk')) return true;
-              if ((region === 'eu' || region === 'germany') && corridorName.includes('germany')) return true;
-              if (region === 'canada' && corridorName.includes('canada')) return true;
-              
-              // Direct Mapping Recalibration: Poland -> Western, Luxembourg -> Premium/Tech
-              if (region === 'poland' && (corridorName.includes('western') || corridorName.includes('poland'))) return true;
-              if (region === 'luxembourg' && (corridorName.includes('premium') || corridorName.includes('luxembourg'))) return true;
+        try {
+          setBatches(prev => {
+            const updatedBatches = (prev || []).map(batch => {
+              try {
+                const corridorName = (batch?.corridor || '').split(' -> ')[0]?.toLowerCase() || '';
+                const match = backendStats.find((s: any) => {
+                  try {
+                    const region = (s?.region || '').toLowerCase();
+                    // Handshake Mapping: Align backend keys with frontend labels
+                    if ((region === 'gcc' || region === 'uae' || region === 'dubai') && corridorName.includes('dubai')) return true;
+                    if ((region === 'uk' || region === 'united kingdom') && corridorName.includes('uk')) return true;
+                    if ((region === 'eu' || region === 'germany') && corridorName.includes('germany')) return true;
+                    if (region === 'canada' && corridorName.includes('canada')) return true;
+                    
+                    // Direct Mapping Recalibration: Poland -> Western, Luxembourg -> Premium/Tech
+                    if (region === 'poland' && (corridorName.includes('western') || corridorName.includes('poland'))) return true;
+                    if (region === 'luxembourg' && (corridorName.includes('premium') || corridorName.includes('luxembourg'))) return true;
 
-              return region.includes(corridorName) || corridorName.includes(region);
-            });
-            if (match) {
-              return { ...batch, size: match.count, verifiedCount: Math.floor(match.count * 0.9), status: 'verified' as const };
-            }
-            return batch;
-          });
-
-          // If after attempting to map, some batches are still zero,
-          // but we have a large number of total leads, distribute them.
-          const totalBatchSize = updatedBatches.reduce((sum, b) => sum + b.size, 0);
-          if (total > 50 && totalBatchSize < 50) {
-            const remaining = total - totalBatchSize;
-            const batchesToFill = updatedBatches.filter(b => b.size === 0);
-            if (batchesToFill.length > 0) {
-              const fillSize = Math.floor(remaining / batchesToFill.length);
-              batchesToFill.forEach(b => {
-                if (b.size === 0) {
-                  b.size = fillSize;
-                  b.verifiedCount = Math.floor(fillSize * 0.9);
-                  b.status = 'verified' as const;
+                    return region.includes(corridorName) || corridorName.includes(region);
+                  } catch (e) {
+                    console.warn('Matching error in stats processing', e);
+                    return false;
+                  }
+                });
+                if (match) {
+                  const safeCount = typeof match?.count === 'number' ? match.count : 0;
+                  return { ...batch, size: safeCount, verifiedCount: Math.floor(safeCount * 0.9), status: 'verified' as const };
                 }
-              });
+                return batch;
+              } catch (e) {
+                console.warn('Batch processing error', e);
+                return batch;
+              }
+            });
+
+            // If after attempting to map, some batches are still zero,
+            // but we have a large number of total leads, distribute them.
+            const totalBatchSize = updatedBatches.reduce((sum, b) => sum + (b?.size || 0), 0);
+            if (total > 50 && totalBatchSize < 50) {
+              const remaining = total - totalBatchSize;
+              const batchesToFill = updatedBatches.filter(b => (b?.size || 0) === 0);
+              if (batchesToFill.length > 0) {
+                const fillSize = Math.floor(remaining / batchesToFill.length);
+                batchesToFill.forEach(b => {
+                  if ((b?.size || 0) === 0) {
+                    b.size = fillSize;
+                    b.verifiedCount = Math.floor(fillSize * 0.9);
+                    b.status = 'verified' as const;
+                  }
+                });
+              }
             }
-          }
-          return updatedBatches;
-        });
+            return updatedBatches;
+          });
+        } catch (e) {
+          console.error('Error setting batches from stats', e);
+        }
       }
     } catch (err) {
       console.error("❌ Critical Error in fetchStats:", err);
