@@ -158,13 +158,14 @@ const INITIAL_PORTALS: VendorPortal[] = [
 ];
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, onAuditJob, onPitch, batches, setBatches, selectedBatch, setSelectedBatch, onAddLog, onExit, onNodeClick, onRefresh, isUplinking, mutateLeads, totalLeadsFromSWR }) => {
-  // ARCHITECT'S DIRECTIVE 1: Ghost Exorcism - Mounting guard for SWR/mutate operations
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  try {
+    // ARCHITECT'S DIRECTIVE 1: Ghost Exorcism - Mounting guard for SWR/mutate operations
+    const isMounted = useRef(true);
+    useEffect(() => {
+      return () => {
+        isMounted.current = false;
+      };
+    }, []);
   
 
 
@@ -832,4 +833,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
       )}
     </div>
   );
+  } catch (error) {
+    console.error("AdminDashboard component error:", error);
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-950 min-h-screen">
+        <div className="text-center">
+          <Loader2 size={48} className="text-brand-500 animate-spin mx-auto mb-4" />
+          <p className="text-[10px] uppercase font-black tracking-[0.3em] text-slate-500">Loading Oversight Console...</p>
+        </div>
+      </div>
+    );
+  }
 };
