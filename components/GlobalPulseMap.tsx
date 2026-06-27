@@ -66,7 +66,7 @@ export const GlobalPulseMap: React.FC<{
     // Process jobs array to calculate actual node counts
     useEffect(() => {
       try {
-        const safeJobs = safeArray(jobs);
+        const safeJobs = safeArray<Job>(jobs);
         if (safeJobs && safeJobs.length > 0) {
           const jobCoordinates = getAllCoordinates(safeJobs.map(job => getJobLocationString(job?.location)));
           const regionCounts: Record<string, number> = {};
@@ -109,7 +109,7 @@ export const GlobalPulseMap: React.FC<{
     // Real-Time Professional Mapping: Global Density Heatmap
     const calculateGlobalDensity = (leads: import('../types').Job[]) => {
       try {
-        const safeLeads = safeArray(leads);
+        const safeLeads = safeArray<Job>(leads);
         return safeLeads.reduce((acc: Record<string, number>, job) => {
           try {
             const locationData = getCoordinates(getJobLocationString(job?.location));
@@ -168,7 +168,7 @@ export const GlobalPulseMap: React.FC<{
     const getDubaiHubCount = () => {
       try {
         const dubaiVariants = ['dubai', 'uae', 'united arab emirates', 'abu dhabi', 'sharjah', 'ajman'];
-        const safeJobs = safeArray(jobs);
+        const safeJobs = safeArray<Job>(jobs);
         return safeJobs.filter(job => {
           try {
             const location = getJobLocationString(job?.location).toLowerCase();
@@ -355,7 +355,7 @@ export const GlobalPulseMap: React.FC<{
               />
 
               {/* Dynamic Job Markers with Neon Pulse - Active & Ghost Nodes */}
-              {safeArray(jobs).filter(j => j?.lat && j?.lng).map((job, idx) => {
+              {safeArray<Job>(jobs).filter(j => j?.lat && j?.lng).map((job, idx) => {
                 try {
                   const category = categorizeJob(job);
                   if (category !== 'Logistics' && category !== 'Service & Domestic') return null;
@@ -498,7 +498,7 @@ export const GlobalPulseMap: React.FC<{
                       <Zap size={16} className="text-brand-600 mb-1 group-hover:scale-110 transition-transform" />
                       <span className="text-[10px] font-black text-slate-900">Blue Collar</span>
                       <span className="text-[12px] font-black text-brand-600">
-                        {safeArray(jobs).filter(j => {
+                        {safeArray<Job>(jobs).filter(j => {
                           try {
                             return (getJobLocationString(j?.location).includes(hovered.name) || j?.country === hovered.name) && j?.category === 'blue_collar';
                           } catch (e) {
@@ -514,7 +514,7 @@ export const GlobalPulseMap: React.FC<{
                       <Users size={16} className="text-emerald-600 mb-1 group-hover:scale-110 transition-transform" />
                       <span className="text-[10px] font-black text-slate-900">Professional</span>
                       <span className="text-[12px] font-black text-emerald-600">
-                        {safeArray(jobs).filter(j => {
+                        {safeArray<Job>(jobs).filter(j => {
                           try {
                             return (getJobLocationString(j?.location).includes(hovered.name) || j?.country === hovered.name) && j?.category === 'professional';
                           } catch (e) {

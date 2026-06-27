@@ -27,7 +27,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
           'Global Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }
         };
 
-        safeArray(jobs).forEach(job => {
+        safeArray<Job>(jobs).forEach(job => {
           if (!job) return;
           const loc = getJobLocationString(job?.location).toLowerCase();
           const category = String(job?.category || 'professional').toLowerCase();
@@ -155,7 +155,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
           'Other': 0
         };
 
-        safeArray(jobs).forEach(job => {
+        safeArray<Job>(jobs).forEach(job => {
           try {
             const sector = categorizeJob(job);
             sectors[sector]++;
@@ -174,8 +174,8 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
     }, [jobs]);
 
     // STRIKE 2: Logic/Render Separation - Calculate Ethical Impact OUTSIDE JSX with safeNumber
-    const totalLeads = safeNumber(safeArray(jobs)?.length, 0);
-    const verifiedLeads = safeArray(jobs)?.filter(j => j?.vetted === true || j?.status === 'verified') || [];
+    const totalLeads = safeNumber(safeArray<Job>(jobs)?.length, 0);
+    const verifiedLeads = safeArray<Job>(jobs)?.filter(j => j?.vetted === true || j?.status === 'verified') || [];
     const totalVerified = safeNumber(verifiedLeads?.length, 0);
     // SILENT FAILURE PROTECTION: If calculation fails, defaults to 0
     const feesBlocked = safeNumber(totalVerified, 0) * 2500;
