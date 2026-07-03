@@ -275,7 +275,7 @@ function App() {
 
     // Default fallback - assume blue collar for missing data
     return 'blue_collar';
-  }, [computeRegionLabelFromLocation]);
+  }, []);
 
   const countNodesByCategory = useCallback((corridor: string, category: 'blue_collar' | 'professional' | 'service_domestic') => {
     return jobs.filter(j => {
@@ -486,6 +486,7 @@ function App() {
       console.log("🔍 [Handshake] Syncing with SWR Telemetry...");
       let statsData = swrStats;
       let leadsData = swrLeads;
+      let totalLeadsCount = 0;
 
       // Initial or Force Refresh Fallback
       if (!statsData || !leadsData) {
@@ -498,6 +499,7 @@ function App() {
       }
 
       if (leadsData && leadsData.leads && leadsData.leads.length > 0) {
+        totalLeadsCount = leadsData.leads.length;
         const mappedLeads: Job[] = (leadsData.leads || []).map((l: any) => {
           const normalizedCategory = (l.category || 'general').toLowerCase();
           
@@ -582,7 +584,7 @@ function App() {
       // Apply stats to batches (Dashboard progress bars) - 100% DEFENSIVE!
       if (sanitizedStats.length > 0) {
         const backendStats = sanitizedStats;
-        const total = typeof statsData?.total === 'number' ? statsData.total : safeArray(jobs).length;
+        const total = typeof statsData?.total === 'number' ? statsData.total : totalLeadsCount;
         
         // Handshake Recalibration: Count unique backend regions as Active Nodes
         const uniqueNodes = backendStats.length;
