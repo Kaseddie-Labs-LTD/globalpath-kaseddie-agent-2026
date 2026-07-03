@@ -85,6 +85,15 @@ function App() {
 
   const [logs, setLogs] = useState<AgentLogEntry[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  
+  const memoizedHrJobs = React.useMemo(() => 
+    jobs.filter(job => 
+      job.status?.toLowerCase() === 'verified' || 
+      job.status?.toLowerCase() === 'live' || 
+      job.vetted === true ||
+      job.status?.toLowerCase() === 'active'
+    ), [jobs]);
+    
   const [batches, setBatches] = useState<RecruitmentBatch[]>(initialBatches);
   const [agentState, setAgentState] = useState<AgentState>('IDLE');
   const [safetyReport, setSafetyReport] = useState<{report: SafetyReport, job: Job} | null>(null);
@@ -1156,15 +1165,10 @@ function App() {
                     </div>
                   </div>
                 }>
-                  <AdminDashboard 
-                    isAdminAuthenticated={isAdminAuthenticated} 
-                    logs={logs} 
-                    hrJobs={jobs.filter(job => 
-    job.status?.toLowerCase() === 'verified' || 
-    job.status?.toLowerCase() === 'live' || 
-    job.vetted === true ||
-    job.status?.toLowerCase() === 'active'
-  )} 
+                    <AdminDashboard 
+                        isAdminAuthenticated={isAdminAuthenticated} 
+                        logs={logs} 
+                        hrJobs={memoizedHrJobs} 
                     onAuditJob={async (j) => setSafetyReport({ report: await analyzeJobSafety(j), job: j })} 
                     batches={batches} 
                     setBatches={setBatches} 
