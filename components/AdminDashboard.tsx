@@ -359,6 +359,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     }
   };
 
+
+
   // PRIORITY SORT: Golden Corridor (GCC -> Western/Poland) and Luxembourg Node must appear at the top
   // KIMI K2.5: Use sanitizedJobs for safe sorting
   const sortedHrJobs = React.useMemo(() => {
@@ -397,12 +399,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
       return 0;
     });
   }, [sanitizedJobs]);
-
+  
   // KIMI K2.5: Use sanitizedJobs.category which is already computed
   const professionalJobs = sortedHrJobs.filter(j => j.category === 'professional');
   const blueCollarJobs = sortedHrJobs.filter(j => j.category === 'blue_collar');
   const serviceDomesticJobs = sortedHrJobs.filter(j => j.category === 'service_domestic');
   const otherJobs = sortedHrJobs.filter(j => j.category !== 'professional' && j.category !== 'blue_collar' && j.category !== 'service_domestic');
+  
   // Defensive: SWR data resolves asynchronously, so coerce to a safe number for
   // every downstream calculation. Prevents NaN/undefined crashes on first render.
   const safeTotalLeads = typeof totalLeadsFromSWR === 'number' && Number.isFinite(totalLeadsFromSWR)
@@ -420,23 +423,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     return Math.floor(safeTotalLeads * 0.9);
   }, [safeTotalLeads]);
   
-  // EMERGENCY DEBUG: Log sanitized data (KIMI K2.5: use sanitizedJobs)
-  console.log("🚨 EMERGENCY DEBUG: Sanitized jobs data:", sanitizedJobs);
-  console.log("🚨 EMERGENCY DEBUG: Total leads:", sanitizedJobs.length);
-  console.log("🚨 EMERGENCY DEBUG: Professional count:", professionalJobs.length);
-  console.log("🚨 EMERGENCY DEBUG: Blue-collar count:", blueCollarJobs.length);
-  console.log("🚨 EMERGENCY DEBUG: Service & Domestic count:", serviceDomesticJobs.length);
-  console.log("🚨 EMERGENCY DEBUG: Other count:", otherJobs.length);
-  
-  // TEMPORARY DEBUG: Show absolutely everything for 60 seconds
   const emergencyShowAll = true; // Set to true to bypass all filters
   const displayProfessionalJobs = emergencyShowAll ? sortedHrJobs : professionalJobs;
   const displayBlueCollarJobs = emergencyShowAll ? [] : blueCollarJobs; // Keep empty to test sector assignment
   const displayOtherJobs = emergencyShowAll ? [] : otherJobs;
-  
-  console.log("🚨 EMERGENCY DEBUG: Emergency mode:", emergencyShowAll ? "SHOWING ALL" : "NORMAL FILTER");
-  
-  console.log("📈 [ADMIN DASHBOARD COUNT]:", totalLeadsCount);
 
 
 
@@ -806,6 +796,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   );
   } catch (error) {
     console.error("AdminDashboard component error:", error);
+    console.error("AdminDashboard stack trace:", error instanceof Error ? error.stack : "No stack trace");
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-950 min-h-screen">
         <div className="text-center">
