@@ -3,7 +3,7 @@ import React from 'react';
 import { Job, getJobLocationString } from '../types';
 import { Globe, MapPin, Zap, Users, Briefcase, ChevronRight, Loader2, DollarSign, ShieldCheck, Search } from 'lucide-react';
 import { sanitizeRegionName, safeNumber, safeArray } from '../utils/sanitize';
-import { categorizeJob, JobSector } from '../utils/jobCategorization';
+import { categorizeJobForSector, JobSector } from '../utils/jobCategorization';
 
 interface SearchSummaryProps {
   jobs: Job[];
@@ -157,7 +157,7 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
 
         safeArray<Job>(jobs).forEach(job => {
           try {
-            const sector = categorizeJob(job);
+            const sector = categorizeJobForSector(job);
             sectors[sector]++;
           } catch (e) {
             console.error("SearchSummary categorizeJob error:", e);

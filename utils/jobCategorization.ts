@@ -1,8 +1,9 @@
-import { Job, getJobLocationString } from '../types';
+import { Job } from '../types';
 
 export type JobSector = 'Logistics' | 'IT & Digital' | 'Manufacturing' | 'Healthcare' | 'Service & Domestic' | 'Other';
+export type JobCategory = 'professional' | 'blue_collar' | 'service_domestic';
 
-export const categorizeJob = (job: Job): JobSector => {
+export const categorizeJobForSector = (job: Job): JobSector => {
   const title = (job.title || '').toLowerCase();
   const description = (job.description || '').toLowerCase();
   const company = (job.company || '').toLowerCase();
@@ -39,4 +40,66 @@ export const categorizeJob = (job: Job): JobSector => {
   } else {
     return 'Other';
   }
+};
+
+export const categorizeJob = (job: any): JobCategory => {
+  const title = (job.title || '').toLowerCase();
+  const description = (job.description || '').toLowerCase();
+  const interests = (job.interests || '').toLowerCase();
+  const text = `${title} ${description} ${interests}`;
+
+  // 1. DOMESTIC & HOSPITALITY (The "Missing" Leads)
+  if (
+    text.includes('cleaner') || text.includes('maid') || 
+    text.includes('housekeeping') || text.includes('chef') || 
+    text.includes('cook') || text.includes('domestic') || 
+    text.includes('caregiver') || text.includes('nanny') ||
+    text.includes('housekeeper') || text.includes('care home') ||
+    text.includes('care assistant') || text.includes('support worker')
+  ) {
+    return 'blue_collar';
+  }
+
+  // 2. LOGISTICS
+  if (
+    text.includes('driver') || text.includes('delivery') || 
+    text.includes('transport') || text.includes('warehouse') ||
+    text.includes('delivery driver') || text.includes('helper') ||
+    text.includes('merchandiser') || text.includes('shelf')
+  ) {
+    return 'blue_collar';
+  }
+
+  // 3. IT & DIGITAL
+  if (
+    text.includes('it') || text.includes('software') ||
+    text.includes('engineer') || text.includes('developer') || 
+    text.includes('ai') || text.includes('it specialist') ||
+    text.includes('cybersecurity') || text.includes('analyst') ||
+    text.includes('consultant') || text.includes('manager') ||
+    text.includes('associate') || text.includes('executive') ||
+    text.includes('pwc') || text.includes('deloitte') || 
+    text.includes('officer') || text.includes('procurement') ||
+    text.includes('logistics manager') || text.includes('supply chain') ||
+    text.includes('nurse') || text.includes('doctor') || 
+    text.includes('physician') || text.includes('hospitality') ||
+    text.includes('hotel') || text.includes('goodyear associate') ||
+    text.includes('events management specialist')
+  ) {
+    return 'professional';
+  }
+
+  // 4. SERVICE & DOMESTIC (APPENDED - New Category)
+  if (
+    text.includes('cleaner') || text.includes('housekeeper') ||
+    text.includes('maid') || text.includes('nanny') || 
+    text.includes('domestic') || text.includes('janitor') ||
+    text.includes('driver') || text.includes('delivery') || 
+    text.includes('maintenance') || text.includes('caretaker')
+  ) {
+    return 'service_domestic';
+  }
+
+  // Default fallback - assume blue collar for missing data
+  return 'blue_collar';
 };
