@@ -438,16 +438,20 @@ function App() {
         
         // OOM PROTECTION: Track if there are more leads to load
         const leadsArray = data?.leads || [];
-        const moreLeadsRemaining = data?.next_offset !== null;
+        const nextOffset = data?.next_offset;
+        const moreLeadsRemaining = nextOffset !== null && nextOffset !== undefined && leadsArray.length > 0;
         setHasMoreLeads(moreLeadsRemaining);
         
         console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})`);
         console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
         
-        // Auto-fetch next page if there are more leads
-        if (moreLeadsRemaining) {
+        // Auto-fetch next page if there are more leads AND we didn't exceed max offset
+        const MAX_OFFSET = 50000; // Prevent infinite loops
+        if (moreLeadsRemaining && leadsOffset < MAX_OFFSET) {
           console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
           setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);
+        } else if (leadsOffset >= MAX_OFFSET) {
+          console.warn('🚨 [PAGINATION]: Reached max offset, stopping auto-fetch');
         }
         
         if (leadsArray.length === 0 && leadsOffset === 0) {

@@ -327,6 +327,7 @@ async def get_all_leads(
         
         # Paginated scroll through points
         all_points = []
+        qdrant_next_offset = None
         try:
             scroll_result = qdrant_client.scroll(
                 collection_name=COLLECTION_NAME,
@@ -337,6 +338,7 @@ async def get_all_leads(
                 with_vectors=False  # Never fetch vectors for list view (saves memory)
             )
             all_points = scroll_result[0]
+            qdrant_next_offset = scroll_result[1]
         except Exception as e:
             print(f"❌ [DEBUG]: Could not access collection: {e}")
             return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
@@ -351,11 +353,20 @@ async def get_all_leads(
                     leads.append(payload)
         
         print(f"✅ [PAGINATED LEADS]: Found {len(leads)} leads (requested {safe_limit}, offset {offset})")
+        print(f"✅ [PAGINATED LEADS]: Qdrant returned {len(all_points)} points, next offset: {qdrant_next_offset}")
+        
+        # Determine if there are more leads:
+        # - If Qdrant has a next offset, OR
+        # - If we got exactly safe_limit points (even if filtered down)
+        has_more = qdrant_next_offset is not None or len(all_points) == safe_limit
+        
+        # Only set next_offset if we actually have more leads to fetch
+        next_offset = offset + safe_limit if has_more and len(leads) > 0 else None
         
         return {
             "count": len(leads),
             "total_offset": offset,
-            "next_offset": offset + len(leads) if len(leads) == safe_limit else None,
+            "next_offset": next_offset,
             "leads": leads
         }
     except Exception as e:
