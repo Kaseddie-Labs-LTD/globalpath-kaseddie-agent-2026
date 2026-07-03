@@ -457,17 +457,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   
   console.log("📈 [ADMIN DASHBOARD COUNT]:", totalLeadsCount);
 
-  // APRIL 30: Data Guard - Prevent render if critical data is not ready
-  if (!hrJobs || !Array.isArray(hrJobs)) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-950 min-h-screen">
-        <div className="text-center">
-          <Loader2 size={48} className="text-brand-500 animate-spin mx-auto mb-4" />
-          <p className="text-[10px] uppercase font-black tracking-[0.3em] text-slate-500">Loading Oversight Data...</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12 bg-[#0f172a] text-gray-100 min-h-screen">
