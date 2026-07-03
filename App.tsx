@@ -142,7 +142,15 @@ function App() {
   // OOM PROTECTION: Pagination state for leads (prevent loading all 1,000 at once)
   const [leadsOffset, setLeadsOffset] = useState(0);
   const [hasMoreLeads, setHasMoreLeads] = useState(true);
-  const LEADS_PAGE_SIZE = 1000; // Load up to 1000 leads at once to get full dataset
+  const LEADS_PAGE_SIZE = 100; // Reduced from 1000 to prevent large requests
+  const MAX_OFFSET = 5000; // Very low max offset to prevent infinite loops
+
+  // Reset pagination state on mount to prevent stale offset from previous sessions
+  useEffect(() => {
+    console.log('🔄 [PAGINATION RESET]: Resetting offset to 0');
+    setLeadsOffset(0);
+    setHasMoreLeads(true);
+  }, []);
   const [enrollmentInterestJob, setEnrollmentInterestJob] = useState<{ title: string; company?: string } | null>(null);
   const [recentLead, setRecentLead] = useState<{ name: string; job: string; company?: string } | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
@@ -446,7 +454,6 @@ function App() {
         console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
         
         // Auto-fetch next page if there are more leads AND we didn't exceed max offset
-        const MAX_OFFSET = 50000; // Prevent infinite loops
         if (moreLeadsRemaining && leadsOffset < MAX_OFFSET) {
           console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
           setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);

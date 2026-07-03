@@ -1,9 +1,12 @@
 // API Base URL configuration
 const VITE_API_URL = (import.meta as any)?.env?.VITE_API_URL as string | undefined;
+const isDevelopment = import.meta.env.DEV;
 
 export const BACKEND_URL = VITE_API_URL
   ? VITE_API_URL.replace(/\/+$/, '')
-  : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api';
+  : isDevelopment 
+    ? 'http://localhost:8000/api'
+    : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api';
 
 export const API_BASE = "/api";
 
