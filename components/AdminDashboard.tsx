@@ -169,19 +169,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   
 
 
-  // KIMI K2.5 DATA SANITIZER: Force schema on jobs array - filters corrupted nodes
-  interface SanitizedJob {
-    id: string;
-    title: string;
-    company: string;
-    category: string;
-    vetted: boolean;
-    status: string;
-    corridor?: string;
-    node?: string;
-    country?: string;
-  }
-
   const sanitizedJobs = React.useMemo(() => {
     // Ensure hrJobs is an array before processing
     if (!Array.isArray(hrJobs)) return [];
@@ -193,20 +180,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
         if (!job.id) return false; // ID is mandatory
         return true;
       })
-      .map((job): SanitizedJob => {
-        // Force schema: every field MUST exist with fallback defaults
-        return {
-          id: typeof job.id === 'string' ? job.id : String(job.id || ''),
-          title: typeof job.title === 'string' ? job.title : (typeof job.positionName === 'string' ? job.positionName : ''),
-          company: typeof job.company === 'string' ? job.company : '',
-          category: categorizeJob(job),
-          vetted: job.isVetted === true,
-          status: typeof job.status === 'string' ? job.status : 'pending',
-          corridor: typeof job.corridor === 'string' ? job.corridor : undefined,
-          node: typeof job.node === 'string' ? job.node : undefined,
-          country: typeof job.country === 'string' ? job.country : undefined
-        };
-      })
+      .map(job => ({
+        ...job,
+        id: typeof job.id === 'string' ? job.id : String(job.id || ''),
+        title: typeof job.title === 'string' ? job.title : (typeof job.positionName === 'string' ? job.positionName : ''),
+        company: typeof job.company === 'string' ? job.company : '',
+        category: categorizeJob(job),
+        status: typeof job.status === 'string' ? job.status : 'pending',
+      }))
       .filter(job => job.id !== ''); // Remove items with empty IDs
   }, [hrJobs]);
 
