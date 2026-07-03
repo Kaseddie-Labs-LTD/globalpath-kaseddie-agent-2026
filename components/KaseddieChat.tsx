@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Eye, Bot, Send } from 'lucide-react';
 import { BACKEND_URL } from '../constants/api';
 
@@ -7,6 +7,20 @@ const KaseddieChat = () => {
   const [history, setHistory] = useState([{ role: 'assistant', content: 'Kaseddie Agent Online. How can I assist your breakthrough today?', isStreaming: false }]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const readerRef = useRef<ReadableStreamDefaultReader | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Cancel the stream if it's active when component unmounts
+      if (readerRef.current) {
+        readerRef.current.cancel();
+        readerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim() || isThinking) return;
@@ -27,46 +41,63 @@ const KaseddieChat = () => {
       
       if (res.ok) {
         const reader = res.body?.getReader();
+        readerRef.current = reader;
+        
         if (reader) {
           // Handle streaming response
           let assistantMessage = '';
           const decoder = new TextDecoder();
           
-          setHistory(prev => [...prev, { role: 'assistant', content: '', isStreaming: true }]);
+          if (isMountedRef.current) {
+            setHistory(prev => [...prev, { role: 'assistant', content: '', isStreaming: true }]);
+          }
           
-          while (true) {
+          while (isMountedRef.current) {
             const { done, value } = await reader.read();
             if (done) break;
             
             const chunk = decoder.decode(value, { stream: true });
             assistantMessage += chunk;
             
-            // Update the streaming message
+            // Update the streaming message only if still mounted
+            if (isMountedRef.current) {
+              setHistory(prev => {
+                const newHistory = [...prev];
+                newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: true };
+                return newHistory;
+              });
+            }
+          }
+          
+          // Final update only if still mounted
+          if (isMountedRef.current) {
             setHistory(prev => {
               const newHistory = [...prev];
-              newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: true };
+              newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: false };
               return newHistory;
             });
           }
-          
-          // Final update to mark streaming as complete
-          setHistory(prev => {
-            const newHistory = [...prev];
-            newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: false };
-            return newHistory;
-          });
         } else {
           // Fallback for non-streaming response
           const data = await res.json();
-          setHistory(prev => [...prev, { role: 'assistant', content: data.reply, isStreaming: false }]);
+          if (isMountedRef.current) {
+            setHistory(prev => [...prev, { role: 'assistant', content: data.reply, isStreaming: false }]);
+          }
         }
       } else {
-        setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
+        if (isMountedRef.current) {
+          setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
+        }
       }
     } catch (error) {
-      setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
+      if (isMountedRef.current) {
+        setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
+      }
     } finally {
-      setIsThinking(false);
+      if (isMountedRef.current) {
+        setIsThinking(false);
+      }
+      readerRef.current = null;
     }
   };
 
