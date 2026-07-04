@@ -296,6 +296,8 @@ async def get_all_leads(
         # Check collection exists first
         try:
             collection_info = qdrant_client.get_collection(collection_name=COLLECTION_NAME)
+            # Get total number of points from collection info
+            total_points = collection_info.points_count if hasattr(collection_info, 'points_count') else 0
         except Exception as e:
             print(f"❌ [DEBUG]: Collection not found: {e}")
             return {"error": f"Collection not found: {e}", "collection_name": COLLECTION_NAME}
@@ -353,7 +355,7 @@ async def get_all_leads(
                     leads.append(payload)
         
         print(f"✅ [PAGINATED LEADS]: Found {len(leads)} leads (requested {safe_limit}, offset {offset})")
-        print(f"✅ [PAGINATED LEADS]: Qdrant returned {len(all_points)} points, next offset: {qdrant_next_offset}")
+        print(f"✅ [PAGINATED LEADS]: Qdrant returned {len(all_points)} points, next offset: {qdrant_next_offset}, total points: {total_points}")
         
         # Determine if there are more leads:
         # - If Qdrant has a next offset, OR
@@ -365,6 +367,7 @@ async def get_all_leads(
         
         return {
             "count": len(leads),
+            "total": total_points,  # Add total available points
             "total_offset": offset,
             "next_offset": next_offset,
             "leads": leads

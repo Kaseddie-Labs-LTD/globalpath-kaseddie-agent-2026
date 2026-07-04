@@ -444,19 +444,33 @@ function App() {
       onSuccess: (data) => {
         console.log('✅ SWR Data received:', data);
         
+        // 1. Extract totalLeadsAvailable from stats or leads data
+        const totalLeadsAvailable = swrStats?.total || data?.total || jobs.length || 0;
+        
         // OOM PROTECTION: Track if there are more leads to load
         const leadsArray = data?.leads || [];
         const nextOffset = data?.next_offset;
-        const moreLeadsRemaining = nextOffset !== null && nextOffset !== undefined && leadsArray.length > 0;
+        
+        // 2. Ensure "hasMore" condition guards against absolute total
+        const moreLeadsRemaining = 
+          nextOffset !== null && 
+          nextOffset !== undefined && 
+          leadsArray.length > 0 && 
+          (leadsOffset + LEADS_PAGE_SIZE) < totalLeadsAvailable;
+          
         setHasMoreLeads(moreLeadsRemaining);
         
         console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})`);
         console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
+        console.log(`📊 [PAGINATED]: Total available: ${totalLeadsAvailable}`);
         
-        // Auto-fetch next page if there are more leads AND we didn't exceed max offset
+        // 3. Prevent auto-fetcher from running if it exceeds bounds
         if (moreLeadsRemaining && leadsOffset < MAX_OFFSET) {
-          console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
-          setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);
+          const nextOffsetValue = leadsOffset + LEADS_PAGE_SIZE;
+          if (nextOffsetValue < totalLeadsAvailable) {
+            console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
+            setLeadsOffset(nextOffsetValue);
+          }
         } else if (leadsOffset >= MAX_OFFSET) {
           console.warn('🚨 [PAGINATION]: Reached max offset, stopping auto-fetch');
         }
