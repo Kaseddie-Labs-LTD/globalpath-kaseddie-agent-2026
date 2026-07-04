@@ -25,16 +25,35 @@ const getAdminAuthToken = (): string | null => {
  * Formats an endpoint URL by sanitizing path prefixes and ensuring absolute execution
  */
 export const formatEndpointUrl = (endpoint: string): string => {
-  // Clear out any accidental dot-slash characters at the front of the route
-  const sanitizedEndpoint = endpoint.replace(/^\.?\//, '');
+  // 1. Clean both the endpoint and the base URL: strip backticks, quotes, whitespace
+  const cleanEndpoint = endpoint.trim().replace(/^[`'"](.*)[`'"]$/, '$1');
+  const cleanBaseUrl = BACKEND_URL.trim().replace(/^[`'"](.*)[`'"]$/, '$1');
   
-  // Remove any leading /api/ to prevent duplication with BACKEND_URL
-  const noApiPrefix = sanitizedEndpoint.replace(/^\/api\//, '');
+  // 2. Strip any leading slashes, ./, or /api/ from the endpoint to prevent duplication
+  let path = cleanEndpoint;
   
-  // Ensure we don't double up on slashes between domain and path
-  const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+  // Remove any leading ./ or ../ (but not deep ../, just leading ones)
+  while (path.startsWith('./')) {
+    path = path.slice(2);
+  }
   
-  return `${baseUrl}/${noApiPrefix}`;
+  // Remove leading slashes
+  while (path.startsWith('/')) {
+    path = path.slice(1);
+  }
+  
+  // Remove leading /api/ if it exists
+  if (path.toLowerCase().startsWith('api/')) {
+    path = path.slice(4);
+  }
+  
+  // 3. Ensure base URL doesn't have trailing slash
+  const baseUrl = cleanBaseUrl.endsWith('/') ? cleanBaseUrl.slice(0, -1) : cleanBaseUrl;
+  
+  // 4. Build final URL
+  const finalUrl = path ? `${baseUrl}/${path}` : baseUrl;
+  
+  return finalUrl;
 };
 
 // Sanitize endpoint to prevent URL duplication (kept for backward compatibility)
