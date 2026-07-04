@@ -2,11 +2,22 @@
 const VITE_API_URL = (import.meta as any)?.env?.VITE_API_URL as string | undefined;
 const isDevelopment = import.meta.env.DEV;
 
-export const BACKEND_URL = VITE_API_URL
-  ? VITE_API_URL.replace(/\/+$/, '')
-  : isDevelopment 
+let baseURL = VITE_API_URL 
+  ? VITE_API_URL 
+  : (isDevelopment 
     ? 'http://localhost:8000/api'
-    : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api';
+    : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api');
+
+// Add aggressive cleaner to strip accidental markdown links and stray artifacts
+if (baseURL.includes('[')) {
+  const match = baseURL.match(/\(([^)]+)\)/);
+  if (match) baseURL = match[1];
+}
+
+// Strip out any trailing markdown artifacts or stray dots before the route slash
+baseURL = baseURL.trim().replace(/[\]\)\.]*$/, '').replace(/\/+$/, '').replace(/[`'"[\]()]/g, '');
+
+export const BACKEND_URL = baseURL;
 
 export const API_BASE = "/api";
 
