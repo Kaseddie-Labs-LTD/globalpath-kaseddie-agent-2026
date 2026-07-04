@@ -21,56 +21,44 @@ const getAdminAuthToken = (): string | null => {
   }
 };
 
-/**
- * Formats an endpoint URL by sanitizing path prefixes and ensuring absolute execution
- */
-export const formatEndpointUrl = (endpoint: string): string => {
-  // 1. Clean both the endpoint and the base URL: strip backticks, quotes, whitespace
-  let cleanEndpoint = endpoint.trim().replace(/^[`'"](.*)[`'"]$/, '$1');
-  const cleanBaseUrl = BACKEND_URL.trim().replace(/^[`'"](.*)[`'"]$/, '$1');
-  
-  // 2. If the endpoint already starts with http/https, extract just the path part after the base URL
-  if (cleanEndpoint.toLowerCase().startsWith('http')) {
-    try {
-      const url = new URL(cleanEndpoint);
-      cleanEndpoint = url.pathname + url.search;
-    } catch {}
-  }
-  
-  // 3. Now extract just the path and clean it
-  let path = cleanEndpoint;
-  
-  // Remove any leading api/ or /api/ or ./api/
-  while (
-    path.toLowerCase().startsWith('api/') || 
-    path.toLowerCase().startsWith('/api/') || 
-    path.toLowerCase().startsWith('./api/')
-  ) {
-    if (path.toLowerCase().startsWith('./api/')) {
-      path = path.slice(6);
-    } else if (path.toLowerCase().startsWith('/api/')) {
-      path = path.slice(5);
-    } else {
-      path = path.slice(4);
+export function formatEndpointUrl(endpoint: string): string {
+  let clean = endpoint.trim();
+
+  // 1. Strip out markdown link wrapper if present: [text](url) -> keep only the url
+  if (clean.startsWith('[') && clean.includes('](')) {
+    const match = clean.match(/\]\(([^)]+)\)/);
+    if (match && match[1]) {
+      clean = match[1].trim();
     }
   }
-  
-  // Remove any ./ anywhere in the path
-  path = path.replace(/\.\//g, '');
-  
-  // Remove leading slashes
-  while (path.startsWith('/')) {
-    path = path.slice(1);
+
+  // 2. Clear out any artifact quotes or remaining brackets
+  clean = clean.replace(/[`'"[\]()]/g, '');
+
+  // 3. Extract path + search params if it's a full URL
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    try {
+      const parsed = new URL(clean);
+      clean = parsed.pathname + parsed.search;
+    } catch (e) {
+      // Fallback if parsing fails: remove domain prefix manually
+      clean = clean.replace(/^https?:\/\/[^/]+/, '');
+    }
   }
+
+  // 4. Sanitize the path (strip all ./ and /api redundancies)
+  clean = clean.replace(/\.\//g, '/'); // Convert ./ to /
+  clean = clean.replace(/\/+/g, '/');  // Collapse double slashes // to /
   
-  // 4. Ensure base URL doesn't have trailing slash
-  const baseUrl = cleanBaseUrl.endsWith('/') ? cleanBaseUrl.slice(0, -1) : cleanBaseUrl;
-  
-  // 5. Build final URL
-  const finalUrl = path ? `${baseUrl}/${path}` : baseUrl;
-  
-  return finalUrl;
-};
+  if (clean.startsWith('/api/')) clean = clean.substring(5);
+  if (clean.startsWith('api/')) clean = clean.substring(4);
+  if (clean.startsWith('/')) clean = clean.substring(1);
+
+  // 5. Securely stitch to the clean absolute backend base
+  // Our BACKEND_URL already has /api, so we just need to make sure no double slashes
+  const baseUrl = BACKEND_URL.replace(/\/+$/, '');
+  return clean ? `${baseUrl}/${clean}` : baseUrl;
+}
 
 // Sanitize endpoint to prevent URL duplication (kept for backward compatibility)
 export const sanitizeEndpoint = (endpoint: string): string => {
