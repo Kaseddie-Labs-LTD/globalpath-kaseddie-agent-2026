@@ -24,37 +24,41 @@ const getAdminAuthToken = (): string | null => {
 export function formatEndpointUrl(endpoint: string): string {
   let clean = endpoint.trim();
 
-  // 1. Extreme Markdown/Link extraction: Find the very last path component 
-  // matching something like ./route or /route at the tail end of the text
-  const pathMatch = clean.match(/(?:\.|\/)([^?#\s)]+)(?:\?[^#\s]*)?$/);
-  
-  if (clean.includes('](') && pathMatch) {
-    // If it's a markdown link, extract just the path portion at the end
-    clean = clean.substring(clean.lastIndexOf(')') + 1).trim();
+  // 1. Strip out markdown link wrapper if it encapsulates the URL: [text](url) 
+  // This extracts strictly the target URL inside the parentheses.
+  const markdownLinkRegex = /^\[([^\]]+)\]\(([^)]+)\)/;
+  const match = clean.match(markdownLinkRegex);
+  if (match) {
+    clean = match[2].trim(); // Extract the contents of the (...)
   }
 
-  // 2. Clean out brackets, parentheses, and backticks
+  // 2. Clean out brackets, parentheses, backticks, or trailing dots left by typos
   clean = clean.replace(/[`'"[\]()]/g, '');
+  
+  // Handle absolute path fragments accidentally appended right after the markdown block (e.g., )./leads)
+  if (clean.includes('./')) {
+    clean = clean.replace(/\.\//g, '/');
+  }
 
-  // 3. If a full URL survived, extract just its path
+  // 3. Extract the path component out of the URL string
   if (clean.startsWith('http://') || clean.startsWith('https://')) {
     try {
       const parsed = new URL(clean);
+      // Fallback for cases where path components like /leads get stuck directly to the hostname without a slash
       clean = parsed.pathname + parsed.search;
     } catch (e) {
       clean = clean.replace(/^https?:\/\/[^/]+/, '');
     }
   }
 
-  // 4. Standardize slashes and drop prefixes
-  clean = clean.replace(/\.\//g, '/');
+  // 4. Standardize slashes and strip redundant path prefixes
   clean = clean.replace(/\/+/g, '/');
   
   if (clean.startsWith('/api/')) clean = clean.substring(5);
   if (clean.startsWith('api/')) clean = clean.substring(4);
   if (clean.startsWith('/')) clean = clean.substring(1);
 
-  // 5. Build absolute URL
+  // 5. Build absolute URL targeting your production backend
   const baseUrl = BACKEND_URL.replace(/\/+$/, '');
   return `${baseUrl}/${clean}`;
 }
