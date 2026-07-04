@@ -707,8 +707,7 @@ function App() {
       
       try {
         // 1. Trigger Backend Sync (Apify -> Qdrant) - Now returns immediately
-        const syncRes = await fetcher(sanitizeEndpoint('sync-apify-leads'), { method: 'POST' });
-        const syncData = await syncRes.json();
+        const syncData = await fetcher(sanitizeEndpoint('sync-apify-leads'), { method: 'POST' });
         
         if (syncData.status === 'Accepted') {
           addLog(`OVERSIGHT: ${syncData.message}`, "info", "SYNC");
