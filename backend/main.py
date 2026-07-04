@@ -1280,7 +1280,7 @@ async def recategorize_existing_leads(admin: dict = Depends(require_admin_token)
                     response = await loop.run_in_executor(
                         None, 
                         lambda: gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
+                            model='gemini-2.0-flash',
                             contents=[prompt],
                             config=types.GenerateContentConfig(
                                 max_output_tokens=1024,
@@ -1732,9 +1732,9 @@ async def chat_with_gemini(req: ChatRequest):
         print(f"🔍 [CHAT DEBUG]: Message length: {len(req.message)} chars")
         
         # Use the Gemini client to chat with Gemini 2.5
-        print(f"🔍 [CHAT DEBUG]: Calling Gemini API with model: gemini-2.5-flash")
+        print(f"🔍 [CHAT DEBUG]: Calling Gemini API with model: gemini-2.0-flash")
         response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=[
                 types.Content(
                     role='user',
@@ -1776,7 +1776,7 @@ async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
     """Generate streaming chat response using Gemini 2.5"""
     try:
         stream = gemini_client.models.generate_content_stream(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=[
                 types.Content(
                     role='user',
@@ -1867,7 +1867,7 @@ Format the response as clean text ready for WhatsApp.
         print(f"🎨 [MARKETING]: Calling Gemini 2.5 Flash for content generation...")
         
         response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=[full_prompt],
             config=types.GenerateContentConfig(
                 max_output_tokens=400,
