@@ -59,26 +59,36 @@ const JobItem: React.FC<JobItemProps> = ({
   pitchingId, 
   copiedId,
   isUplinking
-}) => (
-  <div key={job.id} className="admin-data-node p-8 hover:bg-slate-50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group border border-cyan-500/20">
+}) => {
+  // Safe job properties
+  const safeJobCompany = job?.company || "Unknown Company";
+  const safeJobTitle = job?.title || job?.positionName || "Unknown Position";
+  const safeJobDescription = job?.description || safeJobTitle || job?.name || "No description available";
+  const safeJobId = job?.id || "unknown";
+  const safeJobEmail = job?.email || "No Email Found";
+  const safeJobPhone = job?.phone || "No Phone Found";
+  const safeJobWebsite = job?.website || "";
+  
+  return (
+  <div className="admin-data-node p-8 hover:bg-slate-50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 group border border-cyan-500/20">
     <div className="flex-1">
       <div className="flex items-center gap-3 mb-2">
-        <h3 className="text-cyan-400 font-bold text-lg group-hover:text-brand-600 transition-colors">{job.company || "Unknown Company"}</h3>
-        {job.isHighValue && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-1 rounded uppercase tracking-widest">High Value</span>}
+        <h3 className="text-cyan-400 font-bold text-lg group-hover:text-brand-600 transition-colors">{safeJobCompany}</h3>
+        {job?.isHighValue && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-1 rounded uppercase tracking-widest">High Value</span>}
       </div>
       <div className="flex items-center gap-4 text-xs font-bold text-slate-400 mb-3">
-        <span className="flex items-center gap-1"><Building2 size={12} /> {job.company}</span>
-        <span className="flex items-center gap-1"><MapPin size={12} /> {getJobLocationString(job.location)}</span>
-        {job.salary && <span className="flex items-center gap-1 text-emerald-600"><DollarSign size={12} /> {job.salary}</span>}
+        <span className="flex items-center gap-1"><Building2 size={12} /> {safeJobCompany}</span>
+        <span className="flex items-center gap-1"><MapPin size={12} /> {getJobLocationString(job?.location)}</span>
+        {job?.salary && <span className="flex items-center gap-1 text-emerald-600"><DollarSign size={12} /> {job.salary}</span>}
       </div>
       
       {/* Use description with fallback to title */}
-      <p className="text-white text-sm line-clamp-3 mb-3">{job.description || job.title || job.name || "No description available"}</p>
+      <p className="text-white text-sm line-clamp-3 mb-3">{safeJobDescription}</p>
       
       {/* New contact info display */}
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-mono">
-        <span className="text-green-400">📧 {job.email || "No Email Found"}</span>
-        <span className="text-yellow-400">📞 {job.phone || "No Phone Found"}</span>
+        <span className="text-green-400">📧 {safeJobEmail}</span>
+        <span className="text-yellow-400">📞 {safeJobPhone}</span>
       </div>
       
       {/* 🛡️ OVERSIGHT INTEL: B2B GATEWAY */}
@@ -92,18 +102,18 @@ const JobItem: React.FC<JobItemProps> = ({
   
   <div className="grid grid-cols-2 gap-2">
     <a 
-      href={job?.website || '#'} 
+      href={safeJobWebsite || '#'} 
       target="_blank" 
       rel="noopener noreferrer"
       className="flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600 border border-blue-500/50 p-2 rounded transition-all"
     >
       <span className="text-[10px] font-bold">
-        {job?.website?.includes('google.com') ? '🔍 SEARCH WEBSITE' : '🌐 VISIT CORPORATE'}
+        {safeJobWebsite.includes('google.com') ? '🔍 SEARCH WEBSITE' : '🌐 VISIT CORPORATE'}
       </span>
     </a>
 
     <a 
-      href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(job.company)}`}
+      href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(safeJobCompany)}`}
       target="_blank"
       className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 p-2 rounded transition-all"
     >
@@ -117,19 +127,19 @@ const JobItem: React.FC<JobItemProps> = ({
 </div>
       
       <div className="flex gap-2 mt-3">
-         {(job.isVetted || job.status === 'vetted') && <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">Visa Vetted</span>}
-         {(job.ticketIncluded || job.hasTicket) && <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 uppercase">Ticket Included</span>}
-         {(job.accommodationSecured || job.hasAccommodation) && <span className="text-[8px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 uppercase">Accom Secured</span>}
+         {(job?.isVetted || job?.status === 'vetted') && <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">Visa Vetted</span>}
+         {(job?.ticketIncluded || job?.hasTicket) && <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 uppercase">Ticket Included</span>}
+         {(job?.accommodationSecured || job?.hasAccommodation) && <span className="text-[8px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 uppercase">Accom Secured</span>}
       </div>
     </div>
     <div className="flex items-center gap-3">
       <button 
         onClick={() => onPitch(job)} 
-        disabled={pitchingId === job.id || (isUplinking && pitchingId === job.id)}
+        disabled={pitchingId === safeJobId || (isUplinking && pitchingId === safeJobId)}
         className="px-6 py-4 bg-slate-900 hover:bg-brand-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
       >
-        {pitchingId === job.id ? <Loader2 className="animate-spin" size={14} /> : <Zap size={14} />} 
-        {pitchingId === job.id ? 'Uplinking to HR...' : 'Pitch Lead'}
+        {pitchingId === safeJobId ? <Loader2 className="animate-spin" size={14} /> : <Zap size={14} />} 
+        {pitchingId === safeJobId ? 'Uplinking to HR...' : 'Pitch Lead'}
       </button>
       {onSelectForMarketing && (
         <button 
@@ -142,14 +152,15 @@ const JobItem: React.FC<JobItemProps> = ({
         </button>
       )}
       <button 
-        onClick={() => onCopyB2BLink(job.id)}
-        className={`p-4 border rounded-2xl transition-all flex items-center gap-2 ${copiedId === job.id ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
+        onClick={() => onCopyB2BLink(safeJobId)}
+        className={`p-4 border rounded-2xl transition-all flex items-center gap-2 ${copiedId === safeJobId ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
       >
-        {copiedId === job.id ? <Check size={20} /> : <Share2 size={20} />}
+        {copiedId === safeJobId ? <Check size={20} /> : <Share2 size={20} />}
       </button>
     </div>
   </div>
-);
+  );
+};
 
 const INITIAL_PORTALS: VendorPortal[] = [
   { id: '1', name: 'UAE Federal Supplier', region: 'UAE', status: 'Registered', url: 'https://finance.gov.ae/en/services/Pages/SupplierRegistration.aspx' },
@@ -520,10 +531,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   <ChevronRight size={20} className="text-slate-300 group-hover:text-emerald-500 transition-transform group-hover:translate-x-1" />
                 </button>
                 <div className="divide-y divide-slate-50">
-                  {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                  {safeArray<Job>(displayProfessionalJobs).length > 0 ? safeArray<Job>(displayProfessionalJobs).map((job: Job) => (
+                  {/* K2.5 NULL GUARD: Use safeArray before mapping + compound unique keys */}
+                  {safeArray<Job>(displayProfessionalJobs).length > 0 ? safeArray<Job>(displayProfessionalJobs).map((job: Job, index: number) => (
                     <JobItem 
-                      key={job.id} 
+                      key={`lead-sync-${job.id || 'unknown'}-${index}`} 
                       job={job} 
                       onPitch={handlePitchLead}
                       onCopyB2BLink={handleCopyB2BLink}
@@ -554,10 +565,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   <ChevronRight size={20} className="text-slate-300 group-hover:text-brand-500 transition-transform group-hover:translate-x-1" />
                 </button>
                 <div className="divide-y divide-slate-50">
-                  {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                  {safeArray<Job>(displayBlueCollarJobs).length > 0 ? safeArray<Job>(displayBlueCollarJobs).map((job: Job) => (
+                  {/* K2.5 NULL GUARD: Use safeArray before mapping + compound unique keys */}
+                  {safeArray<Job>(displayBlueCollarJobs).length > 0 ? safeArray<Job>(displayBlueCollarJobs).map((job: Job, index: number) => (
                     <JobItem 
-                      key={job.id} 
+                      key={`lead-bluecollar-${job.id || 'unknown'}-${index}`} 
                       job={job} 
                       onPitch={handlePitchLead}
                       onCopyB2BLink={handleCopyB2BLink}
@@ -588,10 +599,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   <ChevronRight size={20} className="text-slate-300 group-hover:text-cyan-500 transition-transform group-hover:translate-x-1" />
                 </button>
                 <div className="divide-y divide-slate-50">
-                  {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                  {safeArray<Job>(serviceDomesticJobs).length > 0 ? safeArray<Job>(serviceDomesticJobs).map((job: Job) => (
+                  {/* K2.5 NULL GUARD: Use safeArray before mapping + compound unique keys */}
+                  {safeArray<Job>(serviceDomesticJobs).length > 0 ? safeArray<Job>(serviceDomesticJobs).map((job: Job, index: number) => (
                     <JobItem 
-                      key={job.id} 
+                      key={`lead-servicedomestic-${job.id || 'unknown'}-${index}`} 
                       job={job} 
                       onPitch={handlePitchLead}
                       onCopyB2BLink={handleCopyB2BLink}
@@ -620,10 +631,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                       </div>
                     </div>
                     <div className="divide-y divide-slate-50">
-                      {/* K2.5 NULL GUARD: Use safeArray before mapping */}
-                      {safeArray<Job>(displayOtherJobs).map((job: Job) => (
+                      {/* K2.5 NULL GUARD: Use safeArray before mapping + compound unique keys */}
+                      {safeArray<Job>(displayOtherJobs).map((job: Job, index: number) => (
                         <JobItem 
-                          key={job.id} 
+                          key={`lead-other-${job.id || 'unknown'}-${index}`} 
                           job={job} 
                           onPitch={handlePitchLead}
                           onCopyB2BLink={handleCopyB2BLink}
