@@ -182,13 +182,32 @@ GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretMana
 BRIGHT_DATA_PROXY_URL = SecretManagerGateway.get_secret("BRIGHT_DATA_PROXY_URL") or os.getenv("BRIGHT_DATA_PROXY_URL")
 GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "true").lower() == "true")
 if GEMINI_API_KEY:
-    # Initialize using the modern client structure with optional Bright Data proxy
+    # Initialize using the modern client structure with official proxy handling
     client_kwargs = {"api_key": GEMINI_API_KEY}
+    http_config = None
+    
     if BRIGHT_DATA_PROXY_URL and GEMINI_USE_PROXY:
-        client_kwargs["http_options"] = {"proxy": BRIGHT_DATA_PROXY_URL}
+        print("🌐 [Kaseddie Agent]: Injecting Bright Data routing layer into SDK runtime...")
+        # The modern SDK picks up standard environment proxy maps before initialization
+        os.environ["HTTP_PROXY"] = BRIGHT_DATA_PROXY_URL
+        os.environ["HTTPS_PROXY"] = BRIGHT_DATA_PROXY_URL
+        
+        # Ensure SOCKS5 or advanced overrides are passed natively via client arguments if needed
+        http_config = types.HttpOptions(
+            client_args={"proxy": BRIGHT_DATA_PROXY_URL},
+            async_client_args={"proxy": BRIGHT_DATA_PROXY_URL}
+        )
+        client_kwargs["http_options"] = http_config
         print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK + Proxy).")
     else:
+        print("🛡️ [Kaseddie Agent]: Bypassing proxy. Direct infrastructure connection active.")
+        # Clear any residual proxy settings from the runtime context to ensure a clean test
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
+        http_config = None
+        client_kwargs["http_options"] = http_config
         print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK, No Proxy).")
+        
     gemini_client = genai.Client(**client_kwargs)
 else:
     gemini_client = None
