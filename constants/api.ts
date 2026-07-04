@@ -3,19 +3,32 @@ const VITE_API_URL = (import.meta as any)?.env?.VITE_API_URL as string | undefin
 const isDevelopment = import.meta.env.DEV;
 
 let baseURL = VITE_API_URL 
-  ? VITE_API_URL 
-  : (isDevelopment 
-    ? 'http://localhost:8000/api'
-    : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api');
+    ? VITE_API_URL 
+    : (isDevelopment 
+        ? 'http://localhost:8000/api'
+        : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api');
 
 // Add aggressive cleaner to strip accidental markdown links and stray artifacts
 if (baseURL.includes('[')) {
-  const match = baseURL.match(/\(([^)]+)\)/);
-  if (match) baseURL = match[1];
+    const match = baseURL.match(/\(([^)]+)\)/);
+    if (match) baseURL = match[1];
 }
 
 // Strip out any trailing markdown artifacts or stray dots before the route slash
-baseURL = baseURL.trim().replace(/[\]\)\.]*$/, '').replace(/\/+$/, '').replace(/[`'"[\]()]/g, '');
+baseURL = baseURL.trim().replace(/[`'"[\]()]/g, '');
+
+// Ensure URL ends with /api, and clean up slashes
+// If baseURL doesn't end with /api, add it!
+if (!baseURL.endsWith('/api')) {
+    // Remove any existing /api from end first, then add it back to be safe
+    baseURL = baseURL.replace(/\/api\/?$/, '') + '/api';
+}
+
+// Clean up any double slashes, except in http:// or https://
+baseURL = baseURL.replace(/([^:])(\/\/+)/g, '$1/');
+
+// Remove trailing slash
+baseURL = baseURL.replace(/\/+$/, '');
 
 export const BACKEND_URL = baseURL;
 
