@@ -180,7 +180,7 @@ QDRANT_API_KEY = SecretManagerGateway.get_secret("QDRANT_API_KEY", "")
 # Gemini Configuration
 GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
 BRIGHT_DATA_PROXY_URL = SecretManagerGateway.get_secret("BRIGHT_DATA_PROXY_URL") or os.getenv("BRIGHT_DATA_PROXY_URL")
-GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "true").lower() == "true")
+GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "false").lower() == "true")
 if GEMINI_API_KEY:
     # Initialize using the modern client structure with official proxy handling
     client_kwargs = {"api_key": GEMINI_API_KEY}
