@@ -24,27 +24,19 @@ const getAdminAuthToken = (): string | null => {
 export function formatEndpointUrl(endpoint: string): string {
   let clean = endpoint.trim();
 
-  // 1. If it's a markdown link [url](url), look at what's OUTSIDE or AFTER the parentheses, 
-  // or extract the path directly from the end of the text string.
-  if (clean.includes('](')) {
-    // If the string looks like `https://domain.com` ./corridor-stats
-    // we want to grab everything after the closing parenthesis.
-    const parts = clean.split(')');
-    if (parts.length > 1 && parts[1].trim() !== '') {
-      clean = parts[1].trim();
-    } else {
-      // Fallback: If the path was somehow inside the markdown text brackets
-      const match = clean.match(/\]\(([^)]+)\)/);
-      if (match && match[1]) {
-        clean = match[1].trim();
-      }
-    }
+  // 1. Extreme Markdown/Link extraction: Find the very last path component 
+  // matching something like ./route or /route at the tail end of the text
+  const pathMatch = clean.match(/(?:\.|\/)([^?#\s)]+)(?:\?[^#\s]*)?$/);
+  
+  if (clean.includes('](') && pathMatch) {
+    // If it's a markdown link, extract just the path portion at the end
+    clean = clean.substring(clean.lastIndexOf(')') + 1).trim();
   }
 
-  // 2. Clear out any remaining artifact brackets, quotes, or stray characters
+  // 2. Clean out brackets, parentheses, and backticks
   clean = clean.replace(/[`'"[\]()]/g, '');
 
-  // 3. Extract path + search params if it still begins with a full URL scheme
+  // 3. If a full URL survived, extract just its path
   if (clean.startsWith('http://') || clean.startsWith('https://')) {
     try {
       const parsed = new URL(clean);
@@ -54,15 +46,15 @@ export function formatEndpointUrl(endpoint: string): string {
     }
   }
 
-  // 4. Sanitize the path structure thoroughly
-  clean = clean.replace(/\.\//g, '/'); // Convert ./ to /
-  clean = clean.replace(/\/+/g, '/');  // Collapse multiple slashes // to /
+  // 4. Standardize slashes and drop prefixes
+  clean = clean.replace(/\.\//g, '/');
+  clean = clean.replace(/\/+/g, '/');
   
   if (clean.startsWith('/api/')) clean = clean.substring(5);
   if (clean.startsWith('api/')) clean = clean.substring(4);
   if (clean.startsWith('/')) clean = clean.substring(1);
 
-  // 5. Securely stitch to the clean absolute backend base URL (which already contains /api)
+  // 5. Build absolute URL
   const baseUrl = BACKEND_URL.replace(/\/+$/, '');
   return `${baseUrl}/${clean}`;
 }
