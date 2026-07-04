@@ -180,13 +180,16 @@ QDRANT_API_KEY = SecretManagerGateway.get_secret("QDRANT_API_KEY", "")
 # Gemini Configuration
 GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
 BRIGHT_DATA_PROXY_URL = SecretManagerGateway.get_secret("BRIGHT_DATA_PROXY_URL") or os.getenv("BRIGHT_DATA_PROXY_URL")
+GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "true").lower() == "true")
 if GEMINI_API_KEY:
-    # Initialize using the modern client structure with Bright Data proxy to bypass Google IP blocks
+    # Initialize using the modern client structure with optional Bright Data proxy
     client_kwargs = {"api_key": GEMINI_API_KEY}
-    if BRIGHT_DATA_PROXY_URL:
+    if BRIGHT_DATA_PROXY_URL and GEMINI_USE_PROXY:
         client_kwargs["http_options"] = {"proxy": BRIGHT_DATA_PROXY_URL}
+        print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK + Proxy).")
+    else:
+        print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK, No Proxy).")
     gemini_client = genai.Client(**client_kwargs)
-    print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK).")
 else:
     gemini_client = None
     print(f"❌ [GEMINI]: API Key missing. Compliance route limited.")
