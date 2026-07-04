@@ -26,31 +26,47 @@ const getAdminAuthToken = (): string | null => {
  */
 export const formatEndpointUrl = (endpoint: string): string => {
   // 1. Clean both the endpoint and the base URL: strip backticks, quotes, whitespace
-  const cleanEndpoint = endpoint.trim().replace(/^[`'"](.*)[`'"]$/, '$1');
+  let cleanEndpoint = endpoint.trim().replace(/^[`'"](.*)[`'"]$/, '$1');
   const cleanBaseUrl = BACKEND_URL.trim().replace(/^[`'"](.*)[`'"]$/, '$1');
   
-  // 2. Strip any leading slashes, ./, or /api/ from the endpoint to prevent duplication
+  // 2. If the endpoint already starts with http/https, extract just the path part after the base URL
+  if (cleanEndpoint.toLowerCase().startsWith('http')) {
+    try {
+      const url = new URL(cleanEndpoint);
+      cleanEndpoint = url.pathname + url.search;
+    } catch {}
+  }
+  
+  // 3. Now extract just the path and clean it
   let path = cleanEndpoint;
   
-  // Remove any leading ./ or ../ (but not deep ../, just leading ones)
-  while (path.startsWith('./')) {
-    path = path.slice(2);
+  // Remove any leading api/ or /api/ or ./api/
+  while (
+    path.toLowerCase().startsWith('api/') || 
+    path.toLowerCase().startsWith('/api/') || 
+    path.toLowerCase().startsWith('./api/')
+  ) {
+    if (path.toLowerCase().startsWith('./api/')) {
+      path = path.slice(6);
+    } else if (path.toLowerCase().startsWith('/api/')) {
+      path = path.slice(5);
+    } else {
+      path = path.slice(4);
+    }
   }
+  
+  // Remove any ./ anywhere in the path
+  path = path.replace(/\.\//g, '');
   
   // Remove leading slashes
   while (path.startsWith('/')) {
     path = path.slice(1);
   }
   
-  // Remove leading /api/ if it exists
-  if (path.toLowerCase().startsWith('api/')) {
-    path = path.slice(4);
-  }
-  
-  // 3. Ensure base URL doesn't have trailing slash
+  // 4. Ensure base URL doesn't have trailing slash
   const baseUrl = cleanBaseUrl.endsWith('/') ? cleanBaseUrl.slice(0, -1) : cleanBaseUrl;
   
-  // 4. Build final URL
+  // 5. Build final URL
   const finalUrl = path ? `${baseUrl}/${path}` : baseUrl;
   
   return finalUrl;
