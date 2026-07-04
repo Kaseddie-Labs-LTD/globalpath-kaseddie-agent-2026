@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { Send, Phone, MoreVertical, ArrowLeft, Paperclip, Smile, Camera, Mic, Briefcase, MapPin, Search, Megaphone, CheckCircle2, Copy, ExternalLink, Hash, Users, ShieldCheck, Zap, Eye } from 'lucide-react';
 import { UserProfile, Job, getJobLocationString } from '../types';
 import { searchAndMatchJobs } from '../services/ai';
+import { fetcher } from '../constants/api';
 
 interface Message {
   id: string;
@@ -146,24 +146,23 @@ export const WhatsAppBot: React.FC<WhatsAppBotProps> = ({ profile, verifiedJobs 
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: input,
-        config: {
-          systemInstruction: `You are Kaseddie, a professional recruitment agent for GlobalPath. 
-          Help users find blue-collar jobs in GCC and Europe. Keep responses concise and use emojis. 
-          Focus on Zero-Fee recruitment and document verification.`,
-        }
+      // Use backend chat endpoint instead of direct GoogleGenAI
+      const response = await fetcher('/agent/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: input 
+        })
       });
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
-        text: response.text || "I'm recalibrating. Please repeat that.",
+        text: response?.reply || "I'm recalibrating. Please repeat that.",
         sender: 'bot',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         type: 'text'
       }]);
     } catch (e) {
+      console.warn('Failed to send message:', e);
       setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), text: "⚠️ Uplink lost.", sender: 'bot', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), type: 'text' }]);
     } finally {
       setIsTyping(false);
