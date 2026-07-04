@@ -21,7 +21,23 @@ const getAdminAuthToken = (): string | null => {
   }
 };
 
-// Sanitize endpoint to prevent URL duplication
+/**
+ * Formats an endpoint URL by sanitizing path prefixes and ensuring absolute execution
+ */
+export const formatEndpointUrl = (endpoint: string): string => {
+  // Clear out any accidental dot-slash characters at the front of the route
+  const sanitizedEndpoint = endpoint.replace(/^\.?\//, '');
+  
+  // Remove any leading /api/ to prevent duplication with BACKEND_URL
+  const noApiPrefix = sanitizedEndpoint.replace(/^\/api\//, '');
+  
+  // Ensure we don't double up on slashes between domain and path
+  const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+  
+  return `${baseUrl}/${noApiPrefix}`;
+};
+
+// Sanitize endpoint to prevent URL duplication (kept for backward compatibility)
 export const sanitizeEndpoint = (endpoint: string): string => {
   // Remove any hardcoded production URLs
   const cleanEndpoint = endpoint.replace(/https:\/\/[^\/]+/g, '');
@@ -32,15 +48,9 @@ export const sanitizeEndpoint = (endpoint: string): string => {
 };
 
 // Fetcher function for SWR that automatically adds API prefix
-export const fetcher = async (url: string, options?: RequestInit & { timeout?: number }) => {
-  // 1. If the URL already starts with /api, remove it so we don't double up
-  const path = url.startsWith('/api') ? url.replace('/api', '') : url;
-  
-  // 2. Ensure path starts with a single slash
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  
-  // 3. Final URL construction
-  const fullUrl = `${BACKEND_URL}${cleanPath}`;
+export const fetcher = async (endpoint: string, options?: RequestInit & { timeout?: number }) => {
+  // 1. Format the endpoint to ensure absolute URL
+  const fullUrl = formatEndpointUrl(endpoint);
   
   console.log(' [FIXED PRODUCTION FETCH]:', fullUrl);
 
