@@ -194,43 +194,68 @@ GEMINI_USE_VERTEXAI = (os.getenv("GEMINI_USE_VERTEXAI", "true").lower() == "true
 
 # Initialize gemini_client to None by default
 gemini_client = None
-client_kwargs = {}
 
-if GEMINI_USE_VERTEXAI:
-    # Use Vertex AI backend (enterprise mode)
-    print("🚀 [Kaseddie Agent]: Initializing Vertex AI Enterprise Client...")
-    client_kwargs["vertexai"] = True
-    client_kwargs["project"] = GCP_PROJECT_ID
-    client_kwargs["location"] = GCP_REGION
-elif GEMINI_API_KEY:
-    # Standard developer AI Studio fallback
-    client_kwargs["api_key"] = GEMINI_API_KEY
-else:
-    print(f"❌ [GEMINI]: API Key or Vertex configuration missing. Compliance route limited.")
-
-# Add proxy if needed
-if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
-    print("🌐 [Kaseddie Agent]: Injecting proxy routing layer into SDK runtime...")
-    os.environ["HTTP_PROXY"] = GEMINI_PROXY_URL
-    os.environ["HTTPS_PROXY"] = GEMINI_PROXY_URL
-    
-    http_config = types.HttpOptions(
-        client_args={"proxy": GEMINI_PROXY_URL},
-        async_client_args={"proxy": GEMINI_PROXY_URL}
-    )
-    client_kwargs["http_options"] = http_config
-else:
-    print("🛡️ [Kaseddie Agent]: Bypassing proxy. Direct infrastructure connection active.")
-    os.environ.pop("HTTP_PROXY", None)
-    os.environ.pop("HTTPS_PROXY", None)
-
-# Initialize the client if we have valid kwargs
-if client_kwargs:
-    gemini_client = genai.Client(**client_kwargs)
-    if GEMINI_USE_VERTEXAI:
-        print(f"✅ [GEMINI]: Vertex Enterprise Mode Active (Project: {GCP_PROJECT_ID}, Region: {GCP_REGION})")
+def init_gemini():
+    """Initialize Gemini client with safe fallbacks for ADC errors"""
+    # Proxy setup first
+    if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
+        print("🌐 [Kaseddie Agent]: Injecting proxy routing layer into SDK runtime...")
+        os.environ["HTTP_PROXY"] = GEMINI_PROXY_URL
+        os.environ["HTTPS_PROXY"] = GEMINI_PROXY_URL
     else:
-        print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK)")
+        print("🛡️ [Kaseddie Agent]: Bypassing proxy. Direct infrastructure connection active.")
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
+
+    if GEMINI_USE_VERTEXAI:
+        # Try Vertex AI first
+        try:
+            print("🚀 [Kaseddie Agent]: Initializing Vertex AI Enterprise Client...")
+            client_kwargs = {
+                "vertexai": True,
+                "project": GCP_PROJECT_ID,
+                "location": GCP_REGION
+            }
+            # Add proxy if needed
+            if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
+                http_config = types.HttpOptions(
+                    client_args={"proxy": GEMINI_PROXY_URL},
+                    async_client_args={"proxy": GEMINI_PROXY_URL}
+                )
+                client_kwargs["http_options"] = http_config
+            
+            client = genai.Client(**client_kwargs)
+            print(f"✅ [GEMINI]: Vertex Enterprise Mode Active (Project: {GCP_PROJECT_ID}, Region: {GCP_REGION})")
+            return client
+        except Exception as e:
+            print(f"⚠️ [GEMINI]: Vertex initialization failed (ADC missing?): {str(e)}. Falling back to AI Studio API Key...")
+            # Fall through to API key mode
+    
+    # Try API Key mode
+    if GEMINI_API_KEY:
+        try:
+            client_kwargs = {
+                "api_key": GEMINI_API_KEY
+            }
+            # Add proxy if needed
+            if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
+                http_config = types.HttpOptions(
+                    client_args={"proxy": GEMINI_PROXY_URL},
+                    async_client_args={"proxy": GEMINI_PROXY_URL}
+                )
+                client_kwargs["http_options"] = http_config
+            
+            client = genai.Client(**client_kwargs)
+            print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK)")
+            return client
+        except Exception as e:
+            print(f"❌ [GEMINI]: API Key initialization failed: {str(e)}. Compliance route limited.")
+    else:
+        print(f"❌ [GEMINI]: API Key or Vertex configuration missing. Compliance route limited.")
+    
+    return None
+
+gemini_client = init_gemini()
 
 if not GROQ_KEY:
     print("ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
