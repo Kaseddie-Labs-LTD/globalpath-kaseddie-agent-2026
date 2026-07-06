@@ -11,10 +11,25 @@ interface SearchSummaryProps {
   onSectorClick?: (sector: string) => void;
   regionJobCounts?: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }>;
   pendingCount?: number;
+  backendStats?: Array<{ region: string; count: number }>;
 }
 
-export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick, onSectorClick, regionJobCounts, pendingCount = 0 }) => {
+export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick, onSectorClick, regionJobCounts, pendingCount = 0, backendStats }) => {
   try {
+    // 1. Safely extract the stats array from backend
+    const corridorStats = React.useMemo(() => {
+      try {
+        if (!backendStats || !Array.isArray(backendStats)) return [];
+        return backendStats.map((item: any) => ({
+          region: item?.region || 'Unknown Corridor',
+          count: safeNumber(item?.count, 0)
+        }));
+      } catch (error) {
+        console.error("SearchSummary backendStats error:", error);
+        return [];
+      }
+    }, [backendStats]);
+
     const mappedRegionJobCounts = React.useMemo(() => {
       try {
         if (!jobs || !Array.isArray(jobs)) return {};
@@ -196,6 +211,26 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
     const isDataReady = React.useMemo(() => {
       return sanitizedStats && sanitizedStats.length > 0 && totalLeads > 0;
     }, [sanitizedStats, totalLeads]);
+
+    // 2. Sync Card Guards - Safely unpack sync metrics with deep optional chaining
+    const syncMetrics = React.useMemo(() => {
+      try {
+        return {
+          total_leads: safeNumber(sectorCounts?.professionalCount + sectorCounts?.blueCollarCount + sectorCounts?.serviceDomesticCount, 0),
+          blue_collar: safeNumber(sectorCounts?.blueCollarCount, 0),
+          professional: safeNumber(sectorCounts?.professionalCount, 0),
+          service_domestic: safeNumber(sectorCounts?.serviceDomesticCount, 0)
+        };
+      } catch (error) {
+        console.error("SearchSummary syncMetrics error:", error);
+        return {
+          total_leads: 0,
+          blue_collar: 0,
+          professional: 0,
+          service_domestic: 0
+        };
+      }
+    }, [sectorCounts]);
 
     // KIMI K2.5: Don't return null, render something even if no stats
   if (!sanitizedStats || sanitizedStats.length === 0) {
@@ -384,9 +419,23 @@ export const SearchSummary: React.FC<SearchSummaryProps> = ({ jobs, onNodeClick,
 
       
       <div className="pt-4 border-t border-slate-100 mt-auto">
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] font-black text-slate-400 uppercase">Verified Active Nodes</span>
-          <span className="text-sm font-black text-slate-900">{safeArray(jobs)?.length || 0}</span>
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black text-slate-400 uppercase">Total Leads</span>
+            <span className="text-sm font-black text-slate-900">{syncMetrics?.total_leads ?? 0}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black text-slate-400 uppercase">Blue Collar</span>
+            <span className="text-sm font-black text-slate-900">{syncMetrics?.blue_collar ?? 0}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black text-slate-400 uppercase">Professional</span>
+            <span className="text-sm font-black text-slate-900">{syncMetrics?.professional ?? 0}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black text-slate-400 uppercase">Service & Domestic</span>
+            <span className="text-sm font-black text-slate-900">{syncMetrics?.service_domestic ?? 0}</span>
+          </div>
         </div>
       </div>
     </div>

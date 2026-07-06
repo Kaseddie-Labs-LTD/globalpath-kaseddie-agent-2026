@@ -734,7 +734,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
         <div className="col-span-12 lg:col-span-4 space-y-6">
            {/* KIMI K2.5: Pass sanitizedJobs to SearchSummary for crash protection */}
            {sanitizedJobs && sanitizedJobs.length > 0 ? (
-             <SearchSummary jobs={sanitizedJobs as any} onNodeClick={handleNodeClickSafe} onSectorClick={(sector) => onAddLog(`Sector filter: ${sector}`, 'info')} />
+             <SearchSummary 
+               jobs={sanitizedJobs as any} 
+               onNodeClick={handleNodeClickSafe} 
+               onSectorClick={(sector) => onAddLog(`Sector filter: ${sector}`, 'info')}
+               backendStats={undefined} // Pass backend stats when available from SWR
+             />
            ) : (
              <div className="p-4 bg-slate-800 text-white rounded-lg">
                <div className="flex items-center gap-2">
