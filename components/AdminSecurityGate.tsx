@@ -31,7 +31,7 @@ export const AdminSecurityGate: React.FC<AdminSecurityGateProps> = ({ onAuthenti
     setIsSubmitting(true);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/admin/login`, {
+      const res = await fetch(`${BACKEND_URL}/api/admin/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

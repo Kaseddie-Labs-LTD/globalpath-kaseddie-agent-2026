@@ -101,7 +101,7 @@ function App() {
   const [isGatekeeperMode, setIsGatekeeperMode] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     try {
-      return sessionStorage.getItem('gp_admin_auth') === 'true';
+      return sessionStorage.getItem('gp_admin_auth_token') !== null;
     } catch { return false; }
   });
   const [activePitch, setActivePitch] = useState<{pitch: B2BPitch, job: Job} | null>(null);

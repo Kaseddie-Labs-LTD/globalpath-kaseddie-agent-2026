@@ -32,7 +32,7 @@ const KaseddieChat = () => {
 
     try {
       // MISSION 2: Universal Handshake - Use explicit BACKEND_URL with credentials
-      const res = await fetch(`${BACKEND_URL}/agent/chat`, {
+      const res = await fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
