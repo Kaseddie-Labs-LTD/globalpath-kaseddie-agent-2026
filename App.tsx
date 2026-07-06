@@ -405,14 +405,14 @@ function App() {
   }, [addLog, enrollmentInterestJob, profile]);
 
   const computeBatchesFromJobs = useCallback((list: Job[]): RecruitmentBatch[] => {
-    const corridors = [
+    const corridors: Array<{ key: string; id: string; label: string }> = [
       { key: 'Dubai Hub', id: 'BATCH-UAE', label: 'Dubai Hub -> Logistics' },
       { key: 'EU-Central (Germany)', id: 'BATCH-DEU', label: 'EU-Central (Germany) -> Medical/Tech' },
       { key: 'Canada', id: 'BATCH-CAN', label: 'Canada -> Infrastructure' },
       { key: 'Premium Node', id: 'BATCH-LUX', label: 'Premium Node -> Finance/Tech' },
     ];
     
-    return safeArray(corridors).map(cor => {
+    return (safeArray(corridors) as Array<{ key: string; id: string; label: string }>).map(cor => {
       try {
         const group = safeArray(list).filter(j => {
           try {
