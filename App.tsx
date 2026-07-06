@@ -412,17 +412,35 @@ function App() {
       { key: 'Premium Node', id: 'BATCH-LUX', label: 'Premium Node -> Finance/Tech' },
     ];
     
-    return corridors.map(cor => {
-      const group = (list || []).filter(j => {
-          const region = computeRegionLabelFromLocation(j);
-          if (cor.key === 'Canada') return region === 'Western Corridor' && getJobLocationString(j.location).toLowerCase().includes('canada');
-          return region === cor.key;
-      });
-      const size = group.length;
-      const verifiedCount = group.filter(j => !(j as any).illegalFeeDetected).length;
-      const status: RecruitmentBatch['status'] = verifiedCount > 0 ? 'verified' : (size > 0 ? 'processing' : 'pending');
-      const priority: RecruitmentBatch['priority'] = cor.key === 'GCC Corridor' || cor.key === 'Canada' ? 'high' : 'normal';
-      return { id: cor.id, corridor: cor.label, size, verifiedCount, status, priority };
+    return safeArray(corridors).map(cor => {
+      try {
+        const group = safeArray(list).filter(j => {
+          try {
+            const region = computeRegionLabelFromLocation(j);
+            if (cor.key === 'Canada') {
+              const loc = getJobLocationString(j?.location).toLowerCase();
+              return region === 'Western Corridor' && loc.includes('canada');
+            }
+            return region === cor.key;
+          } catch {
+            return false;
+          }
+        });
+        const size = group.length;
+        const verifiedCount = safeArray(group).filter(j => {
+          try {
+            return !(j as any)?.illegalFeeDetected;
+          } catch {
+            return true;
+          }
+        }).length;
+        const status: RecruitmentBatch['status'] = verifiedCount > 0 ? 'verified' : (size > 0 ? 'processing' : 'pending');
+        const priority: RecruitmentBatch['priority'] = cor.key === 'GCC Corridor' || cor.key === 'Canada' ? 'high' : 'normal';
+        return { id: cor.id, corridor: cor.label, size, verifiedCount, status, priority };
+      } catch (error) {
+        console.error("computeBatchesFromJobs error:", error);
+        return { id: cor.id, corridor: cor.label, size: 0, verifiedCount: 0, status: 'pending', priority: 'normal' };
+      }
     });
   }, [computeRegionLabelFromLocation]);
 
@@ -1083,7 +1101,23 @@ function App() {
                 <div>
               {/* MISSION 3: Corridor Feed - Fees Blocked linked to Qdrant vetted count */}
                   <ErrorBoundary>
-                    <CorridorFeed nodesActive={(jobs || []).length} feesBlocked={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} leads={jobs} />
+                    <CorridorFeed 
+                      nodesActive={safeArray(jobs).length} 
+                      feesBlocked={(function() { 
+                        try { 
+                          return safeArray(jobs).filter(j => { 
+                            try { 
+                              return (j as any)?.fee_blocked === true || (j as any)?.illegalFeeDetected === true; 
+                            } catch { 
+                              return false; 
+                            } 
+                          }).length; 
+                        } catch { 
+                          return 0; 
+                        } 
+                      })()} 
+                      leads={jobs} 
+                    />
                   </ErrorBoundary>
                 </div>
                 <div>
@@ -1095,8 +1129,20 @@ function App() {
                   {/* MISSION 3: Fees Blocked Counter - Linked to Qdrant Vetted/Zero-Fee Leads */}
                   <ErrorBoundary>
                     <FeesBlockedCard 
-                      flaggedLeadsCount={jobs.filter(j => (j as any).fee_blocked === true || (j as any).illegalFeeDetected === true).length} 
-                      totalLeadsCount={(jobs || []).length} 
+                      flaggedLeadsCount={(function() { 
+                        try { 
+                          return safeArray(jobs).filter(j => { 
+                            try { 
+                              return (j as any)?.fee_blocked === true || (j as any)?.illegalFeeDetected === true; 
+                            } catch { 
+                              return false; 
+                            } 
+                          }).length; 
+                        } catch { 
+                          return 0; 
+                        } 
+                      })()} 
+                      totalLeadsCount={safeArray(jobs).length} 
                       onClick={() => setView(AppView.BLOCK_REPORT)}
                     />
                   </ErrorBoundary>
