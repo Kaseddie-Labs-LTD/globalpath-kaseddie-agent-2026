@@ -14,7 +14,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from google.genai import vertex
 from google.cloud import secretmanager
 
 # Set up a structured, clean logger format
@@ -191,42 +190,47 @@ GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "false").lower() == "true")
 # Vertex Configuration
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0919830960")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
-GEMINI_USE_VERTEX = (os.getenv("GEMINI_USE_VERTEX", "true").lower() == "true")
+GEMINI_USE_VERTEXAI = (os.getenv("GEMINI_USE_VERTEXAI", "true").lower() == "true")
 
-if GEMINI_USE_VERTEX:
-    # Explicit enterprise initialization via the vertex module
+# Initialize gemini_client to None by default
+gemini_client = None
+client_kwargs = {}
+
+if GEMINI_USE_VERTEXAI:
+    # Use Vertex AI backend (enterprise mode)
     print("🚀 [Kaseddie Agent]: Initializing Vertex AI Enterprise Client...")
-    gemini_client = vertex.Client(
-        project=GCP_PROJECT_ID, 
-        location=GCP_REGION
-    )
-    print(f"✅ [GEMINI]: Vertex Enterprise Mode Active (Project: {GCP_PROJECT_ID}, Region: {GCP_REGION})")
+    client_kwargs["vertexai"] = True
+    client_kwargs["project"] = GCP_PROJECT_ID
+    client_kwargs["location"] = GCP_REGION
 elif GEMINI_API_KEY:
     # Standard developer AI Studio fallback
-    if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
-        print("🌐 [Kaseddie Agent]: Injecting proxy routing layer into SDK runtime...")
-        os.environ["HTTP_PROXY"] = GEMINI_PROXY_URL
-        os.environ["HTTPS_PROXY"] = GEMINI_PROXY_URL
-        
-        http_config = types.HttpOptions(
-            client_args={"proxy": GEMINI_PROXY_URL},
-            async_client_args={"proxy": GEMINI_PROXY_URL}
-        )
-        gemini_client = genai.Client(
-            api_key=GEMINI_API_KEY,
-            http_options=http_config
-        )
-        print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK + Proxy).")
-    else:
-        print("🛡️ [Kaseddie Agent]: Bypassing proxy. Direct infrastructure connection active.")
-        os.environ.pop("HTTP_PROXY", None)
-        os.environ.pop("HTTPS_PROXY", None)
-        
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK, No Proxy).")
+    client_kwargs["api_key"] = GEMINI_API_KEY
 else:
-    gemini_client = None
-    print(f"❌ [GEMINI]: API Key missing. Compliance route limited.")
+    print(f"❌ [GEMINI]: API Key or Vertex configuration missing. Compliance route limited.")
+
+# Add proxy if needed
+if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
+    print("🌐 [Kaseddie Agent]: Injecting proxy routing layer into SDK runtime...")
+    os.environ["HTTP_PROXY"] = GEMINI_PROXY_URL
+    os.environ["HTTPS_PROXY"] = GEMINI_PROXY_URL
+    
+    http_config = types.HttpOptions(
+        client_args={"proxy": GEMINI_PROXY_URL},
+        async_client_args={"proxy": GEMINI_PROXY_URL}
+    )
+    client_kwargs["http_options"] = http_config
+else:
+    print("🛡️ [Kaseddie Agent]: Bypassing proxy. Direct infrastructure connection active.")
+    os.environ.pop("HTTP_PROXY", None)
+    os.environ.pop("HTTPS_PROXY", None)
+
+# Initialize the client if we have valid kwargs
+if client_kwargs:
+    gemini_client = genai.Client(**client_kwargs)
+    if GEMINI_USE_VERTEXAI:
+        print(f"✅ [GEMINI]: Vertex Enterprise Mode Active (Project: {GCP_PROJECT_ID}, Region: {GCP_REGION})")
+    else:
+        print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK)")
 
 if not GROQ_KEY:
     print("ERROR: VITE_GROQ_API_KEY or GROQ_API_KEY not found!")
