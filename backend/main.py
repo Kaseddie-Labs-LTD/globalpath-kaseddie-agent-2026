@@ -187,6 +187,10 @@ GEMINI_PROXY_URL = (
     or os.getenv("BRIGHT_DATA_PROXY_URL")
 )
 GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "false").lower() == "true")
+# Vertex Configuration
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0919830960")
+GCP_REGION = os.getenv("GCP_REGION", "us-central1")
+GEMINI_USE_VERTEX = (os.getenv("GEMINI_USE_VERTEX", "true").lower() == "true")
 
 if GEMINI_API_KEY:
     if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
@@ -200,18 +204,33 @@ if GEMINI_API_KEY:
             client_args={"proxy": GEMINI_PROXY_URL},
             async_client_args={"proxy": GEMINI_PROXY_URL}
         )
-        gemini_client = genai.Client(
-            api_key=GEMINI_API_KEY,
-            http_options=http_config
-        )
+        client_kwargs = {
+            "http_options": http_config
+        }
+        if GEMINI_USE_VERTEX:
+            client_kwargs["vertex"] = True
+            client_kwargs["project"] = GCP_PROJECT_ID
+            client_kwargs["location"] = GCP_REGION
+        else:
+            client_kwargs["api_key"] = GEMINI_API_KEY
+        
+        gemini_client = genai.Client(**client_kwargs)
         print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK + Proxy).")
     else:
         print("🛡️ [Kaseddie Agent]: Bypassing proxy. Direct infrastructure connection active.")
         # Clear any residual proxy settings from the runtime context to ensure a clean test
         os.environ.pop("HTTP_PROXY", None)
         os.environ.pop("HTTPS_PROXY", None)
-        # Standard direct connection fallback
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        client_kwargs = {}
+        if GEMINI_USE_VERTEX:
+            client_kwargs["vertex"] = True
+            client_kwargs["project"] = GCP_PROJECT_ID
+            client_kwargs["location"] = GCP_REGION
+        else:
+            client_kwargs["api_key"] = GEMINI_API_KEY
+        
+        gemini_client = genai.Client(**client_kwargs)
         print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK, No Proxy).")
 else:
     gemini_client = None
