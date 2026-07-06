@@ -414,7 +414,7 @@ function App() {
     
     return (safeArray(corridors) as Array<{ key: string; id: string; label: string }>).map(cor => {
       try {
-        const group = safeArray(list).filter(j => {
+        const group = safeArray(list).filter((j: Job) => {
           try {
             const region = computeRegionLabelFromLocation(j);
             if (cor.key === 'Canada') {
