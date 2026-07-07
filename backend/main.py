@@ -200,7 +200,7 @@ GEMINI_PROXY_URL = (
 )
 GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "false").lower() == "true")
 # Vertex Configuration
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0919830960")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "Global-Path-kaseddie-AI-Agent")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 GEMINI_USE_VERTEXAI = (os.getenv("GEMINI_USE_VERTEXAI", "true").lower() == "true")
 
