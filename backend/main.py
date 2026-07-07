@@ -191,11 +191,9 @@ QDRANT_API_KEY = SecretManagerGateway.get_secret("QDRANT_API_KEY", "")
 
 # Gemini Configuration
 GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
-# Support both BRIGHT_DATA_PROXY_URL and GEMINI_PROXY_URL for flexibility
+# Support both BRIGHT_DATA_PROXY_URL and GEMINI_PROXY_URL for flexibility - bypass SecretManagerGateway to avoid 403 warnings
 GEMINI_PROXY_URL = (
-    SecretManagerGateway.get_secret("GEMINI_PROXY_URL") 
-    or os.getenv("GEMINI_PROXY_URL") 
-    or SecretManagerGateway.get_secret("BRIGHT_DATA_PROXY_URL") 
+    os.getenv("GEMINI_PROXY_URL") 
     or os.getenv("BRIGHT_DATA_PROXY_URL")
 )
 GEMINI_USE_PROXY = (os.getenv("GEMINI_USE_PROXY", "false").lower() == "true")
