@@ -43,10 +43,18 @@ class SecretManagerGateway:
 
     @classmethod
     def get_secret(cls, secret_id: str, default: str = None) -> str:
-        """Fetch secret from GCP with local .env fallback."""
+        """Fetch secret from local environment first, then GCP Secret Manager as fallback."""
         if secret_id in cls._cache:
             return cls._cache[secret_id]
 
+        # OPTIMIZATION: Check local environment first to avoid slow GCP API timeouts
+        val = os.getenv(secret_id)
+        if val:
+            cls._cache[secret_id] = val
+            print(f"🏠 [LOCAL SECRET]: Using local environment for '{secret_id}'.")
+            return val
+
+        # Only attempt GCP Secret Manager if variable is missing locally
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         client = cls.get_client()
 
@@ -61,11 +69,10 @@ class SecretManagerGateway:
             except Exception as e:
                 print(f"⚠️ [GCP SECRET]: Failed to fetch '{secret_id}': {e}")
 
-        # Three-Line Stability Protocol Fallback
-        val = os.getenv(secret_id) or default
-        if val:
-            print(f"🏠 [LOCAL SECRET]: Using local .env for '{secret_id}'.")
-        return val
+        # Final fallback to default
+        if default:
+            print(f"🔧 [DEFAULT SECRET]: Using default value for '{secret_id}'.")
+        return default
 
 # --- GEMINI SEARCH GROUNDING UTILITY ---
 async def get_grounded_contact_data(company_name: str, job_title: str) -> dict:
