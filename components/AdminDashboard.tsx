@@ -204,12 +204,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
   useEffect(() => {
     // KIMI K2.5: Use sanitizedJobs for logging to prevent errors on corrupted data
-    console.log("🛠️ [Admin Dashboard Sync]:", { 
-      total_leads: sanitizedJobs.length, 
-      professional: sanitizedJobs.filter(j => j.category === 'professional').length,
-      blue_collar: sanitizedJobs.filter(j => j.category === 'blue_collar').length,
-      service_domestic: sanitizedJobs.filter(j => j.category === 'service_domestic').length
-    });
+    try {
+      console.log("🛠️ [Admin Dashboard Sync]:", {
+        total_leads: sanitizedJobs?.length ?? 0,
+        professional: sanitizedJobs?.filter((j: Job) => j?.category === 'professional').length ?? 0,
+        blue_collar: sanitizedJobs?.filter((j: Job) => j?.category === 'blue_collar').length ?? 0,
+        service_domestic: sanitizedJobs?.filter((j: Job) => j?.category === 'service_domestic').length ?? 0
+      });
+    } catch (error) {
+      console.error("Admin Dashboard Sync logging error:", error);
+    }
   }, [sanitizedJobs]);
 
   const [activeTab, setActiveTab] = useState<'leads' | 'portals' | 'marketing'>('leads');
@@ -412,10 +416,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   }, [sanitizedJobs]);
   
   // KIMI K2.5: Use sanitizedJobs.category which is already computed
-  const professionalJobs = sortedHrJobs.filter(j => j.category === 'professional');
-  const blueCollarJobs = sortedHrJobs.filter(j => j.category === 'blue_collar');
-  const serviceDomesticJobs = sortedHrJobs.filter(j => j.category === 'service_domestic');
-  const otherJobs = sortedHrJobs.filter(j => j.category !== 'professional' && j.category !== 'blue_collar' && j.category !== 'service_domestic');
+  const professionalJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category === 'professional'), [sortedHrJobs]);
+  const blueCollarJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category === 'blue_collar'), [sortedHrJobs]);
+  const serviceDomesticJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category === 'service_domestic'), [sortedHrJobs]);
+  const otherJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category !== 'professional' && j?.category !== 'blue_collar' && j?.category !== 'service_domestic'), [sortedHrJobs]);
   
   // Defensive: SWR data resolves asynchronously, so coerce to a safe number for
   // every downstream calculation. Prevents NaN/undefined crashes on first render.
@@ -426,18 +430,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
   const feesBlockedCount = React.useMemo(() => {
     // Assuming each blocked fee saves $2500
-    return safeTotalLeads * 2500;
+    try {
+      return (safeTotalLeads ?? 0) * 2500;
+    } catch {
+      return 0;
+    }
   }, [safeTotalLeads]);
 
   const verifiedPlacementsCount = React.useMemo(() => {
     // Assuming 90% of total leads are verified placements
-    return Math.floor(safeTotalLeads * 0.9);
+    try {
+      return Math.floor((safeTotalLeads ?? 0) * 0.9);
+    } catch {
+      return 0;
+    }
   }, [safeTotalLeads]);
   
   const emergencyShowAll = true; // Set to true to bypass all filters
-  const displayProfessionalJobs = emergencyShowAll ? sortedHrJobs : professionalJobs;
-  const displayBlueCollarJobs = emergencyShowAll ? [] : blueCollarJobs; // Keep empty to test sector assignment
-  const displayOtherJobs = emergencyShowAll ? [] : otherJobs;
+  const displayProfessionalJobs = emergencyShowAll ? (sortedHrJobs ?? []) : (professionalJobs ?? []);
+  const displayBlueCollarJobs = emergencyShowAll ? [] : (blueCollarJobs ?? []); // Keep empty to test sector assignment
+  const displayOtherJobs = emergencyShowAll ? [] : (otherJobs ?? []);
 
 
 
@@ -460,7 +472,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
               <h2 className="text-3xl font-black tracking-tight text-gray-100">Oversight Console</h2>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5 bg-emerald-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full animate-pulse">
-                  <Activity size={10} /> {totalLeadsFromSWR} ACTIVE NODES
+                  <Activity size={10} /> {safeTotalLeads ?? 0} ACTIVE NODES
                 </div>
                 <div className="flex items-center gap-1.5 bg-blue-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full">
                   <DollarSign size={10} /> ${feesBlockedCount.toLocaleString()} FEES BLOCKED
