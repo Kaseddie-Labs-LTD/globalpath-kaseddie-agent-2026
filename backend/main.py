@@ -177,8 +177,13 @@ if not JWT_SECRET:
     else:
         print("ERROR: JWT_SECRET is required in production environment but was not found.")
 
-# Initialize Groq client with fallback check
-GROQ_KEY = SecretManagerGateway.get_secret("VITE_GROQ_API_KEY") or SecretManagerGateway.get_secret("GROQ_API_KEY")
+# Initialize Groq client with fallback check - prioritize local environment first
+GROQ_KEY = (
+    os.getenv("VITE_GROQ_API_KEY") 
+    or os.getenv("GROQ_API_KEY")
+    or SecretManagerGateway.get_secret("VITE_GROQ_API_KEY") 
+    or SecretManagerGateway.get_secret("GROQ_API_KEY")
+)
 
 # Qdrant configuration
 QDRANT_URL = SecretManagerGateway.get_secret("QDRANT_URL") or "http://localhost:6333"
