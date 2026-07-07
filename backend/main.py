@@ -24,6 +24,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("globalpath")
 
+# --- EXPLICIT GEMINI API KEY ENFORCEMENT ---
+# Read GEMINI_API_KEY directly from environment before any client initialization
+GEMINI_API_KEY_DIRECT = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_APP_GEMINI_API_KEY")
+if GEMINI_API_KEY_DIRECT and len(GEMINI_API_KEY_DIRECT) > 10:
+    print("✅ [GEMINI AUTH CONFIRMED]: API key loaded successfully from environment")
+else:
+    print("⚠️ [GEMINI AUTH WARNING]: API key missing or invalid from environment")
+
 # --- GOOGLE SECRET MANAGER GATEWAY ---
 class SecretManagerGateway:
     _cache = {}
@@ -189,8 +197,8 @@ GROQ_KEY = (
 QDRANT_URL = SecretManagerGateway.get_secret("QDRANT_URL") or "http://localhost:6333"
 QDRANT_API_KEY = SecretManagerGateway.get_secret("QDRANT_API_KEY", "")
 
-# Gemini Configuration
-GEMINI_API_KEY = SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
+# Gemini Configuration - Use direct environment read for guaranteed key availability
+GEMINI_API_KEY = GEMINI_API_KEY_DIRECT or SecretManagerGateway.get_secret("GEMINI_API_KEY") or SecretManagerGateway.get_secret("VITE_APP_GEMINI_API_KEY")
 # Support both BRIGHT_DATA_PROXY_URL and GEMINI_PROXY_URL for flexibility - bypass SecretManagerGateway to avoid 403 warnings
 GEMINI_PROXY_URL = (
     os.getenv("GEMINI_PROXY_URL") 
@@ -206,7 +214,7 @@ GEMINI_USE_VERTEXAI = (os.getenv("GEMINI_USE_VERTEXAI", "false").lower() == "tru
 gemini_client = None
 
 def init_gemini():
-    """Initialize Gemini client with safe fallbacks for ADC errors"""
+    """Initialize Gemini client with direct API key enforcement"""
     # Proxy setup first
     if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
         print("🌐 [Kaseddie Agent]: Injecting proxy routing layer into SDK runtime...")
@@ -217,33 +225,12 @@ def init_gemini():
         os.environ.pop("HTTP_PROXY", None)
         os.environ.pop("HTTPS_PROXY", None)
 
-    if GEMINI_USE_VERTEXAI:
-        # Try Vertex AI first
-        try:
-            print("🚀 [Kaseddie Agent]: Initializing Vertex AI Enterprise Client...")
-            client_kwargs = {
-                "vertexai": True,
-                "project": GCP_PROJECT_ID,
-                "location": GCP_REGION
-            }
-            # Add proxy if needed
-            if GEMINI_USE_PROXY and GEMINI_PROXY_URL:
-                http_config = types.HttpOptions(
-                    client_args={"proxy": GEMINI_PROXY_URL},
-                    async_client_args={"proxy": GEMINI_PROXY_URL}
-                )
-                client_kwargs["http_options"] = http_config
-            
-            client = genai.Client(**client_kwargs)
-            print(f"✅ [GEMINI]: Vertex Enterprise Mode Active (Project: {GCP_PROJECT_ID}, Region: {GCP_REGION})")
-            return client
-        except Exception as e:
-            print(f"⚠️ [GEMINI]: Vertex initialization failed (ADC missing?): {str(e)}. Falling back to AI Studio API Key...")
-            # Fall through to API key mode
-    
-    # Try API Key mode
+    # Explicitly configure with direct API key
     if GEMINI_API_KEY:
         try:
+            # Use genai.configure for explicit API key initialization
+            genai.configure(api_key=GEMINI_API_KEY)
+            
             client_kwargs = {
                 "api_key": GEMINI_API_KEY
             }
@@ -256,12 +243,12 @@ def init_gemini():
                 client_kwargs["http_options"] = http_config
             
             client = genai.Client(**client_kwargs)
-            print(f"✅ [GEMINI]: Premium Compliance Route active (Modern SDK)")
+            print(f"✅ [GEMINI]: Direct API Key Mode Active (Standard GenAI SDK)")
             return client
         except Exception as e:
             print(f"❌ [GEMINI]: API Key initialization failed: {str(e)}. Compliance route limited.")
     else:
-        print(f"❌ [GEMINI]: API Key or Vertex configuration missing. Compliance route limited.")
+        print(f"❌ [GEMINI]: API Key missing. Compliance route limited.")
     
     return None
 
