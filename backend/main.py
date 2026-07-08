@@ -1085,8 +1085,10 @@ origins = [
     "https://globalpathkaseddieagent.com",  # ✅ APRIL 30: Custom domain
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://localhost:5001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    "https://globalpath-kaseddie-agent-2026-N.onrender.com", # Dynamic staging fallback
 ]
 
 app.add_middleware(
@@ -1103,15 +1105,17 @@ app.add_middleware(
 # Resolution order for the admin password:
 #   1. ADMIN_PASSWORD (backend-only secret, preferred for production)
 #   2. VITE_ADMIN_PASSWORD (compat with frontend env naming)
-ADMIN_PASSWORD = SecretManagerGateway.get_secret("ADMIN_PASSWORD") or SecretManagerGateway.get_secret("VITE_ADMIN_PASSWORD")
+ADMIN_PASSWORD = SecretManagerGateway.get_secret("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD") or SecretManagerGateway.get_secret("VITE_ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    print("CRITICAL: ADMIN_PASSWORD environment variable is missing.")
 
 # JWT signing secret. Falls back to a per-process random secret so tokens are
 # never signed with a hardcoded key, but operators should set JWT_SECRET in
 # production to keep sessions valid across restarts / replicas.
 JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET") or os.getenv("JWT_SECRET")
 if not JWT_SECRET:
-    # Fallback to a secure random secret if not set - don't crash server!
-    print("⚠️ [AUTH] JWT_SECRET not configured! Using per-process random secret (sessions will not persist across restarts).")
+    # Notice: To permanently fix Error A, set this key in your Render dashboard environment tab
+    print("WARNING: JWT_SECRET not found in env. Falling back to dynamic key (Causes logouts on server restart).")
     JWT_SECRET = secrets.token_urlsafe(64)
 JWT_TTL_SECONDS = int(os.getenv("ADMIN_JWT_TTL_SECONDS", "3600"))  # 1 hour default
 

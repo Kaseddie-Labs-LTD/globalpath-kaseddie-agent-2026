@@ -68,9 +68,8 @@ export const AdminSecurityGate: React.FC<AdminSecurityGateProps> = ({ onAuthenti
 
       try {
         sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
-      } catch {
-        // sessionStorage may be unavailable (private mode); still let the session proceed
-        // for this tab, but the token cannot be persisted.
+      } catch (storageError) {
+        console.warn("Storage blocked: Active session restricted to window memory allocation.", storageError);
       }
 
       if (!isMounted.current) return;

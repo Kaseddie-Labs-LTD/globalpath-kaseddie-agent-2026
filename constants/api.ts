@@ -5,7 +5,7 @@ const isDevelopment = import.meta.env.DEV;
 let baseURL = VITE_API_URL 
     ? VITE_API_URL 
     : (isDevelopment 
-        ? 'http://localhost:8000/api'
+        ? 'http://localhost:10000/api'
         : 'https://globalpath-kaseddie-agent-2026-7qm8.onrender.com/api');
 
 // Add aggressive cleaner to strip accidental markdown links and stray artifacts
