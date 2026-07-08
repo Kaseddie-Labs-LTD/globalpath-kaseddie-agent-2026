@@ -432,7 +432,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const feesBlockedCount = React.useMemo(() => {
     // Assuming each blocked fee saves $2500
     try {
-      return (safeTotalLeads ?? 0) * APP_CONFIG.FEES_BLOCKED_PER_LEAD;
+      return (Number(safeTotalLeads) || 0) * (Number(APP_CONFIG?.FEES_BLOCKED_PER_LEAD) || 2500);
     } catch {
       return 0;
     }
@@ -441,7 +441,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const verifiedPlacementsCount = React.useMemo(() => {
     // Assuming 90% of total leads are verified placements
     try {
-      return Math.floor((safeTotalLeads ?? 0) * APP_CONFIG.VERIFIED_PLACEMENT_RATE);
+      return Math.floor((Number(safeTotalLeads) || 0) * (Number(APP_CONFIG?.VERIFIED_PLACEMENT_RATE) || 0.9));
     } catch {
       return 0;
     }
