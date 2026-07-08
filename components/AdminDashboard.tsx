@@ -12,6 +12,7 @@ import { fetcher } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
 import { safeArray } from '../utils/sanitize'; // K2.5: Defensive array utility
 import { categorizeJob } from '../utils/jobCategorization';
+import { APP_CONFIG } from '../constants/appConfig';
 
 interface VendorPortal {
   id: string;
@@ -431,7 +432,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const feesBlockedCount = React.useMemo(() => {
     // Assuming each blocked fee saves $2500
     try {
-      return (safeTotalLeads ?? 0) * 2500;
+      return (safeTotalLeads ?? 0) * APP_CONFIG.FEES_BLOCKED_PER_LEAD;
     } catch {
       return 0;
     }
@@ -440,7 +441,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const verifiedPlacementsCount = React.useMemo(() => {
     // Assuming 90% of total leads are verified placements
     try {
-      return Math.floor((safeTotalLeads ?? 0) * 0.9);
+      return Math.floor((safeTotalLeads ?? 0) * APP_CONFIG.VERIFIED_PLACEMENT_RATE);
     } catch {
       return 0;
     }

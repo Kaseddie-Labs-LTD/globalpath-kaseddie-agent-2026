@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Download, Image, Sparkles, Globe, Briefcase, Building2, Loader2, Share2, Zap } from 'lucide-react';
 import { Job } from '../types';
+import { APP_CONFIG } from '../constants/appConfig';
 
 interface MarketingEngineProps {
   selectedJob: Job | null;
@@ -207,7 +208,7 @@ Keep it under 150 words and make it suitable for WhatsApp sharing.
     // Add contact info
     ctx.fillStyle = '#64748b';
     ctx.font = '18px monospace';
-    ctx.fillText('📱 +256 784 428 821 | 🌐 globalpathkaseddieagent.com', canvas.width / 2, 920);
+    ctx.fillText(`📱 ${APP_CONFIG.HR_WHATSAPP} | 🌐 globalpathkaseddieagent.com`, canvas.width / 2, 920);
 
     // Convert canvas to image
     const imageUrl = canvas.toDataURL('image/png', 0.9);
@@ -253,13 +254,13 @@ Keep it under 150 words and make it suitable for WhatsApp sharing.
 
 ${marketingText}
 
-📱 Apply: +256 784 428 821
+📱 Apply: ${APP_CONFIG.HR_WHATSAPP}
 🌐 www.globalpathkaseddieagent.com
 
 #GlobalPath #Jobs #${selectedJob.corridor || 'Global'}`;
     
     const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/256784428821?text=${encodedMessage}`, '_blank');
+    window.open(`https://wa.me/${APP_CONFIG.HR_WHATSAPP.replace('+', '')}?text=${encodedMessage}`, '_blank');
     
     onLog?.(`📤 [MARKETING]: Shared on WhatsApp for ${selectedJob.company || 'Unknown Company'}`, 'success', 'MARKETING');
   };

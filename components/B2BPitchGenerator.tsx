@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Zap, Send, Loader2, Sparkles, Building2, Briefcase, Copy, Check, DollarSign, Globe, MessageSquare, Mail, ExternalLink } from 'lucide-react';
 import { AgentLogEntry, Job, getJobLocationString } from '../types';
+import { APP_CONFIG } from '../constants/appConfig';
 
 interface B2BPitchGeneratorProps {
   onGenerate: (title: string, company: string, salary?: string, country?: string, category?: string, location?: string) => Promise<string>;
@@ -165,7 +166,7 @@ GlobalPath Outreach Command Center
 
   const handleWhatsApp = () => {
     if (!pitch) return;
-    const number = selectedLead?.WhatsApp_Number || '256784428821'; // Default to HR
+    const number = selectedLead?.WhatsApp_Number || APP_CONFIG.HR_WHATSAPP.replace('+', ''); // Default to HR
     
     // Determine Country Code
     let countryCode = '256'; // Default Uganda
