@@ -133,6 +133,16 @@ export const fetcher = async (endpoint: string, options?: RequestInit & { timeou
     const res = await fetch(fullUrl, fetchOptions);
     clearTimeout(timeoutId);
 
+    // Gracefully trap 401 auth expansions - route to login instead of breaking app
+    if (res.status === 401) {
+      console.warn('Fetcher: 401 Unauthorized - routing to login');
+      // Silently route to login or refresh token instead of returning malformed data
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+      return null;
+    }
+
     if (!res.ok) {
       let errMsg = `HTTP error! status: ${res.status}`;
       try {

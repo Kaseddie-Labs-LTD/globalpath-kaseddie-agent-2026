@@ -453,8 +453,10 @@ function App() {
     {
       refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
       revalidateOnFocus: false, // OOM PROTECTION: Don't revalidate on focus (prevents memory spikes)
+      revalidateIfStale: false, // Trust the layout cache during pagination jumps
       revalidateOnReconnect: true,
       keepPreviousData: true, // Prevents jobs from disappearing during re-validation
+      shouldRetryOnError: false, // Don't flood FastAPI if a regional shard times out
       onError: (error) => {
         console.error('❌ SWR Error fetching leads:', error);
         addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
