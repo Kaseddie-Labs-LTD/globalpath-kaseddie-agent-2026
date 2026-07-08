@@ -133,14 +133,10 @@ export const fetcher = async (endpoint: string, options?: RequestInit & { timeou
     const res = await fetch(fullUrl, fetchOptions);
     clearTimeout(timeoutId);
 
-    // Gracefully trap 401 auth expansions - route to login instead of breaking app
+    // Gracefully trap 401 auth expansions - throw controlled error for SWR handling
     if (res.status === 401) {
-      console.warn('Fetcher: 401 Unauthorized - routing to login');
-      // Silently route to login or refresh token instead of returning malformed data
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
-      return null;
+      console.warn('Fetcher: 401 Unauthorized - throwing controlled error');
+      throw new Error("UNAUTHORIZED_SESSION");
     }
 
     if (!res.ok) {
