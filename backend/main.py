@@ -228,9 +228,6 @@ def init_gemini():
     # Explicitly configure with direct API key
     if GEMINI_API_KEY:
         try:
-            # Use genai.configure for explicit API key initialization
-            genai.configure(api_key=GEMINI_API_KEY)
-            
             client_kwargs = {
                 "api_key": GEMINI_API_KEY
             }
