@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { RecruitmentBatch, AgentLogEntry, Job, getJobLocationString } from '../types';
 import { 
   ShieldAlert, ShieldCheck, Users, Activity, 
@@ -280,18 +279,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     setPitchingId(job.id);
     onAddLog(`PITCH: Analyzing employer nodes for ${job.company}...`, 'thinking');
     try {
-      // MISSION 1: Pitch Lead Data Handover - Use React Router navigate with state
-      navigate('/hr-portal', { 
-        state: { 
-          selectedLead: job,
-          autoInitializeB2B: true 
-        } 
-      });
-      onAddLog(`PITCH: Data handover to HR Portal for ${job.company} complete.`, 'success');
+      // Use the onPitch callback — App.tsx handles setting pitchContext and switching to HR_PORTAL view
       if (onPitch) await onPitch(job);
+      onAddLog(`PITCH: Data handover to HR Portal for ${job.company} complete.`, 'success');
     } catch (error) {
       console.error('PITCH ERROR:', error);
       onAddLog(`PITCH ERROR: Failed to generate pitch for ${job.company} - ${error}`, 'error');
+    } finally {
+      setPitchingId(null);
     }
   };
 

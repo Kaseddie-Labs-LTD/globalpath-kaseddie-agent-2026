@@ -6,7 +6,7 @@ __pycache__/
 venv/
 env/
 .env
-.env.example
+# .env.example is intentionally tracked — it contains placeholder values only, no real secrets
 .env
 
 # Node / Frontend

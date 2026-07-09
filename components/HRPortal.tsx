@@ -2,8 +2,6 @@
 
  import React, { useState, useRef, useEffect } from 'react';
 
-import { useLocation } from 'react-router-dom';
-
 import { Job, UserProfile, OfferLetter, RecruitmentBatch, getJobLocationString } from '../types';
 
 import { 
@@ -132,29 +130,16 @@ export const HRPortal: React.FC<HRPortalProps> = ({
 
   
 
-  // MISSION 1: Pitch Lead Data Handover - Read selectedLead from navigation state
-
-  const location = useLocation();
-
   const [navigatedLead, setNavigatedLead] = useState<Job | null>(null);
-
   
-
+  // Auto-populate from pitchContext when it changes (replaces the removed useLocation navigation-state approach)
   useEffect(() => {
-
-    const state = location.state as { selectedLead?: Job; autoInitializeB2B?: boolean } | null;
-
-    if (state?.selectedLead) {
-
-      setNavigatedLead(state.selectedLead);
-
+    if (pitchContext?.job && pitchContext.job !== navigatedLead) {
+      setNavigatedLead(pitchContext.job);
       setActiveTab('vacancies');
-
-      onLog?.(`PITCH: Auto-populating B2B generator from Admin Dashboard handover for ${state.selectedLead.company}`, 'success');
-
+      onLog?.(`PITCH: Auto-populating B2B generator from Admin Dashboard handover for ${pitchContext.job.company}`, 'success');
     }
-
-  }, [location.state, onLog]);
+  }, [pitchContext?.job]);
 
   
 

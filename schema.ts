@@ -29,7 +29,7 @@ export const JobSchema = z.object({
   hrContact: z.string().optional(),
   employerEmail: z.string().optional(),
   postedBy: z.string().optional(),
-  status: z.enum(['pending_audit', 'live', 'flagged', 'vetted']).default('pending_audit'),
+  status: z.enum(['pending_audit', 'live', 'flagged', 'vetted', 'verified', 'vetting_pending', 'pending']).default('pending_audit'),
   safetyScore: z.number().optional(),
   recommendation: z.string().optional(),
   isHighValue: z.boolean().optional(),
@@ -42,7 +42,7 @@ export const JobSchema = z.object({
   lng: z.number().optional(),
   positionName: z.string().optional(),
   sector: z.enum(['Professional', 'Blue-Collar', 'Other']).optional(),
-  category: z.enum(['blue_collar', 'professional']).optional(),
+  category: z.enum(['blue_collar', 'professional', 'service_domestic', 'general']).optional(),
   node: z.string().optional(),
   complianceStatus: z.enum(['High Risk', 'Verified', 'Pending Review']).default('Pending Review'),
 });
