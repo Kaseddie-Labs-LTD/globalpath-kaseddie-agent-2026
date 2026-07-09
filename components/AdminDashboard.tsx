@@ -203,13 +203,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   }, [hrJobs]);
 
   useEffect(() => {
-    // KIMI K2.5: Use sanitizedJobs for logging to prevent errors on corrupted data
+    // K2.5: Use sanitizedJobs for logging — includes all four categories
     try {
       console.log("🛠️ [Admin Dashboard Sync]:", {
-        total_leads: sanitizedJobs?.length ?? 0,
-        professional: sanitizedJobs?.filter((j: Job) => j?.category === 'professional').length ?? 0,
-        blue_collar: sanitizedJobs?.filter((j: Job) => j?.category === 'blue_collar').length ?? 0,
-        service_domestic: sanitizedJobs?.filter((j: Job) => j?.category === 'service_domestic').length ?? 0
+        total_leads:      sanitizedJobs?.length ?? 0,
+        professional:     sanitizedJobs?.filter((j: Job) => j?.category === 'professional').length ?? 0,
+        blue_collar:      sanitizedJobs?.filter((j: Job) => j?.category === 'blue_collar').length ?? 0,
+        service_domestic: sanitizedJobs?.filter((j: Job) => j?.category === 'service_domestic').length ?? 0,
+        general:          sanitizedJobs?.filter((j: Job) => j?.category === 'general').length ?? 0,
       });
     } catch (error) {
       console.error("Admin Dashboard Sync logging error:", error);
@@ -411,11 +412,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     });
   }, [sanitizedJobs]);
   
-  // KIMI K2.5: Use sanitizedJobs.category which is already computed
-  const professionalJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category === 'professional'), [sortedHrJobs]);
-  const blueCollarJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category === 'blue_collar'), [sortedHrJobs]);
-  const serviceDomesticJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category === 'service_domestic'), [sortedHrJobs]);
-  const otherJobs = React.useMemo(() => sortedHrJobs.filter((j: Job) => j?.category !== 'professional' && j?.category !== 'blue_collar' && j?.category !== 'service_domestic'), [sortedHrJobs]);
+  // Category filters — all four categories explicitly covered with zero-default guards
+  const professionalJobs     = React.useMemo(() => sortedHrJobs.filter((j: Job) => (j?.category ?? 'general') === 'professional'),     [sortedHrJobs]);
+  const blueCollarJobs       = React.useMemo(() => sortedHrJobs.filter((j: Job) => (j?.category ?? 'general') === 'blue_collar'),       [sortedHrJobs]);
+  const serviceDomesticJobs  = React.useMemo(() => sortedHrJobs.filter((j: Job) => (j?.category ?? 'general') === 'service_domestic'),  [sortedHrJobs]);
+  // 'general' is now an explicit fourth bucket — any missing/undefined category defaults here
+  const otherJobs            = React.useMemo(() => sortedHrJobs.filter((j: Job) => {
+    const cat = j?.category ?? 'general';
+    return cat !== 'professional' && cat !== 'blue_collar' && cat !== 'service_domestic';
+  }), [sortedHrJobs]);
   
   // Defensive: SWR data resolves asynchronously, so coerce to a safe number for
   // every downstream calculation. Prevents NaN/undefined crashes on first render.
@@ -442,10 +447,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     }
   }, [safeTotalLeads]);
   
-  const emergencyShowAll = true; // Set to true to bypass all filters
-  const displayProfessionalJobs = emergencyShowAll ? (sortedHrJobs ?? []) : (professionalJobs ?? []);
-  const displayBlueCollarJobs = emergencyShowAll ? [] : (blueCollarJobs ?? []); // Keep empty to test sector assignment
-  const displayOtherJobs = emergencyShowAll ? [] : (otherJobs ?? []);
+  // emergencyShowAll removed — each section now routes to its correct category bucket.
+  // If backend payload is missing a category key the ?? 'general' guard above handles it.
+  const displayProfessionalJobs    = professionalJobs    ?? [];
+  const displayBlueCollarJobs      = blueCollarJobs      ?? [];
+  const displayServiceDomesticJobs = serviceDomesticJobs ?? [];
+  const displayOtherJobs           = otherJobs           ?? [];
 
 
 
@@ -608,7 +615,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                 </button>
                 <div className="divide-y divide-slate-50">
                   {/* K2.5 NULL GUARD: Use safeArray before mapping + compound unique keys */}
-                  {safeArray<Job>(serviceDomesticJobs).length > 0 ? safeArray<Job>(serviceDomesticJobs).map((job: Job, index: number) => (
+                  {safeArray<Job>(displayServiceDomesticJobs).length > 0 ? safeArray<Job>(displayServiceDomesticJobs).map((job: Job, index: number) => (
                     <JobItem 
                       key={`lead-servicedomestic-${job.id || 'unknown'}-${index}`} 
                       job={job} 
