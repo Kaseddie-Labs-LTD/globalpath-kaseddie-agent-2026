@@ -39,7 +39,13 @@ export const AgentLog: React.FC<AgentLogProps> = ({ logs }) => {
             'border-slate-800 hover:border-brand-500/50'
           }`}>
             <div className="text-slate-600 text-[9px] whitespace-nowrap pt-1 font-black">
-              [{log.timestamp.toLocaleTimeString([], { hour12: false })}]
+              [{(function() {
+                try {
+                  if (log.timestamp instanceof Date) return log.timestamp.toLocaleTimeString([], { hour12: false });
+                  if (typeof log.timestamp === 'string') return new Date(log.timestamp).toLocaleTimeString([], { hour12: false });
+                  return 'Unknown Time';
+                } catch { return 'Unknown Time'; }
+              })()}]
             </div>
             <div className="flex-1 pb-3">
                <div className="flex items-center gap-2 mb-1.5">

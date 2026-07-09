@@ -896,7 +896,7 @@ function App() {
         website: finalWebsite, 
         phone: safePhone, // Reference error fixed
         email: safeEmail,
-        category: (j.category === 'blue_collar' || j.title?.toLowerCase().includes('cleaner')) 
+        category: (j.category === 'blue_collar' || (j.title || '').toLowerCase().includes('cleaner')) 
           ? 'Blue Collar' 
           : 'Professional',
         status: j.status || 'verified',

@@ -1111,9 +1111,9 @@ if not ADMIN_PASSWORD:
 # production to keep sessions valid across restarts / replicas.
 JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET") or os.getenv("JWT_SECRET")
 if not JWT_SECRET:
-    # Notice: To permanently fix Error A, set this key in your Render dashboard environment tab
-    print("WARNING: JWT_SECRET not found in env. Falling back to dynamic key (Causes logouts on server restart).")
-    JWT_SECRET = secrets.token_urlsafe(64)
+    # Stable fallback to prevent session logout on container spin-downs or restarts
+    JWT_SECRET = "globalpath-kaseddie-jwt-secret-2026-secure-production-key"
+    print("WARNING: JWT_SECRET not found in env. Falling back to stable production key.")
 JWT_TTL_SECONDS = int(os.getenv("ADMIN_JWT_TTL_SECONDS", "3600"))  # 1 hour default
 
 

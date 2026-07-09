@@ -669,12 +669,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                     <h3 className="text-sm font-black uppercase tracking-[0.2em]">Oversight Log</h3>
                  </div>
                  <div className="space-y-4 font-mono text-[11px] overflow-y-auto scrollbar-hide flex-1">
-                    {logs.slice().reverse().map((log: AgentLogEntry) => (
-                      <div key={log.id} className="flex gap-4 border-l border-slate-800 pl-4 py-1 hover:bg-white/5 transition-colors">
-                         <span className="text-slate-600">[{log.timestamp.toLocaleTimeString()}]</span>
-                         <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'error' ? 'text-red-400' : 'text-slate-400'}>{log.message}</span>
-                      </div>
-                    ))}
+                    {logs.slice().reverse().map((log: AgentLogEntry) => {
+                       const logTime = log.timestamp instanceof Date 
+                         ? log.timestamp.toLocaleTimeString() 
+                         : typeof log.timestamp === 'string' 
+                           ? new Date(log.timestamp).toLocaleTimeString() 
+                           : 'Unknown Time';
+                       return (
+                         <div key={log.id} className="flex gap-4 border-l border-slate-800 pl-4 py-1 hover:bg-white/5 transition-colors">
+                            <span className="text-slate-600">[{logTime}]</span>
+                            <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'error' ? 'text-red-400' : 'text-slate-400'}>{log.message}</span>
+                         </div>
+                       );
+                    })}
                  </div>
               </div>
             </>
