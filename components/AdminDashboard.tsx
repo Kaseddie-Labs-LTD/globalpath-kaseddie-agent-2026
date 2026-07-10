@@ -285,7 +285,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  const navigate = useNavigate();
 
   const handlePitchLead = async (job: Job) => {
     setPitchingId(job.id);
