@@ -181,12 +181,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
 
   const sanitizedJobs = React.useMemo(() => {
-    // Ensure hrJobs is an array before processing
-    if (!Array.isArray(hrJobs)) return [];
-    
-    return hrJobs
+    // GUARD 1 — SWR Array Fallback: if hrJobs arrives as null/undefined/non-array,
+    // default immediately to [] so no downstream .map()/.filter() can throw.
+    const safeHrJobs: Job[] = Array.isArray(hrJobs) ? hrJobs : [];
+    if (safeHrJobs.length === 0) return [];
+
+    return safeHrJobs
       .filter((job): job is Job => {
-        // Filter corrupted nodes: must be valid object with required fields
         if (!job || typeof job !== 'object') return false;
         if (!job.id) return false; // ID is mandatory
         return true;
@@ -199,18 +200,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
         category: categorizeJob(job),
         status: typeof job.status === 'string' ? job.status : 'pending',
       }))
-      .filter(job => job.id !== ''); // Remove items with empty IDs
+      .filter(job => job.id !== '');
   }, [hrJobs]);
 
   useEffect(() => {
-    // K2.5: Use sanitizedJobs for logging — includes all four categories
+    // GUARD 2 — Sector Metric Reducers: check length > 0 before running any
+    // .filter() arithmetic so an empty or late-arriving array never throws NaN.
     try {
+      const totalLeadsCount = sanitizedJobs?.length ?? 0;
+      const professionalCount     = totalLeadsCount > 0 ? sanitizedJobs.filter((j: Job) => (j?.category ?? 'general') === 'professional').length     : 0;
+      const blueCollarCount       = totalLeadsCount > 0 ? sanitizedJobs.filter((j: Job) => (j?.category ?? 'general') === 'blue_collar').length       : 0;
+      const serviceDomesticCount  = totalLeadsCount > 0 ? sanitizedJobs.filter((j: Job) => (j?.category ?? 'general') === 'service_domestic').length  : 0;
+      const generalCount          = totalLeadsCount > 0 ? sanitizedJobs.filter((j: Job) => {
+        const cat = j?.category ?? 'general';
+        return cat !== 'professional' && cat !== 'blue_collar' && cat !== 'service_domestic';
+      }).length : 0;
+
       console.log("🛠️ [Admin Dashboard Sync]:", {
-        total_leads:      sanitizedJobs?.length ?? 0,
-        professional:     sanitizedJobs?.filter((j: Job) => j?.category === 'professional').length ?? 0,
-        blue_collar:      sanitizedJobs?.filter((j: Job) => j?.category === 'blue_collar').length ?? 0,
-        service_domestic: sanitizedJobs?.filter((j: Job) => j?.category === 'service_domestic').length ?? 0,
-        general:          sanitizedJobs?.filter((j: Job) => j?.category === 'general').length ?? 0,
+        total_leads:      totalLeadsCount,
+        professional:     professionalCount,
+        blue_collar:      blueCollarCount,
+        service_domestic: serviceDomesticCount,
+        general:          generalCount,
       });
     } catch (error) {
       console.error("Admin Dashboard Sync logging error:", error);
@@ -422,26 +433,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
     return cat !== 'professional' && cat !== 'blue_collar' && cat !== 'service_domestic';
   }), [sortedHrJobs]);
   
-  // Defensive: SWR data resolves asynchronously, so coerce to a safe number for
-  // every downstream calculation. Prevents NaN/undefined crashes on first render.
-  const safeTotalLeads = typeof totalLeadsFromSWR === 'number' && Number.isFinite(totalLeadsFromSWR)
-    ? totalLeadsFromSWR
-    : 0;
+  // GUARD 1 (continued) — SWR total fallback: coerce every possible falsy shape
+  // (undefined, null, NaN, Infinity) to a safe 0 before any arithmetic runs.
+  const safeTotalLeads = (
+    typeof totalLeadsFromSWR === 'number' &&
+    Number.isFinite(totalLeadsFromSWR) &&
+    totalLeadsFromSWR >= 0
+  ) ? totalLeadsFromSWR : 0;
   const totalLeadsCount = safeTotalLeads;
 
+  // GUARD 2 (continued) — Metric reducer memos: explicit number coercion + length check
+  // so NaN never propagates into the banner pill displays.
   const feesBlockedCount = React.useMemo(() => {
-    // Assuming each blocked fee saves $2500
     try {
-      return (Number(safeTotalLeads) || 0) * (Number(APP_CONFIG?.FEES_BLOCKED_PER_LEAD) || 2500);
+      const leads = safeTotalLeads;
+      const feePerLead = Number(APP_CONFIG?.FEES_BLOCKED_PER_LEAD) || 2500;
+      return leads > 0 ? leads * feePerLead : 0;
     } catch {
       return 0;
     }
   }, [safeTotalLeads]);
 
   const verifiedPlacementsCount = React.useMemo(() => {
-    // Assuming 90% of total leads are verified placements
     try {
-      return Math.floor((Number(safeTotalLeads) || 0) * (Number(APP_CONFIG?.VERIFIED_PLACEMENT_RATE) || 0.9));
+      const leads = safeTotalLeads;
+      const rate = Number(APP_CONFIG?.VERIFIED_PLACEMENT_RATE) || 0.9;
+      return leads > 0 ? Math.floor(leads * rate) : 0;
     } catch {
       return 0;
     }
@@ -633,24 +650,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   )}
                 </div>
 
-                {/* General/Uncategorized Section */}
+                {/* General/Uncategorized Section — GUARD 3: ternary empty-state wraps .map() */}
                 {displayOtherJobs.length > 0 && (
                   <>
-                    <div className="w-full p-8 border-b border-t border-slate-100 flex items-center justify-between bg-slate-50/30 text-left">
+                    <div className="w-full p-8 border-b border-t border-slate-700 flex items-center justify-between bg-slate-800/30 text-left">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-slate-100 text-slate-600 rounded-xl"><Globe size={20} /></div>
+                        <div className="p-2 bg-slate-700 text-slate-300 rounded-xl"><Globe size={20} /></div>
                         <div>
-                          <h3 className="text-xl font-black text-slate-800">General Workforce Section</h3>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Uncategorized Global Leads</p>
+                          <h3 className="text-xl font-black text-gray-100">General Workforce Section</h3>
+                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Uncategorized Global Leads</p>
                         </div>
                       </div>
                     </div>
-                    <div className="divide-y divide-slate-50">
-                      {/* K2.5 NULL GUARD: Use safeArray before mapping + compound unique keys */}
-                      {safeArray<Job>(displayOtherJobs).map((job: Job, index: number) => (
-                        <JobItem 
-                          key={`lead-other-${job.id || 'unknown'}-${index}`} 
-                          job={job} 
+                    <div className="divide-y divide-slate-700">
+                      {safeArray<Job>(displayOtherJobs).length > 0 ? safeArray<Job>(displayOtherJobs).map((job: Job, index: number) => (
+                        <JobItem
+                          key={`lead-general-${job.id || 'unknown'}-${index}`}
+                          job={job}
                           onPitch={handlePitchLead}
                           onCopyB2BLink={handleCopyB2BLink}
                           onSelectForMarketing={handleSelectForMarketing}
@@ -658,7 +674,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                           copiedId={copiedLink}
                           isUplinking={isUplinking}
                         />
-                      ))}
+                      )) : (
+                        <div className="p-6 text-center">
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">No active leads matching this corridor.</p>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
