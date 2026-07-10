@@ -284,7 +284,7 @@ from services.media_engine import generate_flux_image, generate_kling_video
 try:
     http_client = httpx.Client(timeout=180.0, limits=httpx.Limits(max_keepalive_connections=50, max_connections=100))
     groq_client = Groq(api_key=GROQ_KEY, http_client=http_client, max_retries=3)
-    llm = ChatGroq(groq_api_key=GROQ_KEY, model_name="llama-3.3-70b-specdec") # Use groq_api_key for ChatGroq
+    llm = ChatGroq(groq_api_key=GROQ_KEY, model_name="llama-3.3-70b-versatile")
     print("Groq client initialized successfully with optimized connections")
 except Exception as e:
     print(f"Failed to initialize Groq client: {e}")
@@ -720,12 +720,12 @@ async def trigger_gitlab_direct_action(lead_name: str, country: str, interests: 
         ]
         title_prefix = random.choice(templates)
         
-        # 3. Use Groq Cloud (llama-3.3-70b-specdec) to vary the description wording
+        # 3. Use Groq Cloud (llama-3.3-70b-versatile) to vary the description wording
         refined_summary = interests
         try:
             # Use Groq Cloud client
             response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-specdec",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {
                         "role": "system",
@@ -1594,7 +1594,7 @@ async def ping_ai():
         
         # Test Groq API with minimal request
         test_response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-specdec",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "user", "content": "ping"}
             ],
@@ -1710,11 +1710,11 @@ async def generate_proposal(req: ProposalRequest):
         Keep it under 150 words and include a clear call-to-action.
         """
         
-        print(f"🔍 [PROPOSAL DEBUG]: Calling Groq API with model: llama-3.3-70b-specdec")
+        print(f"🔍 [PROPOSAL DEBUG]: Calling Groq API with model: llama-3.3-70b-versatile")
         
         # Use Groq Cloud client
         response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-specdec",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1802,11 +1802,11 @@ async def chat_with_gemini(req: ChatRequest):
         except Exception as gemini_err:
             print(f"⚠️ [CHAT/Gemini]: Error ({type(gemini_err).__name__}: {gemini_err}) — falling back to Groq")
 
-    # ── FALLBACK: Groq llama-3.3-70b-specdec ───────────────────────────────
+    # ── FALLBACK: Groq llama-3.3-70b-versatile ───────────────────────────────
     if groq_client and GROQ_KEY:
         try:
             groq_response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-specdec",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": KASEDDIE_SYSTEM_PROMPT},
                     {"role": "user", "content": user_message}
@@ -1871,11 +1871,11 @@ User: {message}""")]
         except Exception as gemini_err:
             print(f"⚠️ [STREAM/Gemini]: {type(gemini_err).__name__}: {gemini_err} — falling back to Groq")
 
-    # ── FALLBACK: Groq llama-3.3-70b-specdec (non-streaming, yielded as chunk) ─
+    # ── FALLBACK: Groq llama-3.3-70b-versatile (non-streaming, yielded as chunk) ─
     if groq_client and GROQ_KEY:
         try:
             groq_response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-specdec",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": KASEDDIE_SYSTEM_PROMPT},
                     {"role": "user", "content": message}
@@ -1896,7 +1896,7 @@ User: {message}""")]
 async def agent_chat_stream(req: AgentChatRequest):
     """
     Kaseddie AI Agent streaming chat endpoint.
-    Primary: Gemini 2.0 Flash stream. Fallback: Groq llama-3.3-70b-specdec.
+    Primary: Gemini 2.0 Flash stream. Fallback: Groq llama-3.3-70b-versatile.
     Always returns a StreamingResponse — KaseddieChat.tsx reads the body as text.
     The fallback in generate_chat_stream handles missing/failed Gemini automatically.
     """
@@ -2011,11 +2011,11 @@ async def generate_pitch(req: PitchRefineRequest):
         Return only refined pitch text.
         """
         
-        print(f"🎯 [PITCH REFINEMENT]: Calling Groq Llama-3.3-70b-specdec...")
+        print(f"🎯 [PITCH REFINEMENT]: Calling Groq llama-3.3-70b-versatile...")
         
         # Use Groq Cloud client
         response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-specdec",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
