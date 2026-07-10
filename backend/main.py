@@ -1758,105 +1758,158 @@ async def generate_proposal(req: ProposalRequest):
 class ChatRequest(BaseModel):
     message: str
 
+KASEDDIE_SYSTEM_PROMPT = (
+    "You are Kaseddie Agent, an elite B2B recruitment specialist for GlobalPath. "
+    "Your expertise covers Uganda-to-GCC, EU, and Western corridor recruitment, "
+    "labor law compliance, zero-fee mandate enforcement, and pitch strategy. "
+    "Be concise, professional, and solution-oriented. "
+    "When asked about job markets, provide data-driven insights relevant to the corridors we serve."
+)
+
 @api_router.post("/chat")
 async def chat_with_gemini(req: ChatRequest):
     """
-    Kaseddie Uplink Chat endpoint using Gemini 2.5 API.
+    Kaseddie Uplink Chat endpoint.
+    Primary: Gemini 2.0 Flash. Automatic fallback: Groq llama-3.3-70b-versatile.
+    The chat will always work as long as at least one AI key is configured.
     """
-    try:
-        # Error logging: Check Gemini API key and message data
-        print(f"🔍 [CHAT DEBUG]: Gemini API Key loaded: {'YES' if GEMINI_API_KEY else 'NO'}")
-        print(f"🔍 [CHAT DEBUG]: Message received: {req.message[:100]}...")
-        print(f"🔍 [CHAT DEBUG]: Message length: {len(req.message)} chars")
-        
-        # Use the Gemini client to chat with Gemini 2.5
-        print(f"🔍 [CHAT DEBUG]: Calling Gemini API with model: gemini-2.0-flash")
-        response = gemini_client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[
-                types.Content(
-                    role='user',
-                    parts=[types.Part.from_text(text=f"""System: You are Kaseddie Agent, a B2B recruitment specialist for GlobalPath. You help with lead analysis, pitch generation, and recruitment strategy. Be concise and professional.
+    user_message = req.message.strip()
+    print(f"🔍 [CHAT]: Gemini={'YES' if (gemini_client and GEMINI_API_KEY) else 'NO'} | Groq={'YES' if (groq_client and GROQ_KEY) else 'NO'} | msg={user_message[:80]}...")
 
-User: {req.message}""")]
+    # ── PRIMARY: Gemini ──────────────────────────────────────────────────────
+    if gemini_client and GEMINI_API_KEY:
+        try:
+            response = gemini_client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=[
+                    types.Content(
+                        role='user',
+                        parts=[types.Part.from_text(
+                            text=f"System: {KASEDDIE_SYSTEM_PROMPT}\n\nUser: {user_message}"
+                        )]
+                    )
+                ],
+                config=types.GenerateContentConfig(
+                    max_output_tokens=600,
+                    temperature=0.7
                 )
-            ],
-            config=types.GenerateContentConfig(
-                max_output_tokens=500,
-                temperature=0.7
             )
-        )
-        
-        reply = response.text or "I'm having trouble processing that request."
-        print(f"✅ [CHAT DEBUG]: Response sent ({len(reply)} chars)")
-        
-        return {"reply": reply}
-        
-    except Exception as e:
-        error_msg = str(e).lower()
-        print(f"❌ [CHAT ERROR]: Error: {e}")
-        print(f"❌ [CHAT ERROR]: Error type: {type(e).__name__}")
-        
-        # Return specific error codes for frontend
-        if "timeout" in error_msg or "connection" in error_msg:
-            return {"reply": "AI_CONNECTION_TIMEOUT", "error": "Connection timeout - please try again"}
-        elif "key" in error_msg or "unauthorized" in error_msg:
-            return {"reply": "AI_KEY_MISSING", "error": "AI service key issue - check configuration"}
-        elif "rate" in error_msg or "limit" in error_msg:
-            return {"reply": "AI_RATE_LIMIT", "error": "AI service rate limit exceeded"}
-        else:
-            return {"reply": "AI_SERVICE_ERROR", "error": f"AI service error: {str(e)}"}
+            reply = (response.text or "").strip()
+            if reply:
+                print(f"✅ [CHAT/Gemini]: Responded ({len(reply)} chars)")
+                return {"reply": reply}
+            print("⚠️ [CHAT/Gemini]: Empty response — falling back to Groq")
+        except Exception as gemini_err:
+            print(f"⚠️ [CHAT/Gemini]: Error ({type(gemini_err).__name__}: {gemini_err}) — falling back to Groq")
+
+    # ── FALLBACK: Groq llama-3.3-70b-specdec ───────────────────────────────
+    if groq_client and GROQ_KEY:
+        try:
+            groq_response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-specdec",
+                messages=[
+                    {"role": "system", "content": KASEDDIE_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message}
+                ],
+                max_tokens=600,
+                temperature=0.7,
+                timeout=45
+            )
+            reply = (groq_response.choices[0].message.content or "").strip()
+            if reply:
+                print(f"✅ [CHAT/Groq-fallback]: Responded ({len(reply)} chars)")
+                return {"reply": reply}
+        except Exception as groq_err:
+            print(f"❌ [CHAT/Groq-fallback]: Error ({type(groq_err).__name__}: {groq_err})")
+            return {
+                "reply": "The AI service is temporarily unavailable. Please try again in a moment.",
+                "error": f"Groq error: {str(groq_err)}"
+            }
+
+    # ── NO AI CONFIGURED ────────────────────────────────────────────────────
+    print("❌ [CHAT]: No AI client available — check GEMINI_API_KEY or GROQ_API_KEY in Render env vars")
+    return {
+        "reply": "AI service is not configured. Please contact the administrator to set up the API keys.",
+        "error": "No AI client available"
+    }
 
 class AgentChatRequest(BaseModel):
     message: str
 
 async def generate_chat_stream(message: str) -> AsyncGenerator[str, None]:
-    """Generate streaming chat response using Gemini 2.5"""
-    try:
-        stream = gemini_client.models.generate_content_stream(
-            model='gemini-2.0-flash',
-            contents=[
-                types.Content(
-                    role='user',
-                    parts=[types.Part.from_text(text=f"""You are the Kaseddie AI Oversight Agent for GlobalPath. Use the provided 540 nodes and Ethical Rules to assist the user with lead analysis, recruitment strategy, and compliance questions. Be professional, concise, and helpful.
+    """
+    Generate streaming chat response.
+    Primary: Gemini stream. Fallback: Groq non-stream yielded as one chunk.
+    """
+    # ── PRIMARY: Gemini streaming ────────────────────────────────────────────
+    if gemini_client and GEMINI_API_KEY:
+        try:
+            stream = gemini_client.models.generate_content_stream(
+                model='gemini-2.0-flash',
+                contents=[
+                    types.Content(
+                        role='user',
+                        parts=[types.Part.from_text(text=f"""{KASEDDIE_SYSTEM_PROMPT}
 
 User: {message}""")]
+                    )
+                ],
+                config=types.GenerateContentConfig(
+                    max_output_tokens=1024,
+                    temperature=0.7,
+                    top_p=1
                 )
-            ],
-            config=types.GenerateContentConfig(
-                max_output_tokens=1024,
-                temperature=1,
-                top_p=1
             )
-        )
-        
-        for chunk in stream:
-            if chunk.text:
-                yield chunk.text
-                
-    except Exception as e:
-        yield f"Error: {str(e)}"
+            gemini_yielded = False
+            for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
+                    gemini_yielded = True
+            if gemini_yielded:
+                return
+            print("⚠️ [STREAM/Gemini]: Empty stream — falling back to Groq")
+        except Exception as gemini_err:
+            print(f"⚠️ [STREAM/Gemini]: {type(gemini_err).__name__}: {gemini_err} — falling back to Groq")
+
+    # ── FALLBACK: Groq llama-3.3-70b-specdec (non-streaming, yielded as chunk) ─
+    if groq_client and GROQ_KEY:
+        try:
+            groq_response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-specdec",
+                messages=[
+                    {"role": "system", "content": KASEDDIE_SYSTEM_PROMPT},
+                    {"role": "user", "content": message}
+                ],
+                max_tokens=1024,
+                temperature=0.7,
+                timeout=45
+            )
+            yield groq_response.choices[0].message.content or ""
+            return
+        except Exception as groq_err:
+            yield f"AI service temporarily unavailable. Please try again. ({type(groq_err).__name__})"
+            return
+
+    yield "AI service is not configured. Please contact the administrator."
 
 @api_router.post("/agent/chat")
 async def agent_chat_stream(req: AgentChatRequest):
     """
-    Kaseddie AI Agent streaming chat endpoint using Gemini 2.5 model.
-    Provides real-time streaming responses for chatbot UI.
+    Kaseddie AI Agent streaming chat endpoint.
+    Primary: Gemini 2.0 Flash stream. Fallback: Groq llama-3.3-70b-specdec.
+    Always returns a StreamingResponse — KaseddieChat.tsx reads the body as text.
+    The fallback in generate_chat_stream handles missing/failed Gemini automatically.
     """
     try:
         print(f"🔍 [AGENT CHAT]: Message received: {req.message[:100]}...")
-        
-        if not gemini_client:
-            return StreamingResponse(
-                iter(["AI service not available - please check configuration"]),
-                media_type="text/plain"
-            )
-        
+
+        # generate_chat_stream handles both Gemini and Groq fallback internally.
+        # Do NOT short-circuit here — let the generator decide which AI to use.
         return StreamingResponse(
             generate_chat_stream(req.message),
             media_type="text/plain"
         )
-        
+
     except Exception as e:
         print(f"❌ [AGENT CHAT ERROR]: {e}")
         return StreamingResponse(
