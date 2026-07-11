@@ -469,19 +469,21 @@ def sanitize_region_name(name):
     if not clean_name:
         return "Global Corridor"
     
-    # Normalize common region names
-    lower_clean_name = clean_name.lower()
-    if "uae" in lower_clean_name or "dubai" in lower_clean_name:
+    # Normalize common region names — maps old backend labels → frontend labels
+    lower_clean = clean_name.lower()
+    if "uae" in lower_clean or "dubai" in lower_clean or "emirates" in lower_clean or "gcc" in lower_clean:
         return "Dubai Hub"
-    if "poland" in lower_clean_name:
+    if "poland" in lower_clean:
         return "Western Corridor"
-    if "luxembourg" in lower_clean_name:
-        return "Premium Node (LUX)"
-    if "germany" in lower_clean_name or "europe" in lower_clean_name:
-        return "Western Medical/Tech Corridor"
-    if "canada" in lower_clean_name:
-        return "Infrastructure Corridor"
-    
+    if "luxembourg" in lower_clean:
+        return "Premium Node"
+    if "germany" in lower_clean or "berlin" in lower_clean or "eu-central" in lower_clean:
+        return "EU-Central"
+    if "canada" in lower_clean:
+        return "Western Corridor"
+    if "uk" in lower_clean or "united kingdom" in lower_clean:
+        return "UK-Northern Corridor"
+
     return clean_name
 
 
@@ -522,38 +524,39 @@ def aggregate_qdrant_data():
         print(f"❌ [DEBUG]: Could not access collection: {e}")
         return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
         
-    # Group by country and category
-    stats = {}
+    # Group by node/corridor — NOT country.
+    # 'country' often contains company names from Apify; node/corridor hold the
+    # frontend-compatible corridor labels set during ingest.
+    stats: dict = {}
     total_count = 0
-    
+
     for point in all_points:
         payload = point.payload
-        if payload:
-            country = sanitize_region_name(payload.get("country", "Global"))
-            category = payload.get("category", "general")
-            
-            # Only count leads that are 'live', 'verified', 'active', or 'vetted'
-            if payload.get("status") in ["live", "verified", "active", "vetted"]:
-                key = f"{country}_{category}"
-                stats[key] = stats.get(key, 0) + 1
-                total_count += 1
-    
-    # Convert to expected format
-    result = []
-    for key, count in stats.items():
-        try:
-            country, category = key.rsplit("_", 1)
-        except:
-            country = key
-            category = "general"
-        result.append({
-            "region": sanitize_region_name(country),
-            "count": max(0, int(count) if isinstance(count, (int, float)) else 0)
-        })
-    
-    print(f"🔍 [DEBUG]: Computed stats: {result}")
-    print(f"🔍 [DEBUG]: Total count: {total_count}")
-    
+        if not payload:
+            continue
+
+        # Only count leads that are active
+        if payload.get("status") not in ["live", "verified", "active", "vetted"]:
+            continue
+
+        # Prefer node field, fallback to corridor, then derive from country as last resort
+        raw_node = (
+            payload.get("node")
+            or payload.get("corridor")
+            or sanitize_region_name(payload.get("country", "Global"))
+        )
+        node_label = sanitize_region_name(str(raw_node)) if raw_node else "Global Corridor"
+
+        stats[node_label] = stats.get(node_label, 0) + 1
+        total_count += 1
+
+    result = [
+        {"region": region, "count": count}
+        for region, count in sorted(stats.items(), key=lambda x: -x[1])
+    ]
+
+    print(f"🔍 [CORRIDOR STATS]: {len(result)} corridors, {total_count} total active leads")
+
     return {
         "stats": result,
         "total": total_count
@@ -955,32 +958,43 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
     # 3. Status Mapping
     status = "live"  # Set to "live" so frontend recognizes as active
     
-    # 4. Node Assignment - Critical for UI filtering
-    node = "Global Corridor"  # Default fallback
+    # 4. Node Assignment — labels MUST match frontend computeRegionLabelFromLocation()
+    # Frontend expects: 'Premium Node', 'Dubai Hub', 'EU-Central', 'Western Corridor',
+    #                   'UK-Northern Corridor', 'Global Corridor'
+    node = "Global Corridor"  # default
     location_lower = location.lower()
-    title_lower = title.lower()
-    
-    # Priority-based node assignment
+    title_lower    = title.lower()
+
     if forced_country:
-        if "luxembourg" in forced_country.lower():
-            node = "Luxembourg Node"
-        elif "poland" in forced_country.lower() or "pl" in location_lower:
-            node = "EU-Central (Germany)"  # Poland goes under EU-Central
-        elif "united arab emirates" in forced_country.lower() or "uae" in forced_country.lower():
-            node = "GCC Corridor"
-        elif "saudi arabia" in forced_country.lower() or "ksa" in forced_country.lower():
-            node = "GCC Corridor"
-    else:
-        # Fallback logic based on location/title analysis
-        if any(loc in location_lower for loc in ["luxembourg", "lux"]):
-            node = "Luxembourg Node"
-        elif any(loc in location_lower for loc in ["poland", "pl"]) or "poland" in title_lower:
-            node = "EU-Central (Germany)"
-        elif any(loc in location_lower for loc in ["uae", "dubai", "abu dhabi", "qatar", "kuwait", "bahrain", "saudi"]):
-            node = "GCC Corridor"
-        elif any(loc in location_lower for loc in ["uk", "united kingdom", "london"]):
+        fc = forced_country.lower()
+        if "luxembourg" in fc:
+            node = "Premium Node"
+        elif "poland" in fc:
+            node = "Western Corridor"
+        elif "united arab emirates" in fc or "uae" in fc or "dubai" in fc:
+            node = "Dubai Hub"
+        elif "qatar" in fc or "kuwait" in fc or "bahrain" in fc or "saudi" in fc:
+            node = "Dubai Hub"
+        elif "germany" in fc or "deutschland" in fc:
+            node = "EU-Central"
+        elif "uk" in fc or "united kingdom" in fc:
             node = "UK-Northern Corridor"
-        elif any(loc in location_lower for loc in ["canada", "usa"]):
+        elif "canada" in fc or "usa" in fc:
+            node = "Western Corridor"
+    else:
+        if any(loc in location_lower for loc in ["luxembourg", "lux"]):
+            node = "Premium Node"
+        elif any(loc in location_lower for loc in ["poland", "warszawa", "krakow", "wroclaw"]):
+            node = "Western Corridor"
+        elif any(loc in location_lower for loc in ["uae", "dubai", "abu dhabi", "emirates"]):
+            node = "Dubai Hub"
+        elif any(loc in location_lower for loc in ["qatar", "kuwait", "bahrain", "saudi", "riyadh", "jeddah"]):
+            node = "Dubai Hub"
+        elif any(loc in location_lower for loc in ["germany", "berlin", "munich", "hamburg", "deu"]):
+            node = "EU-Central"
+        elif any(loc in location_lower for loc in ["uk", "united kingdom", "london", "manchester", "birmingham"]):
+            node = "UK-Northern Corridor"
+        elif any(loc in location_lower for loc in ["canada", "toronto", "vancouver", "usa"]):
             node = "Western Corridor"
     
     metadata = {
@@ -1707,7 +1721,9 @@ async def generate_proposal(req: ProposalRequest):
         Description: {safe_description}
         
         Create a pitch that speaks directly to their industry challenges and opportunities.
-        Keep it under 150 words and include a clear call-to-action.
+        Write 3–4 paragraphs (250–400 words). Include a clear call-to-action and end with:
+        WhatsApp: +256 784428821 / +256 756824859
+        Email: hr@globalpathkaseddieagent.com
         """
         
         print(f"🔍 [PROPOSAL DEBUG]: Calling Groq API with model: llama-3.3-70b-versatile")
@@ -1720,7 +1736,7 @@ async def generate_proposal(req: ProposalRequest):
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.7,
-            max_tokens=200
+            max_tokens=450  # Increased from 200 — 200 was truncating pitches mid-sentence
         )
         
         pitch = response.choices[0].message.content or "Failed to generate proposal."
@@ -1921,67 +1937,72 @@ async def agent_chat_stream(req: AgentChatRequest):
 async def generate_marketing(job_request: dict):
     """
     Generate marketing content for a verified job lead.
-    Takes company, role, and corridor to create compelling marketing copy.
+    Primary: Gemini 2.0 Flash. Fallback: Groq llama-3.3-70b-versatile.
     """
-    try:
-        company = job_request.get('company', 'Global Partner')
-        role = job_request.get('title', 'Strategic Role')
-        corridor = job_request.get('corridor', 'Global')
-        
-        print(f"🎨 [MARKETING]: Generating content for {company} - {role} in {corridor}")
-        
-        # Create marketing prompt
-        full_prompt = f"""You are a GlobalPath marketing specialist. Create compelling, professional marketing copy for job opportunities. Focus on benefits, prestige, and clear call-to-action. Keep it under 150 words and make it suitable for WhatsApp sharing.
+    company  = job_request.get('company', 'Global Partner')
+    role     = job_request.get('title', 'Strategic Role')
+    corridor = job_request.get('corridor', 'Global')
 
-Create compelling marketing copy for this job opportunity:
+    static_fallback = (
+        f"🚀 Exciting opportunity at {company}! We're seeking a talented {role} "
+        f"for our {corridor} operations. This role offers excellent growth potential "
+        f"and competitive benefits. Zero-fee recruitment — apply now! "
+        f"📱 +256 784 428 821 | hr@globalpathkaseddieagent.com"
+    )
+
+    prompt = f"""You are a GlobalPath marketing specialist. Create compelling, professional marketing copy for job opportunities.
 
 Company: {company}
 Role: {role}
 Location/Corridor: {corridor}
 
-Generate a professional, engaging marketing message that highlights:
-1. The company's prestige and reputation
-2. The role's key benefits and growth opportunities
-3. The location/corridor advantages
-4. A clear call-to-action to apply
+Write a WhatsApp-ready marketing message (under 150 words) that highlights:
+1. The company prestige and role benefits
+2. Corridor/location advantages
+3. A clear call-to-action
+Include relevant emojis and end with: 📱 +256 784 428 821"""
 
-Requirements:
-- Keep it under 150 words
-- Make it suitable for WhatsApp sharing
-- Use professional but engaging tone
-- Include relevant emojis for visual appeal
-- End with clear application instructions
-
-Format the response as clean text ready for WhatsApp.
-        """
-        
-        print(f"🎨 [MARKETING]: Calling Gemini 2.5 Flash for content generation...")
-        
-        response = gemini_client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[full_prompt],
-            config=types.GenerateContentConfig(
-                max_output_tokens=400,
-                temperature=0.7
+    # ── PRIMARY: Gemini ─────────────────────────────────────────────────────
+    if gemini_client and GEMINI_API_KEY:
+        try:
+            print(f"🎨 [MARKETING]: Calling Gemini for {company} - {role}")
+            response = gemini_client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=[prompt],
+                config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.7)
             )
-        )
-        
-        marketing_content = response.text or f"🚀 Exciting opportunity at {company}! We're seeking a talented {role} for our {corridor} operations. This role offers excellent growth potential and competitive benefits. Apply now to join our elite team! 📱 +256 784 428 821"
-        
-        print(f"✅ [MARKETING]: Generated {len(marketing_content)} characters of marketing content")
-        print(f"✅ [MARKETING]: === MARKETING GENERATION COMPLETE ===")
-        
-        return {"marketing_content": marketing_content}
-        
-    except Exception as e:
-        print(f"❌ [MARKETING]: === MARKETING GENERATION ERROR ===")
-        print(f"❌ [MARKETING]: Error: {e}")
-        print(f"❌ [MARKETING]: Error type: {type(e).__name__}")
-        
-        # Fallback marketing content
-        fallback_content = f"🚀 Exciting opportunity at {company}! We're seeking a talented {role} for our {corridor} operations. This role offers excellent growth potential and competitive benefits. Apply now to join our elite team! 📱 +256 784 428 821"
-        
-        return {"marketing_content": fallback_content}
+            content = (response.text or "").strip()
+            if content:
+                print(f"✅ [MARKETING/Gemini]: {len(content)} chars")
+                return {"marketing_content": content}
+            print("⚠️ [MARKETING/Gemini]: Empty response — falling back to Groq")
+        except Exception as e:
+            print(f"⚠️ [MARKETING/Gemini]: {type(e).__name__}: {e} — falling back to Groq")
+
+    # ── FALLBACK: Groq ───────────────────────────────────────────────────────
+    if groq_client and GROQ_KEY:
+        try:
+            print(f"🎨 [MARKETING/Groq]: Generating for {company} - {role}")
+            groq_resp = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You are a GlobalPath marketing specialist."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=400,
+                temperature=0.7,
+                timeout=30
+            )
+            content = (groq_resp.choices[0].message.content or "").strip()
+            if content:
+                print(f"✅ [MARKETING/Groq]: {len(content)} chars")
+                return {"marketing_content": content}
+        except Exception as e:
+            print(f"❌ [MARKETING/Groq]: {type(e).__name__}: {e}")
+
+    # ── STATIC FALLBACK ──────────────────────────────────────────────────────
+    print("⚠️ [MARKETING]: Both AI services unavailable — returning static fallback")
+    return {"marketing_content": static_fallback}
 
 @api_router.post("/generate-pitch")
 async def generate_pitch(req: PitchRefineRequest):
@@ -2423,16 +2444,30 @@ async def sync_all_apify_datasets():
                         point_id = str(uuid.uuid4())
                         
                         # Step 1A: Immediate raw payload for Qdrant
+                        # Resolve a frontend-compatible node label from the corridor string.
+                        # This ensures the raw save uses the same vocabulary as the enrichment pass.
+                        def _resolve_node(corridor_str: str) -> str:
+                            c = corridor_str.lower()
+                            if "luxembourg" in c:   return "Premium Node"
+                            if "poland" in c:        return "Western Corridor"
+                            if "uae" in c or "united arab emirates" in c or "dubai" in c: return "Dubai Hub"
+                            if "ksa" in c or "saudi" in c or "qatar" in c:               return "Dubai Hub"
+                            if "germany" in c:       return "EU-Central"
+                            if "uk" in c or "united kingdom" in c:  return "UK-Northern Corridor"
+                            if "canada" in c or "usa" in c:         return "Western Corridor"
+                            return "Global Corridor"
+
+                        resolved_node = _resolve_node(corridor)
                         raw_payload = {
                             'phone': phone,
                             'email': email,
                             'company': company or 'Global Partner',
                             'title': title or 'Specialized Role',
                             'description': description,
-                            'status': 'verified',  
-                            'vetted': True,        
-                            'corridor': corridor,
-                            'node': corridor,  
+                            'status': 'verified',
+                            'vetted': True,
+                            'corridor': resolved_node,
+                            'node':     resolved_node,
                             'timestamp': datetime.now().isoformat(),
                             'fingerprint': fingerprint,
                             'source': 'apify_sync',
@@ -2523,6 +2558,8 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
             currency = "PLN"
         
         category = "professional" if (is_lux or is_poland) else "blue_collar"
+        # NOTE: dataset_mapping_function will re-evaluate category from title keywords.
+        # This value is just the initial hint; refined_category inside the function takes over.
         
         # 2. Extract basic fields for grounding
         company_name = item.get('companyName') or item.get('company') or 'Global Partner'

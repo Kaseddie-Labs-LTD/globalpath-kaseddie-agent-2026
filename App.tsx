@@ -232,66 +232,73 @@ function App() {
     return 'Global Corridor';
   }, []);
 
-  const categorizeJob = useCallback((job: any) => {
-    const title = (job.title || '').toLowerCase();
-    const description = (job.description || '').toLowerCase();
-    const interests = (job.interests || '').toLowerCase();
-    const text = `${title} ${description} ${interests}`;
+  // Unified categorization — mirrors utils/jobCategorization.ts exactly.
+  // Single source of truth: service_domestic first, then blue_collar, then professional.
+  // 'it' and bare 'ai' removed — too broad, match common English words.
+  const categorizeJob = useCallback((job: any): 'professional' | 'blue_collar' | 'service_domestic' | 'general' => {
+    const title       = (job.title        || job.positionName || '').toLowerCase();
+    const description = (job.description  || job.interests    || '').toLowerCase();
+    const company     = (job.company      || '').toLowerCase();
 
-    // 1. DOMESTIC & HOSPITALITY (The "Missing" Leads)
-    if (
-      text.includes('cleaner') || text.includes('maid') || 
-      text.includes('housekeeping') || text.includes('chef') || 
-      text.includes('cook') || text.includes('domestic') || 
-      text.includes('caregiver') || text.includes('nanny') ||
-      text.includes('housekeeper') || text.includes('care home') ||
-      text.includes('care assistant') || text.includes('support worker')
-    ) {
-      return 'blue_collar';
-    }
+    const serviceDomesticKws = [
+      'cleaner', 'deep clean', 'housekeeper', 'housekeeping',
+      'maid', 'housemaid', 'nanny', 'au pair',
+      'domestic', 'janitor', 'caretaker',
+      'caregiver', 'care home', 'care assistant', 'support worker',
+      'home help', 'home carer',
+    ];
+    const blueCollarKws = [
+      'driver', 'delivery driver', 'chauffeur', 'forklift',
+      'delivery', 'courier',
+      'warehouse', 'packing', 'picker', 'packer',
+      'transport', 'logistics operator', 'freight',
+      'helper', 'general helper', 'labourer', 'laborer',
+      'merchandiser', 'shelf stacker', 'shelf',
+      'butcher', 'butchery',
+      'construction worker', 'site worker',
+      'security guard', 'security officer',
+      'chef', 'cook', 'kitchen hand', 'food prep',
+    ];
+    const professionalKws = [
+      'software engineer', 'software developer', 'frontend', 'backend', 'fullstack',
+      'web developer', 'mobile developer', 'devops', 'cloud engineer',
+      'data scientist', 'data analyst', 'data engineer',
+      'it specialist', 'it manager', 'it support', 'it consultant',
+      'systems administrator', 'network engineer', 'cybersecurity', 'infosec',
+      'ai engineer', 'ai specialist', 'machine learning',
+      'manager', 'director', 'executive', 'officer', 'coordinator',
+      'consultant', 'analyst', 'associate', 'advisor',
+      'procurement', 'supply chain', 'logistics manager', 'operations manager',
+      'project manager', 'product manager', 'account manager',
+      'business development', 'sales manager',
+      'accountant', 'auditor', 'finance', 'financial analyst', 'controller',
+      'legal', 'lawyer', 'compliance officer',
+      'nurse', 'registered nurse', 'doctor', 'physician', 'surgeon',
+      'pharmacist', 'physiotherapist', 'radiologist',
+      'hotel manager', 'hospitality manager', 'events manager',
+      'pwc', 'deloitte', 'kpmg', 'ernst', 'mckinsey',
+    ];
 
-    // 2. LOGISTICS
-    if (
-      text.includes('driver') || text.includes('delivery') || 
-      text.includes('transport') || text.includes('warehouse') ||
-      text.includes('delivery driver') || text.includes('helper') ||
-      text.includes('merchandiser') || text.includes('shelf')
-    ) {
-      return 'blue_collar';
-    }
+    const inTitle = (kws: string[]) => kws.some(kw => title.includes(kw));
+    const inAll   = (kws: string[]) => kws.some(kw =>
+      title.includes(kw) || description.includes(kw) || company.includes(kw)
+    );
 
-    // 3. IT & DIGITAL
-    if (
-      text.includes('it') || text.includes('software') ||
-      text.includes('engineer') || text.includes('developer') || 
-      text.includes('ai') || text.includes('it specialist') ||
-      text.includes('cybersecurity') || text.includes('analyst') ||
-      text.includes('consultant') || text.includes('manager') ||
-      text.includes('associate') || text.includes('executive') ||
-      text.includes('pwc') || text.includes('deloitte') || 
-      text.includes('officer') || text.includes('procurement') ||
-      text.includes('logistics manager') || text.includes('supply chain') ||
-      text.includes('nurse') || text.includes('doctor') || 
-      text.includes('physician') || text.includes('hospitality') ||
-      text.includes('hotel') || text.includes('goodyear associate') ||
-      text.includes('events management specialist')
-    ) {
-      return 'professional';
-    }
+    // 1. Service & Domestic — checked first, never shadowed
+    if (inTitle(serviceDomesticKws)) return 'service_domestic';
+    if (inAll(serviceDomesticKws))   return 'service_domestic';
 
-    // 4. SERVICE & DOMESTIC (APPENDED - New Category)
-    if (
-      text.includes('cleaner') || text.includes('housekeeper') ||
-      text.includes('maid') || text.includes('nanny') || 
-      text.includes('domestic') || text.includes('janitor') ||
-      text.includes('driver') || text.includes('delivery') || 
-      text.includes('maintenance') || text.includes('caretaker')
-    ) {
-      return 'service_domestic';
-    }
+    // 2. Blue Collar (title first to avoid 'logistics manager' landing here)
+    if (inTitle(blueCollarKws)) return 'blue_collar';
 
-    // Default fallback - assume blue collar for missing data
-    return 'blue_collar';
+    // 3. Professional
+    if (inAll(professionalKws)) return 'professional';
+
+    // 4. Blue Collar description fallback
+    if (inAll(blueCollarKws)) return 'blue_collar';
+
+    // 5. General — explicit, not silently blue_collar
+    return 'general';
   }, []);
 
   const countNodesByCategory = useCallback((corridor: string, category: 'blue_collar' | 'professional' | 'service_domestic') => {
@@ -886,23 +893,27 @@ function App() {
         : intelSearch;
 
       // Compute region and category safely
-      const computedNode = computeRegionLabelFromLocation(j) || 'Global';
-      const computedCategory = categorizeJob({...j, node: computedNode}) || 'Professional';
-      
-      return { 
+      const computedNode     = computeRegionLabelFromLocation(j) || 'Global';
+      // Use the unified categorizeJob — respects all four categories in snake_case.
+      // Never override with hardcoded capitalized strings.
+      const computedCategory = categorizeJob({ ...j, node: computedNode }) || 'general';
+
+      return {
         ...j,
-        company: safeCompany,
+        company:  safeCompany,
         location: safeLocation,
-        website: finalWebsite, 
-        phone: safePhone, // Reference error fixed
-        email: safeEmail,
-        category: (j.category === 'blue_collar' || (j.title || '').toLowerCase().includes('cleaner')) 
-          ? 'Blue Collar' 
-          : 'Professional',
-        status: j.status || 'verified',
-        vetted: j.vetted ?? true,
-        // Ensure these computed fields don't accidentally return objects
-        node: String(computedNode),
+        website:  finalWebsite,
+        phone:    safePhone,
+        email:    safeEmail,
+        // Keep backend category if already set to a valid value; otherwise use computed.
+        category: (['professional', 'blue_collar', 'service_domestic', 'general'].includes(
+          String(j.category || '').toLowerCase()
+        ))
+          ? String(j.category).toLowerCase()
+          : computedCategory,
+        status:   j.status || 'verified',
+        vetted:   j.vetted ?? true,
+        node:     String(computedNode),
         gpLeadId: j.gpLeadId || `GP-SWR-${Date.now().toString().slice(-6)}`
       };
     });
@@ -1293,9 +1304,10 @@ function App() {
                   try {
                     const requestBody = {
                       company: company,
-                      job_title: title,  // Backend expects 'job_title', not 'title'
-                      category: category || "Professional",
-                      salary: salary || "null",
+                      job_title: title,
+                      category: category || "blue_collar",
+                      // Send empty string, not the literal string "null" — backend defaults to competitive
+                      salary: (salary && salary !== "null") ? salary : "",
                       country: country || "",
                       location: location || "",
                       details: "High-priority node."
