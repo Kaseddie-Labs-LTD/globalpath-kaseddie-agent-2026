@@ -138,8 +138,68 @@ export const verifyDocument = async (_file: File, docType: string): Promise<Veri
 
 export const analyzeJobSafety = async (job: Job): Promise<SafetyReport> => {
   try {
-    return { jobId: job.id, safetyScore: 80, recommendation: 'Apply' } as any;
+    const response = await fetcher('/agent/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: `You are a GlobalPath compliance auditor. Analyze this job listing for safety and ethical compliance.
+
+Job Title: ${job.title}
+Company: ${job.company}
+Location: ${typeof job.location === 'string' ? job.location : JSON.stringify(job.location)}
+Salary: ${job.salary || 'Not disclosed'}
+Description: ${(job.description || '').slice(0, 500)}
+
+Return a JSON object with EXACTLY these keys:
+{
+  "safetyScore": <number 0-100>,
+  "isDirectEmployer": <true|false>,
+  "salaryFairness": <"Low"|"Fair"|"High"|"Unknown">,
+  "marketAverage": <string, e.g. "$1,200/month">,
+  "complianceFlags": [<array of string issues, empty if none>],
+  "kafalaWarning": <true if UAE/GCC Kafala system risk>,
+  "sponsorshipVerified": <true|false>,
+  "flightTicketProvided": <true|false>,
+  "illegalFeeDetected": <true if candidate must pay any fee>,
+  "recommendation": <"Apply"|"Proceed with Caution"|"Avoid"|"Non-Compliant">
+}
+Return ONLY the JSON object, no markdown, no extra text.`
+      })
+    });
+
+    const raw = response?.reply || '{}';
+    // Strip markdown code fences if present
+    const clean = raw.replace(/```(?:json)?\n?/g, '').replace(/```/g, '').trim();
+    let obj: any = {};
+    try { obj = JSON.parse(clean); } catch { obj = {}; }
+
+    return {
+      jobId: job.id,
+      safetyScore:          typeof obj.safetyScore === 'number' ? obj.safetyScore : 75,
+      isDirectEmployer:     obj.isDirectEmployer ?? true,
+      salaryFairness:       obj.salaryFairness || 'Fair',
+      marketAverage:        obj.marketAverage || 'Market rate',
+      complianceFlags:      Array.isArray(obj.complianceFlags) ? obj.complianceFlags : [],
+      kafalaWarning:        obj.kafalaWarning ?? false,
+      sponsorshipVerified:  obj.sponsorshipVerified ?? true,
+      flightTicketProvided: obj.flightTicketProvided ?? false,
+      illegalFeeDetected:   obj.illegalFeeDetected ?? false,
+      recommendation:       obj.recommendation || 'Proceed with Caution',
+    };
   } catch {
-    return { jobId: job.id, safetyScore: 70, recommendation: 'Proceed with Caution' } as any;
+    // Hard fallback — never show fake "Apply" for everything
+    return {
+      jobId:                job.id,
+      safetyScore:          60,
+      isDirectEmployer:     false,
+      salaryFairness:       'Unknown',
+      marketAverage:        'Verification needed',
+      complianceFlags:      ['Manual review required — AI audit unavailable'],
+      kafalaWarning:        false,
+      sponsorshipVerified:  false,
+      flightTicketProvided: false,
+      illegalFeeDetected:   false,
+      recommendation:       'Proceed with Caution',
+    };
   }
 };

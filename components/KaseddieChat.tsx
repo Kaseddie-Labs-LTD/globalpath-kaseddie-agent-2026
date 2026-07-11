@@ -31,62 +31,66 @@ const KaseddieChat = () => {
     setInput("");
 
     try {
-      // MISSION 2: Universal Handshake - Use explicit BACKEND_URL with credentials
       const res = await fetch(`${BACKEND_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ message: input })
       });
-      
-      if (res.ok) {
+
+      if (!res.ok) {
+        if (isMountedRef.current) {
+          setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
+        }
+        return;
+      }
+
+      // Detect response type — /api/chat returns JSON {"reply":"..."};
+      // /api/agent/chat returns text/plain stream. Handle both correctly.
+      const contentType = res.headers.get('content-type') || '';
+      const isStream = contentType.includes('text/plain') || contentType.includes('text/event-stream');
+
+      if (isStream) {
+        // ── Streaming path ─────────────────────────────────────────────────
         const reader = res.body?.getReader();
-        readerRef.current = reader;
-        
+        readerRef.current = reader ?? null;
+
         if (reader) {
-          // Handle streaming response
           let assistantMessage = '';
           const decoder = new TextDecoder();
-          
+
           if (isMountedRef.current) {
             setHistory(prev => [...prev, { role: 'assistant', content: '', isStreaming: true }]);
           }
-          
+
           while (isMountedRef.current) {
             const { done, value } = await reader.read();
             if (done) break;
-            
             const chunk = decoder.decode(value, { stream: true });
             assistantMessage += chunk;
-            
-            // Update the streaming message only if still mounted
             if (isMountedRef.current) {
               setHistory(prev => {
-                const newHistory = [...prev];
-                newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: true };
-                return newHistory;
+                const next = [...prev];
+                next[next.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: true };
+                return next;
               });
             }
           }
-          
-          // Final update only if still mounted
+
           if (isMountedRef.current) {
             setHistory(prev => {
-              const newHistory = [...prev];
-              newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantMessage, isStreaming: false };
-              return newHistory;
+              const next = [...prev];
+              next[next.length - 1] = { role: 'assistant', content: next[next.length - 1].content, isStreaming: false };
+              return next;
             });
-          }
-        } else {
-          // Fallback for non-streaming response
-          const data = await res.json();
-          if (isMountedRef.current) {
-            setHistory(prev => [...prev, { role: 'assistant', content: data.reply, isStreaming: false }]);
           }
         }
       } else {
+        // ── JSON path (/api/chat returns {"reply":"..."}) ──────────────────
+        const data = await res.json();
+        const reply = data?.reply || data?.message || 'No response received.';
         if (isMountedRef.current) {
-          setHistory(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check backend status.', isStreaming: false }]);
+          setHistory(prev => [...prev, { role: 'assistant', content: reply, isStreaming: false }]);
         }
       }
     } catch (error) {
