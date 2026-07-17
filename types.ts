@@ -53,7 +53,7 @@ export interface Job {
   lng?: number;
   positionName?: string;
   sector?: 'Professional' | 'Blue-Collar' | 'Other';
-  category?: 'blue_collar' | 'professional' | 'service_domestic';
+  category?: 'blue_collar' | 'professional' | 'service_domestic' | 'general';
   node?: string;
   corridor?: string;
   // Additional properties for admin dashboard and compatibility
@@ -132,22 +132,9 @@ export interface UserProfile {
   enhancedPhotoUrl?: string;
 }
 
-export enum AppView {
-  DASHBOARD = 'DASHBOARD',
-  UPLOADS = 'UPLOADS',
-  MATCHES = 'MATCHES',
-  CHAT = 'CHAT',
-  VIDEO_GENERATOR = 'VIDEO_GENERATOR',
-  WHATSAPP_BOT = 'WHATSAPP_BOT',
-  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
-  ADMIN = 'ADMIN',
-  RECRUITER_LOGS = 'RECRUITER_LOGS',
-  HR_PORTAL = 'HR_PORTAL',
-  CORRIDOR_FEED = 'CORRIDOR_FEED',
-  VENDOR_GATEKEEPER = 'VENDOR_GATEKEEPER',
-  COMPLIANCE = 'COMPLIANCE',
-  BLOCK_REPORT = 'BLOCK_REPORT'
-}
+// AppView is the canonical enum for routing between app screens.
+// Import it exclusively from './primitive-types' (zero-import island) to prevent circular dependencies.
+// Do NOT declare it here.
 
 export type AgentState = 
   | 'IDLE' 

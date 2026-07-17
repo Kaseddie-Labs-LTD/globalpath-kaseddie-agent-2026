@@ -44,7 +44,7 @@ export const JobSchema = z.object({
   sector: z.enum(['Professional', 'Blue-Collar', 'Other']).optional(),
   category: z.enum(['blue_collar', 'professional', 'service_domestic', 'general']).optional(),
   node: z.string().optional(),
-  complianceStatus: z.enum(['High Risk', 'Verified', 'Pending Review']).default('Pending Review'),
+  complianceStatus: z.enum(['High Risk', 'Verified', 'Pending Review', 'Requires Manual Enrichment']).default('Pending Review'),
 });
 
 export type ValidatedJob = z.infer<typeof JobSchema>;
