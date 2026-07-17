@@ -10,16 +10,70 @@ export const SCRAPER_CONFIG = {
   scrapeReviewCount: 20
 };
 
+// Patterns that indicate a fabricated/fallback contact — never produced by real grounding.
+// The backend's get_grounded_contact_data() returns real emails from Gemini Search;
+// these patterns only appear when the old enrichContactData() mock ran client-side
+// or when the backend had no grounding result and used a slug-based fallback.
+const SYNTHETIC_EMAIL_RE = /^hr@[a-z0-9]+\.com$/i;
+const SYNTHETIC_TITLE_RE = /^(hiring manager|hr director|talent acquisition|staffing lead)$/i;
+
+/**
+ * Returns true if the email value looks like a fabricated slug-based address
+ * (e.g. "hr@somecompany.com") rather than a real verified contact.
+ * Real grounded emails contain dots, department prefixes, or full names.
+ */
+function isSyntheticEmail(email: string | undefined): boolean {
+  if (!email) return true;
+  // Explicitly allow the canonical GlobalPath outreach address
+  if (email === 'hr@globalpathkaseddieagent.com') return false;
+  return SYNTHETIC_EMAIL_RE.test(email.trim());
+}
+
 /**
  * Normalise a raw lead payload from Qdrant.
- * Fills in category via the canonical categorizeJob() when the backend hasn't
- * assigned one (e.g. older records ingested before the pipeline was fixed).
- * This is the single place on the frontend where category is resolved —
- * all hand-rolled keyword blocks have been removed.
+ *
+ * 1. Category — filled via canonicalized categorizeJob() when absent.
+ * 2. Contact fields — only real, grounded values from the backend pipeline
+ *    are preserved. Fabricated slug emails and placeholder decision-maker
+ *    titles are replaced with undefined so components render "not available"
+ *    instead of fake data. Real contact data lives in the backend-enriched
+ *    `enriched_contact` sub-object written by get_grounded_contact_data().
  */
 function normaliseLead(job: any): Job {
   const category = job.category ?? categorizeJob(job);
-  return { ...job, category } as Job;
+
+  // Prefer the deeply grounded contact written by the backend enrichment pipeline.
+  const enriched = job.enriched_contact ?? {};
+  const groundedEmail: string | undefined =
+    enriched.contact_channels?.email ||
+    enriched.contact_channels?.work_email ||
+    undefined;
+  const groundedTitle: string | undefined =
+    enriched.decision_maker_title || undefined;
+
+  // Surface-level fields — accept only if they don't look synthetic.
+  const rawEmail: string | undefined =
+    job.Contact_Email || job.hrContact || job.employerEmail || undefined;
+  const rawTitle: string | undefined =
+    job.Decision_Maker_Title || undefined;
+
+  const verifiedEmail: string | undefined =
+    groundedEmail ||
+    (rawEmail && !isSyntheticEmail(rawEmail) ? rawEmail : undefined);
+
+  const verifiedTitle: string | undefined =
+    groundedTitle ||
+    (rawTitle && !SYNTHETIC_TITLE_RE.test(rawTitle.trim()) ? rawTitle : undefined);
+
+  return {
+    ...job,
+    category,
+    Contact_Email: verifiedEmail,
+    Decision_Maker_Title: verifiedTitle,
+    // Keep hrContact/employerEmail consistent with Contact_Email
+    hrContact: verifiedEmail,
+    employerEmail: verifiedEmail,
+  } as Job;
 }
 
 /**

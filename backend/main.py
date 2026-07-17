@@ -1072,10 +1072,29 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
                 title = repaired_title
                 print(f"✅ [TITLE HEALER]: Repaired title to '{title}'")
             else:
-                print(f"⚠️ [TITLE HEALER]: Could not repair title, keeping 'Unknown Position'")
+                # Groq responded but could not identify a title — queue for manual review
+                print(f"⚠️ [TITLE HEALER]: Groq returned no usable title for {company} — queuing for manual review")
+                save_to_pending_review({
+                    **item,
+                    "_healer_failure": "groq_returned_unknown",
+                    "_company": company,
+                    "_description_preview": description[:300],
+                })
+                raise ValueError(f"[TITLE HEALER] Could not repair title for '{company}' — skipping upsert")
+        except ValueError:
+            # Re-raise our own sentinel so the call site skips the upsert cleanly
+            raise
         except Exception as e:
-            print(f"❌ [TITLE HEALER]: Error repairing title: {e}")
-            # Keep original title if repair fails
+            # Groq threw — rate limit, timeout, or API error
+            print(f"❌ [TITLE HEALER]: Groq error for '{company}': {e} — queuing for manual review")
+            save_to_pending_review({
+                **item,
+                "_healer_failure": "groq_exception",
+                "_error": str(e),
+                "_company": company,
+                "_description_preview": description[:300],
+            })
+            raise ValueError(f"[TITLE HEALER] Groq exception for '{company}' — skipping upsert") from e
     
     # Generate unique fingerprint
     fingerprint = hashlib.md5(f"{url}-{title}-{company}".encode()).hexdigest()
