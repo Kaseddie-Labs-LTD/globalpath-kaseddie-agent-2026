@@ -7,7 +7,7 @@ import { categorizeJobForSector, JobSector } from '../utils/jobCategorization';
 
 interface SearchSummaryProps {
   jobs: Job[];
-  onNodeClick?: (region: string, category?: 'All' | 'blue_collar' | 'professional' | 'service_domestic', keyword?: string) => void;
+  onNodeClick?: (region: string, category?: 'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general', keyword?: string) => void;
   onSectorClick?: (sector: string) => void;
   regionJobCounts?: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }>;
   pendingCount?: number;

@@ -154,7 +154,7 @@ function App() {
   const [enrollmentInterestJob, setEnrollmentInterestJob] = useState<{ title: string; company?: string } | null>(null);
   const [recentLead, setRecentLead] = useState<{ name: string; job: string; company?: string } | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
-  const [activeCategory, setActiveCategory] = useState<'All' | 'blue_collar' | 'professional' | 'service_domestic'>('All');
+  const [activeCategory, setActiveCategory] = useState<'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general'>('All');
   const [jobGridKeyword, setJobGridKeyword] = useState<string>('');
   const [jobGridScrollTrigger, setJobGridScrollTrigger] = useState<number>(0);
   const [serviceNotice, setServiceNotice] = useState<string | null>(null);

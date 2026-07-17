@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { Job, getJobLocationString } from '../types';
+import { categorizeJob } from '../utils/jobCategorization';
 import { 
   Search, Filter, CheckCircle, Users, Zap, ShieldCheck, Plane, Key, MapPin, 
   DollarSign, Award, ShieldAlert, AlertTriangle, Star, ChevronDown, ChevronUp, 
@@ -18,8 +19,8 @@ interface JobGridProps {
   onInitializeNode?: (job: Job) => void;
   selectedRegionOverride?: string;
   onRegionChange?: (region: string) => void;
-  activeCategoryOverride?: 'All' | 'blue_collar' | 'professional' | 'service_domestic';
-  onCategoryChange?: (category: 'All' | 'blue_collar' | 'professional' | 'service_domestic') => void;
+  activeCategoryOverride?: 'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general';
+  onCategoryChange?: (category: 'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general') => void;
   keywordOverride?: string;
   scrollTrigger?: number;
   isAdmin?: boolean;
@@ -565,7 +566,7 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
-  const [selectedCategory, setSelectedCategory] = useState<'All' | 'blue_collar' | 'professional' | 'service_domestic'>('All');
+  const [selectedCategory, setSelectedCategory] = useState<'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general'>('All');
   const [salaryType, setSalaryType] = useState<'All' | 'Fixed' | 'Commission'>('All');
   const [complianceFilter, setComplianceFilter] = useState<'All' | 'High Risk' | 'Verified'>('All');
   const [sponsorshipOnly, setSponsorshipOnly] = useState<boolean>(false);
@@ -661,51 +662,13 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
     if (selectedCategory !== 'All') {
       result = result.filter(job => {
         if (!job) return false;
-        
-        // Helper function to determine category with Loose Mapping
-        const getCategory = (j: any) => {
-          if (j.category) {
-            const cat = j.category.toLowerCase();
-            if (cat.includes('professional') || cat === 'professional') return 'professional';
-            if (cat.includes('blue') || cat.includes('collar') || cat === 'blue_collar') return 'blue_collar';
-            if (cat.includes('service') || cat.includes('domestic') || cat === 'service_domestic') return 'service_domestic';
-          }
-          
-          const title = (j.title || j.positionName || '').toLowerCase();
-          const description = (j.description || '').toLowerCase();
-          const company = (j.company || '').toLowerCase();
-          const text = `${title} ${description} ${company}`;
-          
-          if (
-            text.includes('cleaner') || text.includes('housekeeper') ||
-            text.includes('maid') || text.includes('maids') || text.includes('nanny') || 
-            text.includes('domestic') || text.includes('janitor') || text.includes('caregiver') ||
-            text.includes('care assistant') || text.includes('cleaners') ||
-            text.includes('housekeeping') || text.includes('chef') || 
-            text.includes('cook') || text.includes('waiter') || text.includes('waitress') ||
-            text.includes('hotel') || text.includes('hospitality') || text.includes('room attendant')
-          ) {
-            return 'service_domestic';
-          }
-          
-          const professionalKeywords = [
-            'engineer', 'manager', 'consultant', 'associate', 
-            'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
-            'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
-            'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern'
-          ];
-          if (professionalKeywords.some(kw => text.includes(kw))) return 'professional';
-          
-          const blueCollarKeywords = [
-            'driver', 'warehouse', 'helper', 'butcher', 'shelf', 'merchandiser'
-          ];
-          if (blueCollarKeywords.some(kw => text.includes(kw))) return 'blue_collar';
-          
-          return 'general';
-        };
 
-        const jobCategory = getCategory(job);
-        
+        // Use the canonical categorizeJob() — single source of truth for all
+        // category classification on the frontend. Respects the job.category
+        // field set by the backend pipeline; falls back to keyword matching
+        // via the same logic used in normaliseLead() and AdminDashboard.
+        const jobCategory = job.category ?? categorizeJob(job);
+
         if (selectedCategory.toLowerCase().includes('it') || selectedCategory.toLowerCase().includes('digital')) {
           return jobCategory === 'professional';
         }
