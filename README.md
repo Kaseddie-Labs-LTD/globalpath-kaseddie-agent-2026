@@ -1,50 +1,87 @@
-# GlobalPath Kaseddie Agent
+# GlobalPath Kaseddie Agent 2026
 
-AI-powered recruiting and compliance engine for the Uganda–Canada–UAE–EU corridor.
+An AI-native recruitment node matching underemployed talent in international corridors (Uganda–Canada–UAE–EU) with B2B supply chain and technical trade placement using Qdrant vector memory, Gemini optimization, and Groq programmatic healing.
 
-## Vision
+---
 
-GlobalPath connects vetted talent from Uganda to employers across Canada, the UAE, and the European Union. The platform pairs rigorous legal compliance with practical recruiting tools so cross-border hiring remains ethical, lawful, and fast. Employers get ready-to-work candidates; candidates get fair, transparent opportunities with corridor-specific guardrails.
+## 🚀 Tech Stack
 
-## Tech Stack
+*   **Frontend:** React (Vite) + TypeScript + TailwindCSS + SWR
+*   **Backend:** FastAPI (Python 3) + Gunicorn/Uvicorn
+*   **Vector Database:** Qdrant Vector DB (persistent semantic memory)
+*   **AI Engine:** Gemini API (contextual grounding & proposal generation)
+*   **Performance Layer:** Groq API (real-time Title Healer)
+*   **Data Ingestion:** Apify Scraper Integration
+*   **Validation:** End-to-end runtime protection with Zod schemas
 
-- React + Vite + TypeScript for a fast, typed front end.
-- Apify for ingesting live job datasets across target markets.
-- DigitalOcean Gradient™ AI Platform for agentic automation, knowledge grounding, and safety rails.
+---
 
-## Key Features
+## 🛡️ Key Features
 
-- Kaseddie Hunter Agent: A DigitalOcean Gradient agent that drafts high‑conversion B2B proposals and serves as an AI recruiting consultant.
-- Global Labor Law Knowledge Base (6 countries): Curated, corridor‑specific guidance spanning Uganda, Canada, UAE, and key EU jurisdictions to keep actions compliant.
-- B2B Pitch Generator: Takes Job Title, Company, and Location and returns polished proposal text ready for outreach.
+*   **Zero-Trust Data Sanitization:** Programmatically scrubs raw scraper mock data (fake `hr@slug.com` emails and generic placeholder titles) on the fly before surfacing them to the UI.
+*   **Groq-Powered Title Healer:** Backend validation that catches and corrects ambiguous or incomplete raw job titles. 
+*   **Failsafe Queuing System:** When the title healer fails or API limits are hit, leads are automatically offloaded to a local queue (`pending_review.json`) for human review, keeping the primary pipeline crash-proof.
+*   **Vector Memory Vault:** High-dimensional semantic indexing using Qdrant to ensure fast, context-aware talent matching.
+*   **Agentic Pitch Generator:** Multi-jurisdiction compliance-aware B2B pitch drafts optimized with Gemini.
 
-## Setup
+---
 
-1. Install dependencies
+## 🛠️ Local Development Setup
 
+### 1. Frontend Setup (React/Vite)
+Navigate to the root directory and install dependencies:
 ```bash
 npm install
-```
-
-2. Start the dev server
-
-```bash
 npm run dev
-```
-
-## DO Gradient Integration
-
-The Agent Workspace “Global-Labor-Operations” on DigitalOcean Gradient centralizes the compliance layer:
-
-- Knowledge grounding: The agent consults the Global Labor Law Knowledge Base to align advice and proposals with corridor regulations.
-- Policy guardrails: Workspace policies constrain outputs to lawful, ethical recommendations and prevent risky or non‑compliant actions.
-- Single endpoint: Frontend requests send message payloads to the workspace’s chat/completions endpoint; the workspace orchestrates tools, context, and moderation.
-
-This architecture ensures proposals and guidance remain accurate, jurisdiction‑aware, and operationally safe across the Uganda–Canada–UAE–EU corridor.
-
-## API Integration
-
-- Messages payload: The frontend sends a minimal `messages` array to the Gradient Agent chat/completions endpoint.
-- Structured output: The Agent may return either plain text or a JSON object that follows the B2B proposal schema (e.g., title, company, location, pitch body, contact lines).
-- Robust parsing: The client normalizes both forms—if JSON is returned, it is parsed safely; if text is returned, it is used as-is.
 - Reliability: A built‑in retry (3 attempts with backoff) mitigates wake‑up latency and transient network errors.
+Backend Setup (FastAPI)
+Navigate to the /backend directory, set up your environment, and spin up the server:
+
+Bash
+cd backend
+python -m venv venv
+source venv/Scripts/activate  # Windows (PowerShell) or venv/bin/activate (Unix)
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+3. Environment Variables (.env)
+Make sure both environments are configured securely:
+
+Ini, TOML
+# Backend (.env)
+JWT_SECRET=your_production_jwt_secret
+GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_gemini_api_key
+QDRANT_URL=your_qdrant_instance_url
+QDRANT_API_KEY=your_qdrant_api_key
+Ini, TOML
+# Frontend (.env)
+VITE_API_URL=http://localhost:8000
+
+---
+
+### Step 2: Push it directly to `main` on GitHub
+
+Run these commands in your PowerShell terminal to update the repo:
+
+<Sequence>
+{/* Reason: Procedural steps to commit and push the updated README safely directly to main */}
+  <Step title="Save and Check status">
+    Verify that your changes to `README.md` are tracked.
+    ```powershell
+    git status
+    ```
+  </Step>
+  <Step title="Stage and Commit">
+    Stage the updated `README.md` file and commit it.
+    ```powershell
+    git add README.md
+    git commit -m "docs: update README to match FastAPI, Gemini, and Qdrant production stack"
+    ```
+  </Step>
+  <Step title="Push directly to main">
+    Push the changes immediately to GitHub so collaborators see it right now.
+    ```powershell
+    git push origin main
+    ```
+  </Step>
+</Sequence>
