@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, AsyncGenerator
+from qdrant_client import QdrantClient
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -426,7 +427,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import edge_tts
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.models import Distance, VectorParams, PayloadSchemaType
 from apify_client import ApifyClient
