@@ -39,6 +39,9 @@ interface AdminDashboardProps {
   isUplinking?: boolean;
   mutateLeads?: (data?: any, shouldRevalidate?: boolean) => Promise<any>;
   totalLeadsFromSWR?: number;
+  // Vetted filter — toggled from the VERIFIED PLACEMENTS banner pill
+  vettedOnly?: boolean;
+  onVettedFilterChange?: (active: boolean) => void;
 }
 
 interface JobItemProps {
@@ -168,7 +171,7 @@ const INITIAL_PORTALS: VendorPortal[] = [
   { id: '3', name: 'Emirates iSupplier', region: 'Dubai', status: 'Pending', url: 'https://isupplier.emirates.com/' },
 ];
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, onAuditJob, onPitch, batches, setBatches, selectedBatch, setSelectedBatch, onAddLog, onExit, onNodeClick, onRefresh, isUplinking, mutateLeads, totalLeadsFromSWR }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, onAuditJob, onPitch, batches, setBatches, selectedBatch, setSelectedBatch, onAddLog, onExit, onNodeClick, onRefresh, isUplinking, mutateLeads, totalLeadsFromSWR, vettedOnly = false, onVettedFilterChange }) => {
   try {
     // ARCHITECT'S DIRECTIVE 1: Ghost Exorcism - Mounting guard for SWR/mutate operations
     const isMounted = useRef(true);
@@ -384,10 +387,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
 
   // PRIORITY SORT: Golden Corridor (GCC -> Western/Poland) and Luxembourg Node must appear at the top
-  // KIMI K2.5: Use sanitizedJobs for safe sorting
+  // When vettedOnly is active, pre-filter to verified/vetted leads before sorting.
   const sortedHrJobs = React.useMemo(() => {
     if (!sanitizedJobs || sanitizedJobs.length === 0) return [];
-    return [...sanitizedJobs].sort((a, b) => {
+
+    // Apply vetted filter at the component level — catches any leads where
+    // status wasn't updated but the vetted flag is true.
+    const source = vettedOnly
+      ? sanitizedJobs.filter((j: Job) =>
+          j?.status === 'verified' || j?.status === 'vetted' || (j as any)?.vetted === true
+        )
+      : sanitizedJobs;
+    return [...source].sort((a, b) => {
       const priorityNodes = ['Premium Node', 'Premium Node (LUX)', 'Dubai Hub', 'Western Corridor'];
       
       const aNode = a.corridor || a.node || '';
@@ -398,7 +409,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
       if (aPriorityIndex !== -1 && bPriorityIndex !== -1) {
         if (aNode === bNode) {
-          // Same node, sort by country priority
           const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
           const aCountryIndex = priorityCountries.indexOf(String(a.country || '').toLowerCase());
           const bCountryIndex = priorityCountries.indexOf(String(b.country || '').toLowerCase());
@@ -409,7 +419,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
       if (aPriorityIndex !== -1) return -1;
       if (bPriorityIndex !== -1) return 1;
       
-      // Secondary sort by country for Big Four fallback
       const priorityCountries = ['united arab emirates', 'saudi arabia', 'poland', 'luxembourg'];
       const aCountryIndex = priorityCountries.indexOf(String(a.country || '').toLowerCase());
       const bCountryIndex = priorityCountries.indexOf(String(b.country || '').toLowerCase());
@@ -420,7 +429,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
 
       return 0;
     });
-  }, [sanitizedJobs]);
+  }, [sanitizedJobs, vettedOnly]);
   
   // Category filters — all four categories explicitly covered with zero-default guards
   const professionalJobs     = React.useMemo(() => sortedHrJobs.filter((j: Job) => (j?.category ?? 'general') === 'professional'),     [sortedHrJobs]);
@@ -496,9 +505,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                 <div className="flex items-center gap-1.5 bg-blue-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full">
                   <DollarSign size={10} /> ${feesBlockedCount.toLocaleString()} FEES BLOCKED
                 </div>
-                <div className="flex items-center gap-1.5 bg-purple-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full">
-                  <ShieldCheck size={10} /> {verifiedPlacementsCount} VERIFIED PLACEMENTS
-                </div>
+                {/* VERIFIED PLACEMENTS — clickable filter pill */}
+                <button
+                  onClick={() => onVettedFilterChange?.(!vettedOnly)}
+                  title={vettedOnly ? 'Click to show all leads' : 'Click to show only verified leads'}
+                  className={`flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-full transition-all active:scale-95 border ${
+                    vettedOnly
+                      ? 'bg-white text-purple-700 border-purple-300 ring-2 ring-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.5)]'
+                      : 'bg-purple-500 text-white border-transparent hover:bg-purple-400'
+                  }`}
+                >
+                  <ShieldCheck size={10} className={vettedOnly ? 'animate-pulse' : ''} />
+                  {verifiedPlacementsCount} VERIFIED PLACEMENTS
+                  {vettedOnly && <span className="ml-1 text-[8px] uppercase tracking-widest">(filtered)</span>}
+                </button>
                 <button 
                   onClick={handleRefreshData}
                   disabled={isRefreshing}
