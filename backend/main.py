@@ -11,6 +11,7 @@ import jwt
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, AsyncGenerator
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
