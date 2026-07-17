@@ -82,90 +82,246 @@ class SecretManagerGateway:
             print(f"🔧 [DEFAULT SECRET]: Using default value for '{secret_id}'.")
         return default
 
+# --- ACTIVE DISCOVERY & CREDIT-SAVING CACHING ---
+import re
+from pydantic import BaseModel, Field
+
+# 1. Define Credit-Saving Data Validation
+def is_valid_input(company_name: str, company_domain: str) -> bool:
+    """Check inputs locally before invoking billing-eligible API searches."""
+    if not company_name or len(company_name.strip()) < 2:
+        return False
+    # Simple regex to check for a basic domain shape (e.g., company.com)
+    domain_pattern = r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    if not company_domain or not re.match(domain_pattern, company_domain):
+        return False
+    
+    # Block list of standard local/test domains
+    blocked_domains = {"localhost", "test.com", "example.com"}
+    if company_domain.lower() in blocked_domains:
+        return False
+        
+    return True
+
+# 2. Structured Output Schema
+class ContactProfile(BaseModel):
+    name: str = Field(description="The full name of the discovered decision maker.")
+    title: str = Field(description="Their exact job title (e.g., CTO, VP of Engineering, Head of HR).")
+    linkedin_url: str = Field(description="The verified LinkedIn profile URL of this person.")
+    company: str = Field(description="The verified company name.")
+    estimated_email: Optional[str] = Field(None, description="A business email matching their corporate pattern (e.g. john.doe@domain.com).")
+    source_used: str = Field(description="The source URL or citation where this person was identified.")
+
+# 3. Cache Check and Write Operations
+def check_cached_contact(qdrant_client: QdrantClient, domain: str) -> Optional[dict]:
+    """
+    Strict payload lookup for cached domains from the last 30 days.
+    Returns the cached payload if found and fresh, otherwise None.
+    """
+    collection_name = "contacts_cache"
+    # Calculate cutoff: 30 days ago in epoch seconds
+    thirty_days_ago = int(time.time()) - (30 * 24 * 60 * 60)
+    
+    try:
+        # Use scroll to query by filter without requiring a search vector
+        results, _ = qdrant_client.scroll(
+            collection_name=collection_name,
+            scroll_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="company_domain",
+                        match=models.MatchValue(value=domain)
+                    ),
+                    models.FieldCondition(
+                        key="timestamp",
+                        range=models.Range(gte=thirty_days_ago)
+                    )
+                ]
+            ),
+            limit=1,
+            with_payload=True,
+            with_vectors=False
+        )
+        
+        if results:
+            return results[0].payload
+            
+    except Exception as e:
+        # Log and safely proceed to API call if cache lookup fails
+        print(f"Qdrant cache lookup failed for {domain}: {e}")
+        
+    return None
+
+def write_to_cache(qdrant_client: QdrantClient, domain: str, payload_data: dict):
+    """
+    Saves a newly discovered contact to Qdrant with a timestamp.
+    Uses a minimal dummy vector to bypass embedding model costs.
+    """
+    collection_name = "contacts_cache"
+    payload_data["company_domain"] = domain
+    payload_data["timestamp"] = int(time.time())
+    
+    try:
+        point_id = str(uuid.uuid4()) # Generate clean string ID
+        
+        qdrant_client.upsert(
+            collection_name=collection_name,
+            points=[
+                models.PointStruct(
+                    id=point_id,
+                    vector=[0.0], # Tiny dummy vector to satisfy Qdrant requirements
+                    payload=payload_data
+                )
+            ]
+        )
+        print(f"✅ Cached contact profile for {domain}")
+    except Exception as e:
+        print(f"Failed to write contact cache for {domain}: {e}")
+
+# 4. Helper to extract domain from company name or website url
+def extract_domain(company_name: str, url_or_website: Optional[str] = None) -> str:
+    url_source = url_or_website or company_name
+    if not url_source:
+        return ""
+    url_source = url_source.strip()
+    if "." in url_source:
+        temp = url_source.replace("https://", "").replace("http://", "").replace("www.", "")
+        temp = temp.split("/")[0].split(":")[0]
+        return temp.lower()
+    else:
+        clean_name = re.sub(r'[^a-zA-Z0-9]', '', url_source)
+        return f"{clean_name.lower()}.com"
+
+# 5. Principal API Connector
+def find_decision_maker(company_name: str, company_domain: str) -> Optional[ContactProfile]:
+    """
+    Executes a single search query to find target decision-makers, returning 
+    a structured Pydantic object. Safely returns None on failure instead of looping.
+    """
+    if not GEMINI_API_KEY or not gemini_client:
+        print("⚠️ [GROUNDING]: Gemini API key or client missing. Skipping contact lookup.")
+        return None
+
+    # Safeguard: Save API credits if inputs are invalid
+    if not is_valid_input(company_name, company_domain):
+        print(f"Skipping lookup for invalid inputs: Name='{company_name}', Domain='{company_domain}'")
+        return None
+        
+    # Configure the GenAI Client with a global timeout safety net (e.g., 2 minutes)
+    global_timeout_ms = 120000
+    client_local = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(timeout=global_timeout_ms)
+    )
+    
+    # Prompt is tight and specific to avoid unnecessary token generation/hallucinations
+    prompt = f"""
+    Find a real person currently working at the company "{company_name}" (website: {company_domain}) 
+    who is in engineering leadership (CTO, VP, Director, Engineering Manager) or executive/talent recruitment.
+    
+    Identify:
+    - Their full name
+    - Their exact current title
+    - Their verified LinkedIn profile URL
+    - A calculated standard business email using their name and {company_domain} (e.g., first.last@{company_domain})
+    """
+    
+    try:
+        response = client_local.models.generate_content(
+            model='gemini-2.5-pro',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                # Limit tool search capability to a single active google search block to control billing
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                response_mime_type="application/json",
+                response_schema=ContactProfile,
+                temperature=0.2, # Lower temperature maintains consistent structure and limits random searches
+                max_output_tokens=1000
+            )
+        )
+        
+        if response.text:
+            data = json.loads(response.text)
+            return ContactProfile(**data)
+            
+    except Exception as e:
+        print(f"API Error during search for {company_name}: {str(e)}")
+        # Clean exit to prevent automated background retry cycles from burning API credits
+        return None
+
 # --- GEMINI SEARCH GROUNDING UTILITY ---
 async def get_grounded_contact_data(company_name: str, job_title: str) -> dict:
     """
-    Uses Gemini Search Grounding (google_search) to identify 
+    Uses modern find_decision_maker with caching and validation to identify 
     direct decision-makers and their contact channels.
-    
-    UPGRADE: Utilizing Gemini 2.5 Pro for deep parsing of complex directories.
-    FALLBACK: Programmatically pulls official corporate domain if no direct name found.
     """
-    if not GEMINI_API_KEY or not gemini_client:
-        print("⚠️ [GROUNDING]: Gemini API key or client missing. Skipping contact enrichment.")
-        return {}
+    company_domain = extract_domain(company_name)
+    print(f"🔎 [GROUNDING]: Initiating lookup flow for '{company_name}' ({company_domain})...")
 
-    try:
-        print(f"🔎 [GROUNDING]: Cross-referencing web for decision makers at '{company_name}'...")
-        
-        prompt = f"""
-        Analyze this job node for {company_name}. 
-        Search the web to identify the current individual handling HR, Talent Acquisition, or Operations management at this firm. 
-        
-        FALLBACK RULE: If you cannot resolve a direct decision-maker name, identify the organization's official corporate domain contact channel (e.g., info@company.com or their primary HQ contact page).
-        
-        Return their Name, Corporate Job Title, and any publicly listed B2B contact channels in a structured JSON schema.
-        
-        Context: The firm is hiring for a {job_title} position.
-        
-        RETURN JSON FORMAT ONLY:
-        {{
-          "decision_maker_name": "Full Name or 'Corporate Domain'",
-          "decision_maker_title": "Corporate Job Title or 'General Operations'",
-          "contact_channels": {{
-            "email": "Specific email or general corporate email",
-            "linkedin": "LinkedIn URL",
-            "phone": "Public office line"
-          }},
-          "source_validation": "Brief note on where this was verified"
-        }}
-        """
-
-        # Async generation wrapper with timeout protection
-        loop = asyncio.get_event_loop()
-        try:
-            response = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: gemini_client.models.generate_content(
-                    model='gemini-2.5-pro',
-                    contents=[prompt],
-                    config=types.GenerateContentConfig(
-                        tools=[types.Tool(google_search=types.GoogleSearch())]
-                    )
-                )),
-                timeout=45.0
-            )
-        except asyncio.TimeoutError:
-            print(f"⚠️ [GROUNDING]: Search timed out for '{company_name}'. Initiating quick domain fallback...")
-            # Simple fallback if Pro times out
-            return {
-                "decision_maker_name": "Corporate Domain",
-                "decision_maker_title": "General Operations",
-                "contact_channels": {"email": f"info@{company_name.lower().replace(' ', '')}.com"},
-                "source_validation": "Timeout Fallback"
-            }
-        
-        grounded_text = response.text.strip()
-        if "```json" in grounded_text:
-            grounded_text = grounded_text.split("```json")[1].split("```")[0].strip()
-        
-        enriched_contacts = json.loads(grounded_text)
-        
-        # Final validation: Ensure we don't return blank values
-        if not enriched_contacts.get('decision_maker_name') or enriched_contacts.get('decision_maker_name') == 'Unknown':
-            enriched_contacts['decision_maker_name'] = "Corporate Domain"
-            enriched_contacts['decision_maker_title'] = "General Operations"
-            
-        print(f"✅ [GROUNDING]: Enrichment complete for {company_name}")
-        return enriched_contacts
-
-    except Exception as e:
-        print(f"⚠️ [GROUNDING]: Failed to enrich contacts for '{company_name}': {e}")
+    # 1. Check local verification first
+    if not is_valid_input(company_name, company_domain):
+        print(f"⚠️ [GROUNDING]: Local validation failed for '{company_name}' ({company_domain}). Returning fallback.")
         return {
             "decision_maker_name": "Corporate Domain",
             "decision_maker_title": "General Operations",
             "contact_channels": {},
-            "source_validation": f"Error Fallback: {str(e)}"
+            "source_validation": "Local Validation Fallback"
         }
+
+    # 2. Query Qdrant cache
+    cached = check_cached_contact(qdrant_client, company_domain)
+    if cached:
+        print(f"ℹ️ [GROUNDING]: Cache HIT for '{company_domain}'. Skipping AI discovery.")
+        return {
+            "decision_maker_name": cached.get("name"),
+            "decision_maker_title": cached.get("title"),
+            "contact_channels": {
+                "email": cached.get("estimated_email") or f"info@{company_domain}",
+                "linkedin": cached.get("linkedin_url"),
+                "phone": ""
+            },
+            "source_validation": cached.get("source_used") or "Cached Data"
+        }
+
+    # 3. Live AI Discovery
+    print(f"🤖 [GROUNDING]: Cache COLD. Requesting Live Discovery for '{company_name}'...")
+    # Since find_decision_maker uses block-structured code, run it in executor to avoid blocking the loop
+    loop = asyncio.get_event_loop()
+    profile = await loop.run_in_executor(
+        None,
+        lambda: find_decision_maker(company_name, company_domain)
+    )
+
+    if profile:
+        # 4. Cache the fresh result
+        payload_data = {
+            "name": profile.name,
+            "title": profile.title,
+            "linkedin_url": profile.linkedin_url,
+            "company": profile.company,
+            "estimated_email": profile.estimated_email,
+            "source_used": profile.source_used
+        }
+        write_to_cache(qdrant_client, company_domain, payload_data)
+        
+        return {
+            "decision_maker_name": profile.name,
+            "decision_maker_title": profile.title,
+            "contact_channels": {
+                "email": profile.estimated_email or f"info@{company_domain}",
+                "linkedin": profile.linkedin_url,
+                "phone": ""
+            },
+            "source_validation": profile.source_used
+        }
+
+    # Fallback if discovery failed
+    return {
+        "decision_maker_name": "Corporate Domain",
+        "decision_maker_title": "General Operations",
+        "contact_channels": {"email": f"info@{company_domain}"},
+        "source_validation": "Discovery Failure Fallback"
+    }
 
 # Force search for .env in both the repository root and backend folder.
 root_env = Path(__file__).resolve().parent.parent / '.env'
@@ -340,32 +496,30 @@ api_router = APIRouter(prefix="/api")
 # Move all API routes to the API router
 @api_router.get("/leads")
 async def get_all_leads(
-    limit: int = 100,  # REDUCED: Default 100 instead of 1000 to prevent OOM
-    offset: int = 0,   # NEW: Pagination offset
-    category: str = None,  # NEW: Filter by category to reduce payload
-    corridor: str = None   # NEW: Filter by corridor to reduce payload
+    limit: int = 100,
+    offset: int = 0,
+    category: str = None,
+    corridor: str = None,
+    vetted_only: bool = False   # NEW: filter to only verified/vetted leads
 ):
     """
-    Returns the most recent leads from Qdrant with PAGINATION support.
-    OOM PROTECTION: Default limit reduced to 100, use offset for pagination.
-    Filter by category/corridor to reduce memory usage.
+    Returns leads from Qdrant with PAGINATION support.
+    vetted_only=true restricts results to status in [verified, vetted]
+    OR vetted == true, giving the HR Command Center its own clean partition.
     """
     try:
-        print(f"[PAGINATED LEADS]: Fetching leads - limit={limit}, offset={offset}, category={category}, corridor={corridor}")
-        
-        # Check collection exists first
+        print(f"[PAGINATED LEADS]: limit={limit}, offset={offset}, category={category}, corridor={corridor}, vetted_only={vetted_only}")
+
         try:
             collection_info = qdrant_client.get_collection(collection_name=COLLECTION_NAME)
-            # Get total number of points from collection info
             total_points = collection_info.points_count if hasattr(collection_info, 'points_count') else 0
         except Exception as e:
             print(f"❌ [DEBUG]: Collection not found: {e}")
             return {"error": f"Collection not found: {e}", "collection_name": COLLECTION_NAME}
-        
-        # OOM PROTECTION: Hard cap at 10000 leads max per request
+
         safe_limit = min(limit, 10000)
-        
-        # Build filter conditions for category/corridor
+
+        # Build Qdrant filter conditions
         filter_conditions = []
         if category:
             filter_conditions.append(
@@ -381,13 +535,18 @@ async def get_all_leads(
                     match=models.MatchValue(value=corridor)
                 )
             )
-        
-        # Build scroll filter
-        scroll_filter = None
-        if filter_conditions:
-            scroll_filter = models.Filter(must=filter_conditions)
-        
-        # Paginated scroll through points
+        # vetted_only: restrict Qdrant scroll to verified/vetted status at query time
+        # This means pagination counts are accurate — we don't over-fetch and post-filter.
+        if vetted_only:
+            filter_conditions.append(
+                models.FieldCondition(
+                    key="status",
+                    match=models.MatchAny(any=["verified", "vetted"])
+                )
+            )
+
+        scroll_filter = models.Filter(must=filter_conditions) if filter_conditions else None
+
         all_points = []
         qdrant_next_offset = None
         try:
@@ -397,39 +556,43 @@ async def get_all_leads(
                 offset=offset,
                 scroll_filter=scroll_filter,
                 with_payload=True,
-                with_vectors=False  # Never fetch vectors for list view (saves memory)
+                with_vectors=False
             )
             all_points = scroll_result[0]
             qdrant_next_offset = scroll_result[1]
         except Exception as e:
             print(f"❌ [DEBUG]: Could not access collection: {e}")
             return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
-            
-        # Filter leads to only include those with valid status
+
+        # Post-filter: when vetted_only, also accept leads where vetted==True
+        # (catches leads flagged vetted=True but whose status field wasn't updated)
         leads = []
         for point in all_points:
             payload = point.payload
-            if payload:
-                # Only include leads that are 'live', 'verified', 'active', or 'vetted'
-                if payload.get("status") in ["live", "verified", "active", "vetted"]:
+            if not payload:
+                continue
+            status = payload.get("status", "")
+            is_vetted_flag = payload.get("vetted", False)
+            active_statuses = ["live", "verified", "active", "vetted"]
+            if vetted_only:
+                # Must be explicitly verified/vetted
+                if status in ["verified", "vetted"] or is_vetted_flag is True:
                     leads.append(payload)
-        
-        print(f"✅ [PAGINATED LEADS]: Found {len(leads)} leads (requested {safe_limit}, offset {offset})")
-        print(f"✅ [PAGINATED LEADS]: Qdrant returned {len(all_points)} points, next offset: {qdrant_next_offset}, total points: {total_points}")
-        
-        # Determine if there are more leads:
-        # - If Qdrant has a next offset, OR
-        # - If we got exactly safe_limit points (even if filtered down)
+            else:
+                if status in active_statuses:
+                    leads.append(payload)
+
+        print(f"✅ [PAGINATED LEADS]: Returned {len(leads)} leads (vetted_only={vetted_only}, offset={offset})")
+
         has_more = qdrant_next_offset is not None or len(all_points) == safe_limit
-        
-        # Only set next_offset if we actually have more leads to fetch
         next_offset = offset + safe_limit if has_more and len(leads) > 0 else None
-        
+
         return {
             "count": len(leads),
-            "total": total_points,  # Add total available points
+            "total": total_points,
             "total_offset": offset,
             "next_offset": next_offset,
+            "vetted_only": vetted_only,
             "leads": leads
         }
     except Exception as e:
@@ -640,6 +803,29 @@ else:
         path=PERSISTENT_STORAGE_PATH,  # ✅ PERSISTENT: Data survives OOM/restart
         timeout=60
     )
+
+# Ensure contacts_cache collection exists for metadata caching
+def ensure_contacts_cache_exists(client: QdrantClient):
+    cache_col = "contacts_cache"
+    try:
+        collections = client.get_collections().collections
+        exists = any(c.name == cache_col for c in collections)
+        if not exists:
+            print(f"🏗️ Creating metadata cache collection '{cache_col}' with vector size 1...")
+            client.create_collection(
+                collection_name=cache_col,
+                vectors_config=models.VectorParams(
+                    size=1,
+                    distance=models.Distance.COSINE
+                )
+            )
+            print(f"✅ Metadata cache collection '{cache_col}' created successfully.")
+        else:
+            print(f"✅ Metadata cache collection '{cache_col}' already exists.")
+    except Exception as e:
+        print(f"⚠️ Failed to ensure collection '{cache_col}' exists: {e}")
+
+ensure_contacts_cache_exists(qdrant_client)
 
 # Initialize Groq Cloud Client for LLM processing
 # Note: groq_client is already initialized above with error handling
@@ -1125,9 +1311,11 @@ if not ADMIN_PASSWORD:
 # production to keep sessions valid across restarts / replicas.
 JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET") or os.getenv("JWT_SECRET")
 if not JWT_SECRET:
-    # Stable fallback to prevent session logout on container spin-downs or restarts
-    JWT_SECRET = "globalpath-kaseddie-jwt-secret-2026-secure-production-key"
-    print("WARNING: JWT_SECRET not found in env. Falling back to stable production key.")
+    raise RuntimeError(
+        "FATAL: JWT_SECRET is not set in the environment. "
+        "Server cannot start without a signing secret. "
+        "Set JWT_SECRET in your Render/local .env before deploying."
+    )
 JWT_TTL_SECONDS = int(os.getenv("ADMIN_JWT_TTL_SECONDS", "3600"))  # 1 hour default
 
 
@@ -1241,7 +1429,7 @@ async def debug_environment():
     Debug endpoint to show all environment variables
     """
     # Gate debug endpoint to development only
-    if os.getenv("ENV") != "development":
+    if os.getenv("ENV") == "production":
         raise HTTPException(status_code=403, detail="Access denied")
     return {
         "all_env_vars": list(os.environ.keys()),
@@ -1575,7 +1763,7 @@ async def debug_routes():
     Used to verify API router is properly registered.
     """
     # Gate debug endpoint to development only
-    if os.getenv("ENV") != "development":
+    if os.getenv("ENV") == "production":
         raise HTTPException(status_code=403, detail="Access denied")
     routes = []
     for route in app.routes:
@@ -1596,7 +1784,7 @@ async def ping_ai():
     Test AI connectivity and API key status
     """
     # Gate sensitive diagnostic to development only
-    if os.getenv("ENV") != "development":
+    if os.getenv("ENV") == "production":
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         print(f"🔍 [PING DEBUG]: Testing Groq API Key: {'YES' if GROQ_KEY else 'NO'}")
@@ -2662,21 +2850,6 @@ async def run_async_enrichment(tasks):
     except Exception as e:
         print(f"❌ Error in async enrichment: {e}")
 
-@api_router.post("/sync-apify-leads")
-async def sync_apify_leads(background_tasks: BackgroundTasks):
-    """
-    Syncs lead data from multiple Apify datasets and ingests it into Qdrant in the background.
-    Returns immediately to avoid frontend timeout.
-    """
-    # Trigger background sync
-    background_tasks.add_task(sync_all_apify_datasets)
-    
-    return {
-        "status": "Accepted",
-        "message": "Apify synchronization started in the background.",
-        "details": "The Hub is now rotating sectors. Leads will appear as they are processed."
-    }
-
 @api_router.post("/sync-apify-webhook")
 async def sync_apify_webhook(payload: dict, background_tasks: BackgroundTasks):
     """
@@ -2787,7 +2960,7 @@ async def debug_collection_info():
     Debug endpoint to check collection status and count.
     """
     # Gate debug endpoint to development only
-    if os.getenv("ENV") != "development":
+    if os.getenv("ENV") == "production":
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         # Get collection info
@@ -2828,7 +3001,7 @@ async def debug_collection():
     Debug endpoint to check collection status and count.
     """
     # Gate debug endpoint to development only
-    if os.getenv("ENV") != "development":
+    if os.getenv("ENV") == "production":
         raise HTTPException(status_code=403, detail="Access denied")
     try:
         print(f"🔍 [DEBUG]: Checking collection '{COLLECTION_NAME}'...")

@@ -1,7 +1,7 @@
 import { Job, SafetyReport, B2BPitch, VerificationReport } from "../types";
 import { doJSONCompletion, doTextCompletion } from "./doClient";
-import * as gemini from "./gemini";
-import { API_BASE, fetcher } from "../constants/api";
+import * as gemini from "./geminiProxy";
+import { fetcher } from "../constants/api";
 
 const brandBlue = '#031B4E';
 const brandGold = '#EAB308';
@@ -18,9 +18,9 @@ function hasDOCreds() {
   const b = (import.meta as any)?.env?.VITE_DO_AGENT_ACCESS_KEY;
   const c = (import.meta as any)?.env?.VITE_DO_API_KEY;
   const huggingFace = (import.meta as any)?.env?.HUGGINGFACEHUB_API_TOKEN;
-  const groq = (import.meta as any)?.env?.VITE_GROQ_API_KEY;
   const replicate = (import.meta as any)?.env?.VITE_REPLICATE_API_TOKEN;
-  return !!(a && b) || !!c || !!huggingFace || !!groq || !!replicate;
+  // VITE_GROQ_API_KEY intentionally excluded — Groq key belongs server-side only.
+  return !!(a && b) || !!c || !!huggingFace || !!replicate;
 }
 
 function hasReplicateCreds() {
