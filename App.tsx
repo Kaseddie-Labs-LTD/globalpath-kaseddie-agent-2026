@@ -1261,6 +1261,9 @@ function App() {
                     onPitch={async (j) => { 
                       setPitchContext({ job: j });
                       addLog(`LIFECYCLE TRANSITION: Moving ${j.company} to Active Outreach in HR Portal.`, "success", "WORKFLOW");
+                      // Switch sidebar to the admin/portal nav set and navigate immediately
+                      setIsGatekeeperMode(true);
+                      setView(AppView.HR_PORTAL);
                     }}
                     mutateLeads={mutateLeads}
                     onExit={() => setView(AppView.DASHBOARD)} 

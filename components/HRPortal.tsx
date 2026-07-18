@@ -18,8 +18,6 @@ import {
 
 import { ProfessionalVerificationReport } from './ProfessionalVerificationReport';
 
-import { generateB2BPitchText } from '../services/ai';
-
 import { B2BPitchGenerator } from './B2BPitchGenerator';
 
 import { AgentLogEntry } from '../types';
@@ -132,14 +130,17 @@ export const HRPortal: React.FC<HRPortalProps> = ({
 
   const [navigatedLead, setNavigatedLead] = useState<Job | null>(null);
   
-  // Auto-populate from pitchContext when it changes (replaces the removed useLocation navigation-state approach)
+  // Auto-populate from pitchContext when it changes.
+  // Use job.id comparison instead of object-reference equality so that
+  // re-pitching the same company with updated data (e.g. after enrichment)
+  // still triggers a fresh population.
   useEffect(() => {
-    if (pitchContext?.job && pitchContext.job !== navigatedLead) {
+    if (pitchContext?.job && pitchContext.job.id !== navigatedLead?.id) {
       setNavigatedLead(pitchContext.job);
       setActiveTab('vacancies');
-      onLog?.(`PITCH: Auto-populating B2B generator from Admin Dashboard handover for ${pitchContext.job.company}`, 'success');
+      onLog?.(`PITCH: Auto-populating B2B generator for ${pitchContext.job.company}`, 'success');
     }
-  }, [pitchContext?.job]);
+  }, [pitchContext?.job?.id]);
 
   
 

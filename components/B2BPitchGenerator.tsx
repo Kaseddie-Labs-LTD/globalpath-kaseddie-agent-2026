@@ -107,6 +107,14 @@ GlobalPath Outreach Command Center
     }
   };
 
+  // Reset lastLeadId whenever autoInitialize is re-armed (new lead sent from Admin)
+  // so the second useEffect always fires for the new lead.
+  useEffect(() => {
+    if (autoInitialize && selectedLead) {
+      lastLeadId.current = null;
+    }
+  }, [autoInitialize]);
+
   // MISSION 1: Auto-trigger pitch generation when navigated from Admin Dashboard
   useEffect(() => {
     if (autoInitialize && selectedLead && !hasAutoInitialized.current) {
@@ -124,37 +132,32 @@ GlobalPath Outreach Command Center
         handleSubmit(title, comp, sal);
       }
     }
-  }, [autoInitialize, selectedLead, onLog]);
+  }, [autoInitialize, selectedLead?.id, onLog]);
 
   useEffect(() => {
     if (selectedLead && selectedLead.id !== lastLeadId.current) {
       lastLeadId.current = selectedLead.id;
       const title = selectedLead.title || '';
       const comp = selectedLead.company || '';
-      
-      // DEBUG: Log what we're actually passing
-      console.log('🔍 [B2BPitchGenerator] Selected lead data:', {
-        id: selectedLead.id,
-        company: comp,
-        location: selectedLead.location,
-        title: title
-      });
-      
-      // Initial null check for salary
+
       const sal = (selectedLead.salary || '').trim() === '' || selectedLead.salary === 'null'
         ? 'Competitive / To be discussed'
         : selectedLead.salary;
-      
+
       setJobTitle(title);
       setCompany(comp);
       setSalary(sal);
-      
-      // Auto-generate pitch when lead changes (only if not from navigation)
+
+      // Clear previous pitch so the user sees a clean loading state
+      // instead of the stale template from the last lead flashing on screen.
+      setPitch(null);
+
+      // Auto-generate when lead changes (only if not from autoInitialize path)
       if (title && comp && !autoInitialize) {
         handleSubmit(title, comp, sal);
       }
     }
-  }, [selectedLead, autoInitialize]);
+  }, [selectedLead?.id, autoInitialize]);
 
   const handleCopy = () => {
     if (!pitch) return;
