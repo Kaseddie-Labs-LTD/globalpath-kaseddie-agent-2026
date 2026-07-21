@@ -66,27 +66,30 @@ export const categorizeJob = (job: any): JobCategory => {
   const company     = (job.company      || '').toLowerCase();
 
   // Check title first (most reliable signal), then description, then company name.
-  const checkAll = (keywords: string[]) =>
-    keywords.some(kw => title.includes(kw) || description.includes(kw) || company.includes(kw));
   const checkTitle = (keywords: string[]) =>
     keywords.some(kw => title.includes(kw));
+  
+  // For description checks, avoid false positives like "key driver" or "data driven"
+  const checkDescriptionForRealDriver = () => {
+    const realDriverPatterns = /\b(bus|truck|delivery|cab|van|heavy|forklift|courier)\s+driver\b/i;
+    return realDriverPatterns.test(description);
+  };
 
   // 1. SERVICE & DOMESTIC — highest priority, checked first
-  //    Domestic keywords in title are the most reliable signal.
   if (checkTitle(SERVICE_DOMESTIC_KEYWORDS)) return 'service_domestic';
-  // Also catch description-level domestic signals (e.g. Apify leads where title = 'Unknown')
-  if (checkAll(SERVICE_DOMESTIC_KEYWORDS)) return 'service_domestic';
+  if ([...SERVICE_DOMESTIC_KEYWORDS].some(kw => description.includes(kw) || company.includes(kw))) return 'service_domestic';
 
-  // 2. BLUE COLLAR — before professional to prevent 'logistics manager' matching blue collar
+  // 2. BLUE COLLAR — title first (strict)
   if (checkTitle(BLUE_COLLAR_KEYWORDS)) return 'blue_collar';
 
   // 3. PROFESSIONAL
-  if (checkAll(PROFESSIONAL_KEYWORDS)) return 'professional';
+  if ([...PROFESSIONAL_KEYWORDS].some(kw => title.includes(kw) || description.includes(kw) || company.includes(kw))) return 'professional';
 
-  // 4. BLUE COLLAR — description-level fallback (catches warehouse/driver in description only)
-  if (checkAll(BLUE_COLLAR_KEYWORDS)) return 'blue_collar';
+  // 4. BLUE COLLAR — description fallback only for real driver roles (avoids "key driver" etc.)
+  if (checkDescriptionForRealDriver()) return 'blue_collar';
+  if ([...BLUE_COLLAR_KEYWORDS].filter(kw => kw !== 'driver').some(kw => description.includes(kw) || company.includes(kw))) return 'blue_collar';
 
-  // 5. Default — explicit 'general' rather than silently assuming blue_collar
+  // 5. Default
   return 'general';
 };
 

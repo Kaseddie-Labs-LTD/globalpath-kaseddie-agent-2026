@@ -177,91 +177,47 @@ export const HRPortal: React.FC<HRPortalProps> = ({
   
 
   // Helper function to determine category from multiple fields (same as AdminDashboard)
-
   const getJobCategory = (job: any): 'professional' | 'blue_collar' | 'general' => {
-
     // Check category field first
-
     if (job.category) {
-
       const cat = job.category.toLowerCase();
-
-      if (cat === 'professional' || cat === 'blue_collar') return cat;
-
+      if (cat === 'professional' || cat === 'blue_collar' || cat === 'service_domestic') return cat as any;
     }
-
     
-
-    // Fallback: Check title, description, and positionName for keywords
-
+    // Fallback: Use the canonical categorizeJob function
     const title = (job.title || job.positionName || '').toLowerCase();
-
     const description = (job.description || '').toLowerCase();
-
     const company = (job.company || '').toLowerCase();
-
     
-
     // Professional keywords
-
     const professionalKeywords = [
-
       'engineer', 'manager', 'consultant', 'associate', 
-
       'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
-
       'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
-
       'nurse', 'doctor', 'physician'
-
     ];
-
     
-
     // Blue-collar keywords
-
     const blueCollarKeywords = [
-
-      'driver', 'cleaner', 'warehouse', 'maid', 'housemaid',
-
-      'helper', 'butcher', 'shelf', 'merchandiser', 'housekeeper',
-
-      'care home', 'care assistant', 'support worker', 'logistics'
-
+      'driver', 'chauffeur', 'warehouse', 'helper', 'butcher', 'shelf', 'merchandiser',
+      'logistics', 'packing', 'picker', 'packer', 'transport', 'freight',
+      'general helper', 'labourer', 'laborer', 'construction worker', 'site worker', 'tradesperson',
+      'security guard', 'security officer', 'kitchen hand', 'food prep'
     ];
-
     
-
-    // Check all fields for professional keywords
-
-    const hasProfessionalKeyword = 
-
-      professionalKeywords.some(kw => title.includes(kw)) ||
-
-      professionalKeywords.some(kw => description.includes(kw)) ||
-
-      professionalKeywords.some(kw => company.includes(kw));
-
+    // 1. Strict title check first
+    if (blueCollarKeywords.some(kw => title.includes(kw))) return 'blue_collar';
+    if (professionalKeywords.some(kw => title.includes(kw))) return 'professional';
     
-
-    // Check all fields for blue-collar keywords  
-
-    const hasBlueCollarKeyword = 
-
-      blueCollarKeywords.some(kw => title.includes(kw)) ||
-
-      blueCollarKeywords.some(kw => description.includes(kw)) ||
-
-      blueCollarKeywords.some(kw => company.includes(kw));
-
+    // 2. Fallback description checks with safeguards
+    // For blue-collar, exclude "driver" from description check to avoid false positives
+    const realDriverPatterns = /\b(bus|truck|delivery|cab|van|heavy|forklift|courier)\s+driver\b/i;
+    if (realDriverPatterns.test(description)) return 'blue_collar';
+    if (blueCollarKeywords.filter(kw => kw !== 'driver').some(kw => description.includes(kw) || company.includes(kw))) return 'blue_collar';
     
-
-    if (hasProfessionalKeyword) return 'professional';
-
-    if (hasBlueCollarKeyword) return 'blue_collar';
-
+    if (professionalKeywords.some(kw => description.includes(kw) || company.includes(kw))) return 'professional';
+    
     return 'general';
-
   };
 
   
@@ -1360,12 +1316,10 @@ export const HRPortal: React.FC<HRPortalProps> = ({
 
                   {hrJobs.filter(j => j && j.source && j.source.includes('HR')).length > 0 ? hrJobs.filter(j => j && j.source && j.source.includes('HR')).map(job => {
 
-                    // Fuzzy search for Luxembourg drivers and blue-collar roles
-
+                    // Fuzzy search for Luxembourg drivers and blue-collar roles - only check title for driver keywords
                     const locationMatch = fuzzyMatch(getJobLocationString(job.location), 'luxembourg');
-
-                    const roleMatch = fuzzyMatch(job.title || '', 'driver') || fuzzyMatch(job.title || '', 'chauffeur') || fuzzyMatch(job.description || '', 'driver');
-
+                    const rawTitle = (job.title || '').toLowerCase();
+                    const roleMatch = rawTitle.includes('driver') || rawTitle.includes('chauffeur');
                     const tagsMatch = job.tags?.some((tag: string) => fuzzyMatch(tag, 'blue-collar') || fuzzyMatch(tag, 'blue collar'));
 
                     

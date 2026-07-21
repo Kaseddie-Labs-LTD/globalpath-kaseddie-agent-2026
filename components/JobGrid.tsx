@@ -726,32 +726,36 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
     const title = (j.title || j.positionName || '').toLowerCase();
     const description = (j.description || '').toLowerCase();
     const company = (j.company || '').toLowerCase();
-    const text = `${title} ${description} ${company}`;
     
-    if (
-      text.includes('cleaner') || text.includes('housekeeper') ||
-      text.includes('maid') || text.includes('maids') || text.includes('nanny') || 
-      text.includes('domestic') || text.includes('janitor') || text.includes('caregiver') ||
-      text.includes('care assistant') || text.includes('cleaners') ||
-      text.includes('housekeeping') || text.includes('chef') || 
-      text.includes('cook') || text.includes('waiter') || text.includes('waitress') ||
-      text.includes('hotel') || text.includes('hospitality') || text.includes('room attendant')
-    ) {
+    // 1. Strict title check first
+    if (['cleaner', 'housekeeper', 'maid', 'housemaid', 'nanny', 'domestic', 'janitor', 'caregiver', 'care assistant', 'housekeeping', 'chef', 'cook', 'waiter', 'waitress', 'room attendant'].some(kw => title.includes(kw))) {
       return 'service_domestic';
     }
     
-    const professionalKeywords = [
-      'engineer', 'manager', 'consultant', 'associate', 
-      'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
-      'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
-      'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern'
-    ];
-    if (professionalKeywords.some(kw => text.includes(kw))) return 'professional';
+    if (['driver', 'chauffeur', 'warehouse', 'helper', 'butcher', 'shelf', 'merchandiser'].some(kw => title.includes(kw))) {
+      return 'blue_collar';
+    }
     
-    const blueCollarKeywords = [
-      'driver', 'warehouse', 'helper', 'butcher', 'shelf', 'merchandiser'
-    ];
-    if (blueCollarKeywords.some(kw => text.includes(kw))) return 'blue_collar';
+    if (['engineer', 'manager', 'consultant', 'associate', 'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity', 'nurse', 'doctor', 'physician', 'ai engineer', 'intern'].some(kw => title.includes(kw))) {
+      return 'professional';
+    }
+    
+    // 2. Fallback to description checks with safeguards
+    // For service/domestic, check description
+    if (['cleaner', 'housekeeper', 'maid', 'housemaid', 'nanny', 'domestic', 'janitor', 'caregiver', 'care assistant', 'housekeeping', 'chef', 'cook', 'waiter', 'waitress', 'room attendant'].some(kw => description.includes(kw) || company.includes(kw))) {
+      return 'service_domestic';
+    }
+    
+    // For professional, check description
+    if (['engineer', 'manager', 'consultant', 'associate', 'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity', 'nurse', 'doctor', 'physician', 'ai engineer', 'intern'].some(kw => description.includes(kw) || company.includes(kw))) {
+      return 'professional';
+    }
+    
+    // For blue-collar, exclude "driver" from description check to avoid false positives like "key driver"
+    const realDriverPatterns = /\b(bus|truck|delivery|cab|van|heavy|forklift|courier)\s+driver\b/i;
+    if (realDriverPatterns.test(description) || ['warehouse', 'helper', 'butcher', 'shelf', 'merchandiser'].some(kw => description.includes(kw) || company.includes(kw))) {
+      return 'blue_collar';
+    }
     
     return 'general';
   };
