@@ -102,28 +102,55 @@ const JobItem: React.FC<JobItemProps> = ({
       B2B Recruitment Intel
     </h4>
   </div>
-  
-  <div className="grid grid-cols-2 gap-2">
-    <a 
-      href={safeJobWebsite || '#'} 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600 border border-blue-500/50 p-2 rounded transition-all"
-    >
-      <span className="text-[10px] font-bold">
-        {safeJobWebsite.includes('google.com') ? '🔍 SEARCH WEBSITE' : '🌐 VISIT CORPORATE'}
-      </span>
-    </a>
 
-    <a 
-      href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(safeJobCompany)}`}
-      target="_blank"
-      className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 p-2 rounded transition-all"
-    >
-      <span className="text-[10px] font-bold text-white">💼 FIND DECISION MAKERS</span>
-    </a>
-  </div>
-  
+  {(() => {
+    // Guarantee every link is absolute and opens externally
+    const formatExternalUrl = (url?: string, fallbackQuery?: string): string => {
+      const raw = (url || '').trim();
+      if (!raw || raw === '#') {
+        // No URL scraped — fall back to a Google site search
+        return `https://www.google.com/search?q=${encodeURIComponent((fallbackQuery || '') + ' official website')}`;
+      }
+      return raw.startsWith('http://') || raw.startsWith('https://')
+        ? raw
+        : `https://${raw}`;
+    };
+
+    // Targeted decision-maker search: Google surfaces LinkedIn profiles + company pages
+    const getDecisionMakerUrl = (companyName: string): string => {
+      const query = `${companyName} HR Manager Talent Acquisition Recruitment Director LinkedIn`;
+      return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    };
+
+    const corporateHref    = formatExternalUrl(safeJobWebsite, safeJobCompany);
+    const decisionMakerUrl = getDecisionMakerUrl(safeJobCompany);
+    const isGoogleSearch   = corporateHref.includes('google.com/search');
+
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        <a
+          href={corporateHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600 border border-blue-500/50 p-2 rounded transition-all"
+        >
+          <span className="text-[10px] font-bold">
+            {isGoogleSearch ? '🔍 SEARCH WEBSITE' : '🌐 VISIT CORPORATE'}
+          </span>
+        </a>
+
+        <a
+          href={decisionMakerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 p-2 rounded transition-all"
+        >
+          <span className="text-[10px] font-bold text-white">💼 FIND DECISION MAKERS</span>
+        </a>
+      </div>
+    );
+  })()}
+
   <p className="mt-3 text-[9px] text-blue-400/60 leading-tight italic">
     *This section is only visible to GlobalPath Admins. Use these links to manually verify contact numbers when scrapers return empty fields.
   </p>
