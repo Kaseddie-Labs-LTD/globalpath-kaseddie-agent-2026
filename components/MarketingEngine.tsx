@@ -167,31 +167,41 @@ Keep it under 150 words and make it suitable for WhatsApp sharing.
     // Add marketing text
     ctx.fillStyle = '#ffffff';
     ctx.font = '20px sans-serif';
-    const textY = 580;
+    const textY = 560;
     wrapText(ctx, text.substring(0, 200) + '...', canvas.width / 2, textY, 900, 30);
 
+    // Add call-to-action
+    ctx.fillStyle = '#10b981';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText('Apply Now ➡️', canvas.width / 2, 730);
+
     // === BOTTOM CENTER HUD BOX ===
-    const hudBoxY = 850;
-    const hudBoxWidth = 600;
-    const hudBoxHeight = 120;
+    const hudBoxY = 780;
+    const hudBoxWidth = 620;
+    const hudBoxHeight = 150;
     const hudBoxX = (canvas.width - hudBoxWidth) / 2;
-    
-    // Semi-transparent dark box with cyan border
-    ctx.fillStyle = 'rgba(10, 10, 10, 0.8)';
+
+    // Semi-transparent dark box with emerald border
+    ctx.fillStyle = 'rgba(10, 10, 10, 0.9)';
     ctx.fillRect(hudBoxX, hudBoxY, hudBoxWidth, hudBoxHeight);
-    
+
     ctx.strokeStyle = '#10b981';
     ctx.lineWidth = 2;
     ctx.strokeRect(hudBoxX, hudBoxY, hudBoxWidth, hudBoxHeight);
-    
+
     // HUD text content
     ctx.fillStyle = '#10b981';
-    ctx.font = 'bold 16px monospace';
+    ctx.font = 'bold 15px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(`ROLE: ${title.toUpperCase()}`, canvas.width / 2, hudBoxY + 30);
     ctx.fillText('SALARY: HIGH-YIELD', canvas.width / 2, hudBoxY + 55);
     ctx.fillText('COST: ZERO-FEE', canvas.width / 2, hudBoxY + 80);
-    
+
+    // Contact info inside HUD box with clean spacing
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '14px monospace';
+    ctx.fillText(`📱 +${APP_CONFIG.HR_WHATSAPP}  |  🌐 globalpathkaseddieagent.com`, canvas.width / 2, hudBoxY + 115);
+
     // Add glowing effect to HUD box
     ctx.shadowColor = '#10b981';
     ctx.shadowBlur = 20;
@@ -199,16 +209,6 @@ Keep it under 150 words and make it suitable for WhatsApp sharing.
     ctx.lineWidth = 1;
     ctx.strokeRect(hudBoxX, hudBoxY, hudBoxWidth, hudBoxHeight);
     ctx.shadowBlur = 0;
-
-    // Add call-to-action
-    ctx.fillStyle = '#10b981';
-    ctx.font = 'bold 28px sans-serif';
-    ctx.fillText('Apply Now ➡️', canvas.width / 2, 750);
-
-    // Add contact info
-    ctx.fillStyle = '#64748b';
-    ctx.font = '18px monospace';
-    ctx.fillText(`📱 ${APP_CONFIG.HR_WHATSAPP} | 🌐 globalpathkaseddieagent.com`, canvas.width / 2, 920);
 
     // Convert canvas to image
     const imageUrl = canvas.toDataURL('image/png', 0.9);
