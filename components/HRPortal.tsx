@@ -1197,17 +1197,11 @@ export const HRPortal: React.FC<HRPortalProps> = ({
                   </div>
 
                   <textarea 
-
-                    ref={editorRef}
-
+                    ref={editorRef} 
                     value={pitchText} 
-
                     onChange={(e) => setPitchText(e.target.value)} 
-
-                    placeholder="Outreach asset content..."
-
-                    className="w-full bg-slate-50 border border-slate-200 rounded-[2rem] p-6 text-sm outline-none focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 transition-all font-mono leading-relaxed min-h-[250px]"
-
+                    placeholder="Outreach asset content..." 
+                    className="w-full pitch-editor-textarea bg-slate-900 text-white font-sans text-sm border border-emerald-500/50 rounded-[1.5rem] p-6 outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all leading-relaxed min-h-[300px] shadow-inner font-medium" 
                   />
 
                 </div>
