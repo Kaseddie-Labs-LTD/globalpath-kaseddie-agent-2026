@@ -2,11 +2,22 @@ import argparse
 import json
 import re
 import logging
+import os
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BaytScraper")
+
+# Read proxy URL from environment variable for production scraping on Render
+RESIDENTIAL_PROXY_URL = os.getenv("RESIDENTIAL_PROXY_URL")
+PROXIES = None
+if RESIDENTIAL_PROXY_URL:
+    PROXIES = {
+        "http": RESIDENTIAL_PROXY_URL,
+        "https": RESIDENTIAL_PROXY_URL,
+    }
+    logger.info("🌐 [BAYT] Residential proxy configured for Cloudflare evasion.")
 
 BASE_URL = "https://www.bayt.com"
 
@@ -44,6 +55,7 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
             base_url,
             headers=HEADERS,
             impersonate="chrome120",
+            proxies=PROXIES,
             timeout=30
         )
         logger.info(f"📡 [BAYT] HTTP Response Status: {response.status_code}")
