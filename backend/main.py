@@ -473,89 +473,89 @@ pitch_priority_event.set() # Set means "allowed to run", clear means "paused"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
-    # Yield immediately so Uvicorn can finish starting the server
-    # and bind to port without any delay.
+    # 1. YIELD FIRST so Uvicorn can start server immediately!
+    # This is critical for Render to detect port 10000 is open without waiting!
     print("Port 10000 is now open.")
     print("Lifespan: Yielding immediately for startup...")
     
-    # 🟢 DIRECT INTERNAL CALL (Bypasses 401 HTTP Auth)
-    try:
-        print("🚀 [BAYT HANDSHAKE]: Activating Bayt GCC Scraper...")
-        from scrapers.bayt_scraper import scrape_bayt_jobs as run_bayt_scraper
-        from threading import Thread
-        
-        # Run scraper in a separate thread to not block async loop
-        def run_scraper_sync():
-            try:
-                jobs = run_bayt_scraper(keyword="", limit=20)
-                if jobs:
-                    print(f"✅ [BAYT HANDSHAKE]: Scraper returned {len(jobs)} jobs!")
-                    # Now ingest them the same way the /scrape/bayt endpoint does
-                    from fastapi import BackgroundTasks
-                    from contextlib import contextmanager
-                    
-                    # Reuse the same ingest logic from the endpoint
-                    points = []
-                    skipped_duplicates = 0
-                    for job in jobs:
-                        item = {
-                            "jobTitle": job.get("title"),
-                            "title": job.get("title"),
-                            "company": job.get("company"),
-                            "location": job.get("location"),
-                            "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
-                            "snippet": job.get("salaryText"),
-                            "url": job.get("applyUrl"),
-                            "link": job.get("applyUrl")
-                        }
-                        try:
-                            doc = dataset_mapping_function(item, category="general", forced_country="UAE")
-                            doc.metadata["source"] = "Bayt (Middle East)"
-                            doc.metadata["vetted"] = True
-                            doc.metadata["status"] = "verified"
-                            doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
-                            doc.metadata["created_at"] = datetime.now().isoformat()
-                            
-                            fingerprint = doc.metadata.get("fingerprint")
-                            if fingerprint:
-                                search_result = qdrant_client.scroll(
-                                    collection_name=COLLECTION_NAME,
-                                    scroll_filter=models.Filter(
-                                        must=[models.FieldCondition(key="fingerprint", match=models.MatchValue(value=fingerprint))]
-                                    ),
-                                    limit=1
-                                )
-                                if search_result[0]:
-                                    skipped_duplicates +=1
-                                    continue
-                            embedding = get_embeddings().embed_query(doc.page_content)
-                            point_id = job.get("jobId") or str(uuid.uuid4())
-                            point = models.PointStruct(id=point_id, vector=embedding, payload=doc.metadata)
-                            points.append(point)
-                        except Exception as e:
-                            print(f"⚠️ [BAYT INGEST]: Skipping job: {e}")
-                    if points:
-                        print(f"🚀 [BAYT PIPELINE]: Upserting {len(points)} points into Qdrant collection 'globalpath_leads'...")
-                        qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
-                        print(f"✅ [BAYT HANDSHAKE COMPLETE]: Successfully ingested {len(points)} jobs (skipped {skipped_duplicates} duplicates)!")
-            except Exception as e:
-                print(f"⚠️ [BAYT HANDSHAKE ERROR]: {e}")
-        
-        scraper_thread = Thread(target=run_scraper_sync, daemon=True)
-        scraper_thread.start()
-        
-    except Exception as e:
-        print(f"⚠️ [BAYT HANDSHAKE ERROR]: {e}")
-    
-    # We create the task AFTER the yield or just before, 
-    # but the key is that nothing blocks before 'yield'.
-    startup_task = asyncio.create_task(sync_all_apify_datasets())
+    startup_task = None
+    scraper_thread = None
     
     try:
-        yield
+        yield  # Server starts handling requests NOW, before any background tasks
+        
+        # 2. Start all background tasks AFTER yielding
+        print("Lifespan: Starting background tasks after server is ready...")
+        
+        # Start Apify sync as async task
+        startup_task = asyncio.create_task(sync_all_apify_datasets())
+        
+        # Start Bayt scraper in a background thread
+        try:
+            print("🚀 [BAYT HANDSHAKE]: Activating Bayt GCC Scraper in background...")
+            from scrapers.bayt_scraper import scrape_bayt_jobs as run_bayt_scraper
+            from threading import Thread
+            
+            def run_scraper_sync():
+                try:
+                    jobs = run_bayt_scraper(keyword="", limit=20)
+                    if jobs:
+                        print(f"✅ [BAYT HANDSHAKE]: Scraper returned {len(jobs)} jobs!")
+                        points = []
+                        skipped_duplicates = 0
+                        for job in jobs:
+                            item = {
+                                "jobTitle": job.get("title"),
+                                "title": job.get("title"),
+                                "company": job.get("company"),
+                                "location": job.get("location"),
+                                "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
+                                "snippet": job.get("salaryText"),
+                                "url": job.get("applyUrl"),
+                                "link": job.get("applyUrl")
+                            }
+                            try:
+                                doc = dataset_mapping_function(item, category="general", forced_country="UAE")
+                                doc.metadata["source"] = "Bayt (Middle East)"
+                                doc.metadata["vetted"] = True
+                                doc.metadata["status"] = "verified"
+                                doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
+                                doc.metadata["created_at"] = datetime.now().isoformat()
+                                
+                                fingerprint = doc.metadata.get("fingerprint")
+                                if fingerprint:
+                                    search_result = qdrant_client.scroll(
+                                        collection_name=COLLECTION_NAME,
+                                        scroll_filter=models.Filter(
+                                            must=[models.FieldCondition(key="fingerprint", match=models.MatchValue(value=fingerprint))]
+                                        ),
+                                        limit=1
+                                    )
+                                    if search_result[0]:
+                                        skipped_duplicates +=1
+                                        continue
+                                embedding = get_embeddings().embed_query(doc.page_content)
+                                point_id = job.get("jobId") or str(uuid.uuid4())
+                                point = models.PointStruct(id=point_id, vector=embedding, payload=doc.metadata)
+                                points.append(point)
+                            except Exception as e:
+                                print(f"⚠️ [BAYT INGEST]: Skipping job: {e}")
+                        if points:
+                            print(f"🚀 [BAYT PIPELINE]: Upserting {len(points)} points into Qdrant collection 'globalpath_leads'...")
+                            qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+                            print(f"✅ [BAYT HANDSHAKE COMPLETE]: Successfully ingested {len(points)} jobs (skipped {skipped_duplicates} duplicates)!")
+                except Exception as e:
+                    print(f"⚠️ [BAYT HANDSHAKE ERROR]: {e}")
+            
+            scraper_thread = Thread(target=run_scraper_sync, daemon=True)
+            scraper_thread.start()
+            
+        except Exception as e:
+            print(f"⚠️ [BAYT HANDSHAKE ERROR]: {e}")
+        
     finally:
-        # Optional: Cancel startup task if it's still running on shutdown
-        if not startup_task.done():
+        # Cleanup tasks on shutdown
+        if startup_task and not startup_task.done():
             print("Shutting down: Cancelling background startup task...")
             startup_task.cancel()
 

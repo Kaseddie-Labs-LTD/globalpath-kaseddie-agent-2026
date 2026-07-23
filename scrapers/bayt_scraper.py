@@ -45,7 +45,14 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
     Scrapes live Middle East job listings from Bayt.com using TLS browser impersonation.
     Compatible with backend API expecting scrape_bayt_jobs(keyword, limit).
     Includes retry logic and extended timeout for residential proxy reliability.
+    
+    Can be disabled by setting SKIP_BAYT_SCRAPER=true environment variable.
     """
+    # Check if scraper is disabled via environment variable
+    if os.getenv("SKIP_BAYT_SCRAPER", "false").lower() == "true":
+        logger.info("⚠️ [BAYT] Scraper disabled via SKIP_BAYT_SCRAPER environment variable")
+        return []
+        
     jobs = []
     keyword_slug = f"{keyword.strip().lower().replace(' ', '-')}-jobs/" if keyword else ""
     base_url = f"https://www.bayt.com/en/{country}/jobs/{keyword_slug}"
