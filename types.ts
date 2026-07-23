@@ -65,6 +65,7 @@ export interface Job {
   fee_blocked?: boolean;
   illegalFeeDetected?: boolean;
   vetted?: boolean;
+  zero_fee?: boolean;
 }
 
 export const getJobLocationString = (location: string | JobLocation | undefined): string => {

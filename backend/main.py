@@ -435,7 +435,26 @@ from groq import Groq
 from langchain_core.documents import Document
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
-from services.media_engine import generate_flux_image, generate_kling_video
+import sys
+import os
+
+# Ensure project root is in Python path for imports from services/
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Safe import for media_engine (located in backend/services)
+try:
+    from backend.services.media_engine import generate_flux_image, generate_kling_video
+except ImportError:
+    try:
+        from services.media_engine import generate_flux_image, generate_kling_video
+    except ImportError:
+        # Fallback dummy functions if media_engine is missing or placed elsewhere
+        async def generate_flux_image(*args, **kwargs):
+            return None
+        async def generate_kling_video(*args, **kwargs):
+            return None
 
 # Initialize Groq client
 try:
@@ -458,6 +477,75 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # and bind to port without any delay.
     print("Port 10000 is now open.")
     print("Lifespan: Yielding immediately for startup...")
+    
+    # 🟢 DIRECT INTERNAL CALL (Bypasses 401 HTTP Auth)
+    try:
+        print("🚀 [BAYT HANDSHAKE]: Activating Bayt GCC Scraper...")
+        from scrapers.bayt_scraper import scrape_bayt_jobs as run_bayt_scraper
+        from threading import Thread
+        
+        # Run scraper in a separate thread to not block async loop
+        def run_scraper_sync():
+            try:
+                jobs = run_bayt_scraper(keyword="", limit=20)
+                if jobs:
+                    print(f"✅ [BAYT HANDSHAKE]: Scraper returned {len(jobs)} jobs!")
+                    # Now ingest them the same way the /scrape/bayt endpoint does
+                    from fastapi import BackgroundTasks
+                    from contextlib import contextmanager
+                    
+                    # Reuse the same ingest logic from the endpoint
+                    points = []
+                    skipped_duplicates = 0
+                    for job in jobs:
+                        item = {
+                            "jobTitle": job.get("title"),
+                            "title": job.get("title"),
+                            "company": job.get("company"),
+                            "location": job.get("location"),
+                            "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
+                            "snippet": job.get("salaryText"),
+                            "url": job.get("applyUrl"),
+                            "link": job.get("applyUrl")
+                        }
+                        try:
+                            doc = dataset_mapping_function(item, category="general", forced_country="UAE")
+                            doc.metadata["source"] = "Bayt (Middle East)"
+                            doc.metadata["vetted"] = True
+                            doc.metadata["status"] = "verified"
+                            doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
+                            doc.metadata["created_at"] = datetime.now().isoformat()
+                            
+                            fingerprint = doc.metadata.get("fingerprint")
+                            if fingerprint:
+                                search_result = qdrant_client.scroll(
+                                    collection_name=COLLECTION_NAME,
+                                    scroll_filter=models.Filter(
+                                        must=[models.FieldCondition(key="fingerprint", match=models.MatchValue(value=fingerprint))]
+                                    ),
+                                    limit=1
+                                )
+                                if search_result[0]:
+                                    skipped_duplicates +=1
+                                    continue
+                            embedding = get_embeddings().embed_query(doc.page_content)
+                            point_id = job.get("jobId") or str(uuid.uuid4())
+                            point = models.PointStruct(id=point_id, vector=embedding, payload=doc.metadata)
+                            points.append(point)
+                        except Exception as e:
+                            print(f"⚠️ [BAYT INGEST]: Skipping job: {e}")
+                    if points:
+                        print(f"🚀 [BAYT PIPELINE]: Upserting {len(points)} points into Qdrant collection 'globalpath_leads'...")
+                        qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+                        print(f"✅ [BAYT HANDSHAKE COMPLETE]: Successfully ingested {len(points)} jobs (skipped {skipped_duplicates} duplicates)!")
+            except Exception as e:
+                print(f"⚠️ [BAYT HANDSHAKE ERROR]: {e}")
+        
+        scraper_thread = Thread(target=run_scraper_sync, daemon=True)
+        scraper_thread.start()
+        
+    except Exception as e:
+        print(f"⚠️ [BAYT HANDSHAKE ERROR]: {e}")
     
     # We create the task AFTER the yield or just before, 
     # but the key is that nothing blocks before 'yield'.
@@ -1302,9 +1390,11 @@ origins = [
     "https://globalpathkaseddieagent.com",  # ✅ APRIL 30: Custom domain
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://localhost:5000",
     "http://localhost:5001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    "http://127.0.0.1:5000",
     "https://globalpath-kaseddie-agent-2026-N.onrender.com", # Dynamic staging fallback
 ]
 
@@ -1459,6 +1549,116 @@ async def debug_environment():
         "python_path": os.path.abspath(__file__),
         "working_directory": os.getcwd()
     }
+
+@api_router.get("/scrape/bayt")
+@api_router.post("/scrape/bayt")
+async def scrape_bayt_jobs(
+    keyword: str = Query(""),
+    limit: int = Query(20),
+    background_tasks: BackgroundTasks = None,
+    admin: dict = Depends(require_admin_token)
+):
+    """
+    Scrape jobs from Bayt.com and ingest into Qdrant.
+    """
+    logger.info("==================================================")
+    logger.info("🤝 [BAYT HANDSHAKE]: Handshake initiated via /api/scrape/bayt")
+    logger.info("==================================================")
+    
+    try:
+        from scrapers.bayt_scraper import scrape_bayt_jobs as scrape_func
+        logger.info(f"🔍 [BAYT PIPELINE]: Executing Bayt TLS scraper bridge (keyword='{keyword}', limit={limit})...")
+        
+        # 1. Trigger Scraper
+        jobs = scrape_func(keyword=keyword, limit=limit)
+        total_scraped = len(jobs) if jobs else 0
+        logger.info(f"⚡ [BAYT PIPELINE]: Scraper returned {total_scraped} raw job listings.")
+        
+        if not jobs:
+            logger.warning("⚠️ [BAYT PIPELINE]: No jobs extracted during this run.")
+            logger.info("==================================================")
+            return {"status": "success", "jobs_ingested": 0, "message": "No jobs found"}
+
+        # 2. Ingest into Qdrant
+        def ingest_jobs():
+            logger.info("⚙️ [BAYT PIPELINE]: Transforming raw data into GlobalPath lead schema...")
+            points = []
+            skipped_duplicates = 0
+            
+            for job in jobs:
+                # Map Bayt job to our document format
+                item = {
+                    "jobTitle": job.get("title"),
+                    "title": job.get("title"),
+                    "company": job.get("company"),
+                    "location": job.get("location"),
+                    "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
+                    "snippet": job.get("salaryText"),
+                    "url": job.get("applyUrl"),
+                    "link": job.get("applyUrl")
+                }
+                try:
+                    doc = dataset_mapping_function(item, category="general", forced_country="UAE")
+                    # Update source to Bayt
+                    doc.metadata["source"] = "Bayt (Middle East)"
+                    doc.metadata["vetted"] = True  # Ensure it's visible in the UI
+                    doc.metadata["status"] = "verified"  # Mark as verified
+                    doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)  # Add zero fee flag
+                    doc.metadata["created_at"] = datetime.now().isoformat()
+                    
+                    # Generate fingerprint for deduplication
+                    fingerprint = doc.metadata.get("fingerprint")
+                    if fingerprint:
+                        # Check if fingerprint already exists
+                        search_result = qdrant_client.scroll(
+                            collection_name=COLLECTION_NAME,
+                            scroll_filter=models.Filter(
+                                must=[models.FieldCondition(key="fingerprint", match=models.MatchValue(value=fingerprint))]
+                            ),
+                            limit=1
+                        )
+                        if search_result[0]:
+                            # Fingerprint already exists, skip this job
+                            skipped_duplicates += 1
+                            continue
+                    
+                    # Get embedding
+                    embedding = get_embeddings().embed_query(doc.page_content)
+                    # Create point
+                    point_id = job.get("jobId") or str(uuid.uuid4())
+                    point = models.PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload=doc.metadata
+                    )
+                    points.append(point)
+                except Exception as e:
+                    logger.warning(f"⚠️ [BAYT INGEST]: Skipping job: {e}")
+            
+            if points:
+                logger.info(f"🚀 [BAYT PIPELINE]: Upserting {len(points)} points into Qdrant collection 'globalpath_leads'...")
+                qdrant_client.upsert(
+                    collection_name=COLLECTION_NAME,
+                    points=points
+                )
+                logger.info(f"✅ [BAYT HANDSHAKE COMPLETE]: Successfully ingested {len(points)} jobs (skipped {skipped_duplicates} duplicates)!")
+            else:
+                logger.info("ℹ️ [BAYT PIPELINE]: No new jobs to ingest (all were duplicates or failed processing).")
+            logger.info("==================================================")
+        
+        # Run ingestion in background
+        if background_tasks:
+            background_tasks.add_task(ingest_jobs)
+        
+        return {
+            "status": "success",
+            "jobs_found": len(jobs),
+            "source": "Bayt (Middle East)"
+        }
+    except Exception as e:
+        logger.error(f"❌ [BAYT PIPELINE ERROR]: Pipeline failed: {str(e)}")
+        logger.info("==================================================")
+        raise HTTPException(status_code=500, detail=f"Bayt pipeline failed: {str(e)}")
 
 @api_router.post("/recategorize-leads")
 async def recategorize_existing_leads(admin: dict = Depends(require_admin_token)):

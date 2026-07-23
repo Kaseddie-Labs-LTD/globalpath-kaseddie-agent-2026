@@ -98,7 +98,10 @@ export const sanitizeEndpoint = (endpoint: string): string => {
 };
 
 // Fetcher function for SWR that automatically adds API prefix
-export const fetcher = async (endpoint: string, options?: RequestInit & { timeout?: number }) => {
+export const fetcher = async (
+  endpoint: string,
+  options?: RequestInit & { timeout?: number; skipAuth?: boolean }
+) => {
   // 1. Format the endpoint to ensure absolute URL
   const fullUrl = formatEndpointUrl(endpoint);
   
@@ -112,6 +115,7 @@ export const fetcher = async (endpoint: string, options?: RequestInit & { timeou
     // STREAM CHUNKING: Add headers to prevent Render from killing connection during long AI processing
     const callerHeaders = (options?.headers || {}) as Record<string, string>;
     const adminToken = getAdminAuthToken();
+    const shouldAttachAuth = !options?.skipAuth;
 
     const mergedHeaders: Record<string, string> = {
       ...callerHeaders,
@@ -120,7 +124,12 @@ export const fetcher = async (endpoint: string, options?: RequestInit & { timeou
     };
 
     // Attach the admin Bearer token automatically, unless the caller already set one.
-    if (adminToken && !('Authorization' in mergedHeaders) && !('authorization' in mergedHeaders)) {
+    if (
+      shouldAttachAuth &&
+      adminToken &&
+      !('Authorization' in mergedHeaders) &&
+      !('authorization' in mergedHeaders)
+    ) {
       mergedHeaders.Authorization = `Bearer ${adminToken}`;
     }
 

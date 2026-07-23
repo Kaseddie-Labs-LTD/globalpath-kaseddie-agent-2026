@@ -39,6 +39,7 @@ import { AppView } from './primitive-types';
 import { UserProfile, Job, AgentLogEntry, ApplicationWorkflow, AgentState, SafetyReport, OfferLetter, RecruitmentBatch, B2BPitch, getJobLocationString } from './types';
 import { API_BASE, fetcher, sanitizeEndpoint } from './constants/api';
 import { safeArray } from './utils/sanitize';
+import { computeEthicalMetrics } from './utils/metrics';
 
 const KASEDDIE_SIGNATURE = "GlobalPath Kaseddie Agent";
 const ADMIN_PRIMARY = "+256784428821";
@@ -309,6 +310,77 @@ function App() {
     }).length;
   }, [jobs, computeRegionLabelFromLocation, categorizeJob]);
 
+  // --- 2. Fetch Logic ---
+  // OOM PROTECTION: Paginated leads fetching - only load 100 at a time
+  const { data: swrLeadsResponse, mutate: mutateLeads } = useSWR(
+    ['/leads', LEADS_PAGE_SIZE, leadsOffset],
+    ([url, limit, offset]) => fetcher(`${url}?limit=${limit}&offset=${offset}`),
+    {
+      refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
+      revalidateOnFocus: false, // OOM PROTECTION: Don't revalidate on focus (prevents memory spikes)
+      revalidateIfStale: false, // Trust the layout cache during pagination jumps
+      revalidateOnReconnect: true,
+      keepPreviousData: true, // Prevents jobs from disappearing during re-validation
+      shouldRetryOnError: false, // Don't flood FastAPI if a regional shard times out
+      onError: (error) => {
+        console.error('❌ SWR Error fetching leads:', error);
+        addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
+      },
+      onSuccess: (data) => {
+        console.log('✅ SWR Data received:', data);
+        
+        // 1. Extract totalLeadsAvailable from stats or leads data
+        const totalLeadsAvailable = swrStats?.total || data?.total || jobs.length || 0;
+        
+        // OOM PROTECTION: Track if there are more leads to load
+        const leadsArray = data?.leads || [];
+        const nextOffset = data?.next_offset;
+        
+        // 2. Ensure "hasMore" condition guards against absolute total
+        const moreLeadsRemaining = 
+          nextOffset !== null && 
+          nextOffset !== undefined && 
+          leadsArray.length > 0 && 
+          (leadsOffset + LEADS_PAGE_SIZE) < totalLeadsAvailable;
+          
+        setHasMoreLeads(moreLeadsRemaining);
+        
+        console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})`);
+        console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
+        console.log(`📊 [PAGINATED]: Total available: ${totalLeadsAvailable}`);
+        
+        // 3. Prevent auto-fetcher from running if it exceeds bounds
+        if (moreLeadsRemaining && leadsOffset < MAX_OFFSET) {
+          const nextOffsetValue = leadsOffset + LEADS_PAGE_SIZE;
+          if (nextOffsetValue < totalLeadsAvailable) {
+            console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
+            setLeadsOffset(nextOffsetValue);
+          }
+        } else if (leadsOffset >= MAX_OFFSET) {
+          console.warn('🚨 [PAGINATION]: Reached max offset, stopping auto-fetch');
+        }
+        
+        if (leadsArray.length === 0 && leadsOffset === 0) {
+          console.error('🚨 CRITICAL: SWR returned 0 leads at offset 0');
+          addLog('CRITICAL: Backend returned 0 leads - check backend sync', "error", "SWR");
+        }
+      },
+      // OOM PROTECTION: Reduce retry count and interval
+      errorRetryCount: 2,
+      errorRetryInterval: 10000,
+      dedupingInterval: 30000,
+      refreshWhenOffline: false
+    }
+  );
+
+  // Extract variables from SWR response
+  const swrLeads = swrLeadsResponse?.leads || [];
+  const totalDbLeads = swrLeadsResponse?.total || 0;
+
+  const ethicalMetrics = React.useMemo(() => {
+    return computeEthicalMetrics(swrLeads, totalDbLeads, 2500);
+  }, [swrLeads, totalDbLeads]);
+
   const regionJobCounts = React.useMemo(() => {
     const counts: Record<string, { total: number; blue_collar: number; professional: number; service_domestic: number }> = { 
       'GCC Corridor': { total: 0, blue_collar: 0, professional: 0, service_domestic: 0 }, 
@@ -451,70 +523,6 @@ function App() {
     });
   }, [computeRegionLabelFromLocation]);
 
-  // --- 2. Fetch Logic ---
-  
-  // OOM PROTECTION: Paginated leads fetching - only load 100 at a time
-  const { data: swrLeads, mutate: mutateLeads } = useSWR(
-    `/leads?limit=${LEADS_PAGE_SIZE}&offset=${leadsOffset}`, 
-    fetcher, 
-    {
-      refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
-      revalidateOnFocus: false, // OOM PROTECTION: Don't revalidate on focus (prevents memory spikes)
-      revalidateIfStale: false, // Trust the layout cache during pagination jumps
-      revalidateOnReconnect: true,
-      keepPreviousData: true, // Prevents jobs from disappearing during re-validation
-      shouldRetryOnError: false, // Don't flood FastAPI if a regional shard times out
-      onError: (error) => {
-        console.error('❌ SWR Error fetching leads:', error);
-        addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
-      },
-      onSuccess: (data) => {
-        console.log('✅ SWR Data received:', data);
-        
-        // 1. Extract totalLeadsAvailable from stats or leads data
-        const totalLeadsAvailable = swrStats?.total || data?.total || jobs.length || 0;
-        
-        // OOM PROTECTION: Track if there are more leads to load
-        const leadsArray = data?.leads || [];
-        const nextOffset = data?.next_offset;
-        
-        // 2. Ensure "hasMore" condition guards against absolute total
-        const moreLeadsRemaining = 
-          nextOffset !== null && 
-          nextOffset !== undefined && 
-          leadsArray.length > 0 && 
-          (leadsOffset + LEADS_PAGE_SIZE) < totalLeadsAvailable;
-          
-        setHasMoreLeads(moreLeadsRemaining);
-        
-        console.log(`✅ [PAGINATED]: Loaded ${leadsArray.length} leads (offset: ${leadsOffset})`);
-        console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
-        console.log(`📊 [PAGINATED]: Total available: ${totalLeadsAvailable}`);
-        
-        // 3. Prevent auto-fetcher from running if it exceeds bounds
-        if (moreLeadsRemaining && leadsOffset < MAX_OFFSET) {
-          const nextOffsetValue = leadsOffset + LEADS_PAGE_SIZE;
-          if (nextOffsetValue < totalLeadsAvailable) {
-            console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
-            setLeadsOffset(nextOffsetValue);
-          }
-        } else if (leadsOffset >= MAX_OFFSET) {
-          console.warn('🚨 [PAGINATION]: Reached max offset, stopping auto-fetch');
-        }
-        
-        if (leadsArray.length === 0 && leadsOffset === 0) {
-          console.error('🚨 CRITICAL: SWR returned 0 leads at offset 0');
-          addLog('CRITICAL: Backend returned 0 leads - check backend sync', "error", "SWR");
-        }
-      },
-      // OOM PROTECTION: Reduce retry count and interval
-      errorRetryCount: 2,
-      errorRetryInterval: 10000,
-      dedupingInterval: 30000,
-      refreshWhenOffline: false
-    }
-  );
-  
   // OOM PROTECTION: Load more leads function (pagination)
   const loadMoreLeads = useCallback(() => {
     if (hasMoreLeads && !isGeneratingPitch) {
@@ -546,7 +554,7 @@ function App() {
     try {
       console.log("🔍 [Handshake] Syncing with SWR Telemetry...");
       let statsData = swrStats;
-      let leadsData = swrLeads;
+      let leadsData = swrLeadsResponse;
       let totalLeadsCount = 0;
 
       // Initial or Force Refresh Fallback
@@ -716,7 +724,7 @@ function App() {
       console.error("[Handshake Critical]: Fallback triggered to prevent dashboard crash", globalError);
       return []; // Return empty safe array to let UI mount gracefully
     }
-  }, [swrStats, swrLeads, computeRegionLabelFromLocation]);
+  }, [swrStats, swrLeadsResponse, computeRegionLabelFromLocation]);
 
   const handleRefreshPulse = useCallback(async (forcedRegion?: string, forcedSector?: string, force = false) => {
     if (isPulseSyncing) {
@@ -820,10 +828,10 @@ function App() {
   // --- 3. Effect Hooks ---
 
   useEffect(() => {
-    if (swrStats || swrLeads) {
+    if (swrStats || swrLeadsResponse) {
       fetchStats();
     }
-  }, [swrStats, swrLeads, fetchStats]);
+  }, [swrStats, swrLeadsResponse, fetchStats]);
 
   useEffect(() => {
     setBatches(computeBatchesFromJobs(jobs));
@@ -873,9 +881,9 @@ function App() {
   }, [isAdminAuthenticated]);
   
   useEffect(() => {
-    if (swrLeads && swrLeads.leads) {
+    if (swrLeadsResponse && swrLeadsResponse.leads) {
       // Process SWR leads into jobs with bulletproof mapping
-      const fetchedJobs = swrLeads.leads.map((j: any) => {
+      const fetchedJobs = swrLeadsResponse.leads.map((j: any) => {
       // Declare ALL "safe" variables at the very top of the map
       const safePhone = String(j.phone || j.contact_phone || "");
       const safeEmail = String(j.email || j.contact_email || "");
@@ -929,10 +937,10 @@ function App() {
         return prev;
       });
     }
-  }, [swrLeads, computeRegionLabelFromLocation, categorizeJob, addLog]);
+  }, [swrLeadsResponse, computeRegionLabelFromLocation, categorizeJob, addLog]);
 
   useEffect(() => {
-    if (swrLeads && swrLeads.leads && isApifySyncing) {
+    if (swrLeadsResponse && swrLeadsResponse.leads && isApifySyncing) {
       // If we were syncing and we now have leads, clear the pending state
       // (This is a bit naive but works for the demo)
       setIsApifySyncing(false);
@@ -941,7 +949,7 @@ function App() {
     try {
       (window as any).ChatbotBridge?.setLeads?.(jobs);
     } catch {}
-  }, [swrLeads, isApifySyncing, jobs]);
+  }, [swrLeadsResponse, isApifySyncing, jobs]);
 
   if (!mounted) return null;
 
@@ -1322,6 +1330,7 @@ function App() {
                     const response = await fetcher(sanitizeEndpoint('generate-proposal'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
+                      skipAuth: true,
                       body: JSON.stringify(requestBody),
                       timeout: 60000 // 60s timeout for complex pitches like N-iX
                     });

@@ -17,6 +17,8 @@ export const BlockedLeadsReport: React.FC<BlockedLeadsReportProps> = ({ logs, jo
     j.description?.toLowerCase().includes('fee') ||
     j.requirements?.some(r => r.toLowerCase().includes('fee'))
   );
+  const totalBlockedCount = blockedJobs.length;
+  const blockedDollars = totalBlockedCount * 2500;
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 animate-fadeIn">
@@ -37,6 +39,41 @@ export const BlockedLeadsReport: React.FC<BlockedLeadsReportProps> = ({ logs, jo
           <p className="text-slate-400 text-sm font-medium mt-1">
             Detailed view of zero-fee policy violations intercepted by Kaseddie AI Oversight.
           </p>
+        </div>
+      </div>
+
+      <div className="p-6 bg-slate-900/90 border border-emerald-500/30 rounded-2xl shadow-xl backdrop-blur-md mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-mono font-semibold text-emerald-400 uppercase tracking-widest">
+                Kaseddie AI Oversight • Active Protection
+              </span>
+            </div>
+            <h1 className="text-3xl font-extrabold text-white mt-1">
+              Blocked Fees Report
+            </h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Detailed view of zero-fee policy violations intercepted across all recruitment corridors.
+            </p>
+          </div>
+
+          <div className="bg-emerald-500/10 border border-emerald-500/30 px-6 py-4 rounded-xl text-left md:text-right w-full md:w-auto">
+            <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+              Total Intercepted Value
+            </div>
+            <div className="text-3xl md:text-4xl font-black text-emerald-400 mt-1">
+              {new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                maximumFractionDigits: 0,
+              }).format(blockedDollars || totalBlockedCount * 2500)}
+            </div>
+            <div className="text-xs text-slate-300 font-medium mt-1">
+              {totalBlockedCount} Fee-Charging Nodes Quarantined
+            </div>
+          </div>
         </div>
       </div>
 

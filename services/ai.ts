@@ -117,6 +117,7 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
       const response = await fetcher('/generate-proposal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        skipAuth: true,
         body: JSON.stringify({
           job_title: title,
           company: company,
@@ -143,6 +144,7 @@ export async function generateB2BPitchText(job: Job): Promise<string> {
     const response = await fetcher('/generate-proposal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      skipAuth: true,
       body: JSON.stringify({
         job_title: title,        // Backend expects 'job_title'
         company: company,
