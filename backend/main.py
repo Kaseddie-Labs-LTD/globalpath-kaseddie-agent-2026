@@ -2764,8 +2764,8 @@ async def sync_all_apify_datasets():
         # Collect individual dataset IDs
         ds_uae = os.getenv("APIFY_DATASET_ID_UAE")
         ds_ksa = os.getenv("APIFY_DATASET_ID_KSA")
-        ds_poland = os.getenv("APIFY_DATASET_ID_POLAND") or "6hXfOhZjAePxOUFfe"
-        ds_lux = os.getenv("APIFY_DATASET_ID_LUX") or "PxGGxYxvWUH4lbJUJ"
+        ds_poland = os.getenv("APIFY_DATASET_ID_POLAND")
+        ds_lux = os.getenv("APIFY_DATASET_ID_LUX")
         ds_gen = os.getenv("APIFY_DATASET_IDS")
         
         # Add individual datasets
