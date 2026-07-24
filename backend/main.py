@@ -1156,8 +1156,8 @@ def save_to_pending_review(item: dict):
 
 import re
 
-# Priority IDs to process first 
-PRIORITY_DATASETS = ["PxGGxYxvWUH4lbJUJ", "3QToNmDUhIoc9smsF", "6hXfOhZjAePxOUFfe"] 
+# Priority IDs to process first
+PRIORITY_DATASETS = ["3QToNmDUhIoc9smsF"] 
 
 def dataset_mapping_function(item: dict, category: str = "general", forced_country: str = None) -> Document:
     """
