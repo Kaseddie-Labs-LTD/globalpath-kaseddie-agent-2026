@@ -14,11 +14,25 @@ logger = logging.getLogger("BaytScraper")
 RESIDENTIAL_PROXY_URL = os.getenv("RESIDENTIAL_PROXY_URL")
 PROXIES = None
 if RESIDENTIAL_PROXY_URL:
+    # Validate proxy URL scheme (supports http/https and socks5/socks5h)
+    scheme = RESIDENTIAL_PROXY_URL.split("://")[0].lower() if "://" in RESIDENTIAL_PROXY_URL else ""
+    if scheme not in ["http", "https", "socks5", "socks5h"]:
+        logger.warning(f"⚠️ [BAYT] Unrecognized proxy scheme '{scheme}', defaulting to http")
+    
+    # Log proxy info (mask password for security!)
+    safe_proxy_url = RESIDENTIAL_PROXY_URL
+    if "@" in safe_proxy_url:
+        parts = safe_proxy_url.split("@")
+        auth_part, host_part = parts[0], "@".join(parts[1:])
+        if ":" in auth_part:
+            username, password = auth_part.split("://")[-1].split(":", 1)
+            safe_proxy_url = f"{scheme}://{username}:****@{host_part}"
+    logger.info(f"🌐 [BAYT] Residential proxy configured: {safe_proxy_url}")
+    
     PROXIES = {
         "http": RESIDENTIAL_PROXY_URL,
         "https": RESIDENTIAL_PROXY_URL,
     }
-    logger.info("🌐 [BAYT] Residential proxy configured for Cloudflare evasion.")
 
 BASE_URL = "https://www.bayt.com"
 
@@ -52,6 +66,26 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
     if os.getenv("SKIP_BAYT_SCRAPER", "false").lower() == "true":
         logger.info("⚠️ [BAYT] Scraper disabled via SKIP_BAYT_SCRAPER environment variable")
         return []
+        
+    # Quick proxy connectivity test first (if proxy is configured)
+    if PROXIES:
+        try:
+            logger.info("🔗 [BAYT] Testing proxy connectivity first...")
+            test_response = requests.get(
+                "https://httpbin.org/ip",  # Simple service to return current IP
+                headers=HEADERS,
+                impersonate="chrome120",
+                proxies=PROXIES,
+                timeout=20  # Shorter timeout for test
+            )
+            if test_response.status_code == 200:
+                test_ip = test_response.json().get("origin", "unknown")
+                logger.info(f"✅ [BAYT] Proxy test passed! Current IP: {test_ip}")
+            else:
+                logger.warning(f"⚠️ [BAYT] Proxy test failed with status: {test_response.status_code}")
+        except Exception as e:
+            logger.error(f"❌ [BAYT] Proxy test failed: {str(e)}")
+            logger.error("   Double-check: 1) Proxy URL is correct, 2) Auth uses username/password (not IP whitelist), 3) Scheme matches proxy type (http:// vs socks5://)")
         
     jobs = []
     keyword_slug = f"{keyword.strip().lower().replace(' ', '-')}-jobs/" if keyword else ""
