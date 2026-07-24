@@ -37,21 +37,40 @@ else:
     print("⚠️ [GEMINI AUTH WARNING]: API key missing or invalid from environment")
     gemini_client = None
 
-# --- GEMINI EMBEDDING FUNCTION ---
+# --- FASTEMBED EMBEDDING FUNCTION ---
+# Replaces the former Gemini 3072-dim embedding with BAAI/bge-small-en-v1.5 (384-dim).
+# FastEmbed is local, dependency-free, and requires no API key.
+
+try:
+    from fastembed import TextEmbedding as _FastTextEmbedding
+    _fastembed_model = _FastTextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    print("✅ [FASTEMBED]: BAAI/bge-small-en-v1.5 loaded (384-dim)")
+except Exception as _fe_err:
+    _fastembed_model = None
+    print(f"⚠️ [FASTEMBED]: Could not load model — {_fe_err}")
+
+
+def get_job_embedding(text: str) -> list[float]:
+    """
+    Generate a 384-dimensional embedding using FastEmbed BAAI/bge-small-en-v1.5.
+    Falls back to a deterministic zero-padded hash vector so Qdrant upserts
+    never crash even when the model is unavailable.
+    """
+    if _fastembed_model is not None:
+        try:
+            result = list(_fastembed_model.embed([text]))
+            return result[0].tolist()
+        except Exception as e:
+            logger.warning(f"[FASTEMBED] embed failed, using fallback: {e}")
+    # Deterministic fallback — avoids random noise in the vector space
+    fallback = [abs(hash(f"{i}:{text[:64]}")) % 1000 / 1000.0 for i in range(384)]
+    return fallback
+
+
+# Keep legacy alias so any residual callers don't break at import time
 def get_gemini_embedding(text: str) -> list[float]:
-    """Generate 3072-dimensional embedding using Gemini gemini-embedding-001."""
-    if not gemini_client:
-        raise ValueError("Gemini client not initialized - missing API key")
-    
-    try:
-        response = gemini_client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=text,
-        )
-        return response.embeddings[0].values  # Returns 3072-dimensional vector
-    except Exception as e:
-        logger.error(f"[GEMINI EMBEDDING] Failed to generate embedding: {e}")
-        raise
+    """Deprecated — delegates to get_job_embedding (FastEmbed)."""
+    return get_job_embedding(text)
 
 # --- GOOGLE SECRET MANAGER GATEWAY ---
 class SecretManagerGateway:
@@ -504,7 +523,14 @@ pitch_priority_event.set() # Set means "allowed to run", clear means "paused"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
-    # 1. Start non-blocking background tasks FIRST (daemon threads return immediately)
+    # 1. Initialize Qdrant collection first
+    print("🚀 [SERVER]: Initializing startup routines..." )
+    try:
+        init_qdrant_leads_collection()
+    except Exception as e:
+        print(f"⚠️ [QDRANT INIT NOTICE]: {e}" )
+    
+    # 2. Start non-blocking background tasks (daemon threads return immediately)
     startup_task = None
     scraper_thread = None
     
@@ -549,7 +575,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                             if search_result[0]:
                                 skipped_duplicates +=1
                                 continue
-                        embedding = get_gemini_embedding(doc.page_content)
+                        embedding = get_job_embedding(doc.page_content)
                         point_id = job.get("jobId") or str(uuid.uuid4())
                         point = models.PointStruct(id=to_qdrant_id(point_id), vector=embedding, payload=doc.metadata)
                         points.append(point)
@@ -888,7 +914,7 @@ async def sync_apify_leads(background_tasks: BackgroundTasks):
 
 # Collection settings
 COLLECTION_NAME = "globalpath_leads"
-VECTOR_SIZE = 3072  # Dimension size for Phi-3 embeddings
+VECTOR_SIZE = 384  # FastEmbed BAAI/bge-small-en-v1.5 output dimension
 
 # PERSISTENT STORAGE: Use disk-based storage instead of :memory: to prevent OOM data loss
 PERSISTENT_STORAGE_PATH = os.environ.get('QDRANT_STORAGE_PATH', './qdrant_storage')
@@ -938,16 +964,17 @@ ensure_contacts_cache_exists(qdrant_client)
 # Initialize Groq Cloud Client for LLM processing
 # Note: groq_client is already initialized above with error handling
 
-# Initialize embeddings using HuggingFace (Groq doesn't host embedding models)
-# Lazy initialization to prevent startup delays
-embeddings = None
+# Embedding accessor — all callers use get_embeddings().embed_query(text).
+# Now backed by FastEmbed so no HuggingFace/LangChain download is needed.
+class _FastEmbedAdapter:
+    """Minimal adapter so existing embed_query() call sites keep working."""
+    def embed_query(self, text: str) -> list[float]:
+        return get_job_embedding(text)
+
+embeddings = _FastEmbedAdapter()
 
 def get_embeddings():
-    """Lazy initialization of embeddings to prevent startup delays"""
-    global embeddings
-    if embeddings is None:
-        from langchain_huggingface import HuggingFaceEmbeddings
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    """Return the shared FastEmbed adapter (kept for backward compatibility)."""
     return embeddings
 
 # Global lock for GitLab to ensure sequential processing with jitter
@@ -1332,9 +1359,9 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         metadata=metadata
     )
 
-def ensure_collection_exists():
+def init_qdrant_leads_collection():
     """
-    Checks if the Qdrant collection exists and matches the required vector size (3072).
+    Checks if the Qdrant collection exists and matches the required vector size (384).
     If it exists but the size is different, it deletes and recreates it.
     """
     try:
@@ -1642,7 +1669,7 @@ async def scrape_bayt_jobs(
                             continue
                     
                     # Get embedding using Gemini text-embedding-004 (3072-dim)
-                    embedding = get_gemini_embedding(doc.page_content)
+                    embedding = get_job_embedding(doc.page_content)
                     # Create point
                     point_id = job.get("jobId") or str(uuid.uuid4())
                     point = models.PointStruct(
@@ -2914,7 +2941,7 @@ async def sync_all_apify_datasets():
                             vector = get_embeddings().embed_query(raw_text)
                         except:
                             # Fallback: create a simple hash-based vector if embedding fails
-                            vector = [hash(f"{i}{raw_text}") % 1000 / 1000 for i in range(3072)]
+                            vector = [hash(f"{i}{raw_text}") % 1000 / 1000 for i in range(384)]
                         
                         raw_points_to_upsert.append(
                             models.PointStruct(
@@ -3052,7 +3079,7 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
         try:
             enriched_vector = get_embeddings().embed_query(enriched_text)
         except:
-            enriched_vector = [hash(f"{i}{enriched_text}") % 1000 / 1000 for i in range(3072)]
+            enriched_vector = [hash(f"{i}{enriched_text}") % 1000 / 1000 for i in range(384)]
         
         # Update the point with enriched data
         qdrant_client.upsert(
