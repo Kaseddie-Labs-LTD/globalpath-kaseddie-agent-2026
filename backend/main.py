@@ -31,8 +31,27 @@ logger = logging.getLogger("globalpath")
 GEMINI_API_KEY_DIRECT = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_APP_GEMINI_API_KEY")
 if GEMINI_API_KEY_DIRECT and len(GEMINI_API_KEY_DIRECT) > 10:
     print("✅ [GEMINI AUTH CONFIRMED]: API key loaded successfully from environment")
+    # Pass API key directly into GenAI Client (new google-genai SDK)
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY_DIRECT)
 else:
     print("⚠️ [GEMINI AUTH WARNING]: API key missing or invalid from environment")
+    gemini_client = None
+
+# --- GEMINI EMBEDDING FUNCTION ---
+def get_gemini_embedding(text: str) -> list[float]:
+    """Generate 3072-dimensional embedding using Gemini gemini-embedding-001."""
+    if not gemini_client:
+        raise ValueError("Gemini client not initialized - missing API key")
+    
+    try:
+        response = gemini_client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=text,
+        )
+        return response.embeddings[0].values  # Returns 3072-dimensional vector
+    except Exception as e:
+        logger.error(f"[GEMINI EMBEDDING] Failed to generate embedding: {e}")
+        raise
 
 # --- GOOGLE SECRET MANAGER GATEWAY ---
 class SecretManagerGateway:
@@ -420,6 +439,18 @@ else:
 os.environ["CREWAI_STORAGE_DIR"] = os.path.join(os.getcwd(), ".crewai")
 import uuid
 from typing import Optional, AsyncGenerator
+
+
+def to_qdrant_id(lead_id: str | int) -> str | int:
+    """Converts string IDs (e.g., 'bayt_5029410') to a deterministic UUID v5 for Qdrant."""
+    if isinstance(lead_id, int):
+        return lead_id
+    try:
+        # Check if already a valid UUID string
+        return str(uuid.UUID(str(lead_id)))
+    except ValueError:
+        # Generate a deterministic UUID v5 based on the string
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, str(lead_id)))
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, APIRouter, Depends, Request
 from fastapi.responses import Response, FileResponse, StreamingResponse, JSONResponse
@@ -518,9 +549,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                             if search_result[0]:
                                 skipped_duplicates +=1
                                 continue
-                        embedding = get_embeddings().embed_query(doc.page_content)
+                        embedding = get_gemini_embedding(doc.page_content)
                         point_id = job.get("jobId") or str(uuid.uuid4())
-                        point = models.PointStruct(id=point_id, vector=embedding, payload=doc.metadata)
+                        point = models.PointStruct(id=to_qdrant_id(point_id), vector=embedding, payload=doc.metadata)
                         points.append(point)
                     except Exception as e:
                         print(f"⚠️ [BAYT INGEST]: Skipping job: {e}")
@@ -1610,12 +1641,12 @@ async def scrape_bayt_jobs(
                             skipped_duplicates += 1
                             continue
                     
-                    # Get embedding
-                    embedding = get_embeddings().embed_query(doc.page_content)
+                    # Get embedding using Gemini text-embedding-004 (3072-dim)
+                    embedding = get_gemini_embedding(doc.page_content)
                     # Create point
                     point_id = job.get("jobId") or str(uuid.uuid4())
                     point = models.PointStruct(
-                        id=point_id,
+                        id=to_qdrant_id(point_id),
                         vector=embedding,
                         payload=doc.metadata
                     )
@@ -3438,6 +3469,113 @@ async def admin_login(req: AdminLoginRequest):
             detail=f"Auth subsystem error: {str(e)}"
         )
 
+
+# --- UNIFIED DUAL-AGENT RUNNER ---
+PRIMARY_MODEL = "llama-3.3-70b-versatile"
+FALLBACK_MODEL = "gemini-2.0-flash"
+
+async def execute_agent(system_prompt: str, user_prompt: str) -> str:
+    """Executes task with Llama 3.3 70B primary, falling back to Gemini on failure."""
+    # ---------------- TIER 1: GROQ (LLAMA 3.3 70B) ----------------
+    try:
+        response = groq_client.chat.completions.create(
+            model=PRIMARY_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2048,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"⚠️ [GROQ PRIMARY FAILED]: {e}. Routing to Gemini Fallback...")
+
+    # ---------------- TIER 2: GEMINI FALLBACK (NEW SDK) ----------------
+    try:
+        response = gemini_client.models.generate_content(
+            model=FALLBACK_MODEL,
+            contents=[f"{system_prompt}\n\n{user_prompt}"],
+            config=types.GenerateContentConfig(
+                max_output_tokens=2048,
+                temperature=0.3
+            )
+        )
+        return response.text
+    except Exception as e:
+        print(f"❌ [GEMINI FALLBACK FAILED]: {e}")
+        raise HTTPException(status_code=500, detail="All AI providers failed to process request.")
+
+# --- AI AGENT ENDPOINTS ---
+
+class ChatRequest(BaseModel):
+    message: str
+
+@api_router.post("/api/agent/chat")
+async def agent_chat(req: ChatRequest):
+    """Streaming chat endpoint for KaseddieChat.tsx and pitch refinement."""
+    system_prompt = (
+        "You are Kaseddie Hunter, senior recruiter at GlobalPath. "
+        "Maintain an elite, authoritative tone. Focus on Ugandans for global deployment and Zero-Fee mandates."
+    )
+    
+    def generate_stream():
+        # Tier 1: Try Streaming with Groq Llama-3.3-70B
+        try:
+            stream = groq_client.chat.completions.create(
+                model=PRIMARY_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": req.message}
+                ],
+                stream=True
+            )
+            for chunk in stream:
+                content = chunk.choices[0].delta.content or ""
+                if content:
+                    yield content
+            return
+        except Exception as e:
+            print(f"⚠️ [GROQ STREAM FAILED]: {e}. Triggering Gemini stream fallback...")
+
+        # Tier 2: Streaming Fallback with Gemini (NEW SDK)
+        try:
+            response = gemini_client.models.generate_content(
+                model=FALLBACK_MODEL,
+                contents=[f"{system_prompt}\n\n{req.message}"],
+                config=types.GenerateContentConfig(
+                    max_output_tokens=2048,
+                    temperature=0.3
+                )
+            )
+            yield response.text
+        except Exception as e:
+            yield f"\n[System Error: Failed to generate response - {e}]"
+
+    return StreamingResponse(generate_stream(), media_type="text/plain")
+
+@api_router.post("/api/generate-proposal")
+async def generate_proposal(req: ProposalRequest):
+    """B2B proposal generation endpoint for services/ai.ts."""
+    system_prompt = (
+        "You are Kaseddie Hunter at GlobalPath. Write high-conversion B2B recruitment proposals "
+        "focusing on vetted Ugandan talent and our Zero-Fee mandate."
+    )
+    user_prompt = (
+        f"Draft a B2B proposal for {req.job_title} at {req.company} in {req.location}. "
+        f"Salary offered: {req.salary or 'Competitive'}. "
+        f"Include contact lines:\nWhatsApp: +256 784428821 / +256 756824859\nEmail: hr@globalpathkaseddieagent.com"
+    )
+
+    pitch = await execute_agent(system_prompt, user_prompt)
+    return {"pitch": pitch, "proposal": pitch}
+
+@app.post("/chat")
+async def basic_chat(req: ChatRequest):
+    """Basic JSON chat endpoint for KaseddieChat.tsx fallback."""
+    system_prompt = "You are Kaseddie Hunter, AI agent for GlobalPath Uganda."
+    reply = await execute_agent(system_prompt, req.message)
+    return {"reply": reply}
 
 # --- ADMIN AUTH ROUTES ---
 @app.get("/api/auth/user")

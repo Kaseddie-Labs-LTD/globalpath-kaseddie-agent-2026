@@ -10,28 +10,71 @@ from curl_cffi import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BaytScraper")
 
-# Read proxy URL from environment variable for production scraping on Render
-RESIDENTIAL_PROXY_URL = os.getenv("RESIDENTIAL_PROXY_URL")
+def get_floppydata_proxy() -> str | None:
+    """Dynamically fetches a fresh rotating proxy session from Floppydata if API key is present."""
+    api_key = os.getenv("FLOPPYDATA_API_KEY")
+    if not api_key:
+        return None
+    
+    try:
+        logger.info("🔑 [BAYT] Requesting dynamic rotating proxy session from Floppydata...")
+        res = requests.post(
+            "https://api.floppydata.net/v2/proxy/rotating/connections",
+            headers={
+                "Content-Type": "application/json",
+                "X-Api-Key": api_key
+            },
+            json={
+                "type": "residential",
+                "country": "AE",  # UAE targeting for Bayt corridor
+                "protocol": "http",
+                "rotation": 15
+            },
+            timeout=10
+        )
+        if res.status_code == 200:
+            data = res.json()
+            host = data.get("host") or data.get("server")
+            port = data.get("port")
+            user = data.get("username")
+            password = data.get("password")
+            
+            if host and port and user and password:
+                return f"http://{user}:{password}@{host}:{port}"
+            elif "proxy_url" in data:
+                return data["proxy_url"]
+        else:
+            logger.warning(f"⚠️ [BAYT] Floppydata API returned status {res.status_code}: {res.text}")
+    except Exception as e:
+        logger.warning(f"⚠️ [BAYT] Could not reach Floppydata API: {e}")
+    
+    return None
+
+# Check explicit proxy env var first, fallback to dynamic Floppydata API session
+PROXY_URL = os.getenv("RESIDENTIAL_PROXY_URL") or get_floppydata_proxy()
 PROXIES = None
-if RESIDENTIAL_PROXY_URL:
+if PROXY_URL:
     # Validate proxy URL scheme (supports http/https and socks5/socks5h)
-    scheme = RESIDENTIAL_PROXY_URL.split("://")[0].lower() if "://" in RESIDENTIAL_PROXY_URL else ""
+    scheme = PROXY_URL.split("://")[0].lower() if "://" in PROXY_URL else ""
     if scheme not in ["http", "https", "socks5", "socks5h"]:
         logger.warning(f"⚠️ [BAYT] Unrecognized proxy scheme '{scheme}', defaulting to http")
     
     # Log proxy info (mask password for security!)
-    safe_proxy_url = RESIDENTIAL_PROXY_URL
+    safe_proxy_url = PROXY_URL
     if "@" in safe_proxy_url:
         parts = safe_proxy_url.split("@")
         auth_part, host_part = parts[0], "@".join(parts[1:])
         if ":" in auth_part:
-            username, password = auth_part.split("://")[-1].split(":", 1)
-            safe_proxy_url = f"{scheme}://{username}:****@{host_part}"
+            # Split only after scheme to handle auth correctly
+            scheme_part, rest = auth_part.split("://", 1) if "://" in auth_part else ("http", auth_part)
+            if ":" in rest:
+                username, password = rest.split(":", 1)
+                safe_proxy_url = f"{scheme_part}://{username}:****@{host_part}"
     logger.info(f"🌐 [BAYT] Residential proxy configured: {safe_proxy_url}")
     
     PROXIES = {
-        "http": RESIDENTIAL_PROXY_URL,
-        "https": RESIDENTIAL_PROXY_URL,
+        "http": PROXY_URL,
+        "https": PROXY_URL,
     }
 
 BASE_URL = "https://www.bayt.com"
