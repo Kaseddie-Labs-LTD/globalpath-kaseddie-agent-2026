@@ -7,6 +7,7 @@ import os
 import time
 from bs4 import BeautifulSoup
 from curl_cffi import requests
+from urllib.parse import urlparse, unquote, urlunparse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BaytScraper")
@@ -51,58 +52,82 @@ def get_floppydata_proxy() -> str | None:
     
     return None
 
-from urllib.parse import urlparse, unquote
+def _build_proxy_variants(base_proxy_url: str) -> list[str]:
+    """
+    Given a base proxy URL, generate multiple protocol variants to try,
+    because some proxy providers (Webshare) behave differently over http vs socks5.
+    """
+    variants = []
+    try:
+        parsed = urlparse(base_proxy_url)
+        if not parsed.hostname:
+            return [base_proxy_url]
+
+        def _with_scheme(scheme: str) -> str:
+            parts = list(parsed)
+            parts[0] = scheme
+            return urlunparse(parts)
+
+        variants.append(base_proxy_url)
+        original_scheme = (parsed.scheme or "").lower()
+        for alt_scheme in ["socks5h", "socks5", "http", "https"]:
+            if alt_scheme != original_scheme:
+                variants.append(_with_scheme(alt_scheme))
+    except Exception as e:
+        logger.warning(f"⚠️ [BAYT] Could not build proxy variants: {e}")
+        variants = [base_proxy_url]
+    seen = set()
+    uniq = []
+    for v in variants:
+        if v not in seen:
+            seen.add(v)
+            uniq.append(v)
+    return uniq
 
 # Check explicit proxy env var first, fallback to dynamic Floppydata API session
 PROXY_URL = os.getenv("RESIDENTIAL_PROXY_URL") or get_floppydata_proxy()
 PROXIES = None
-PROXY_AUTH_HEADER = None
+PROXY_CANDIDATES = []  # list of (proxies_dict, proxy_auth_header_or_None, label)
 if PROXY_URL:
-    # Parse proxy URL properly to extract scheme, auth, host, port
     try:
         parsed_proxy = urlparse(PROXY_URL)
-        scheme = parsed_proxy.scheme.lower() if parsed_proxy.scheme else "http"
+        scheme = (parsed_proxy.scheme or "http").lower()
         
-        # Validate proxy URL scheme (supports http/https and socks5/socks5h)
-        if scheme not in ["http", "https", "socks5", "socks5h"]:
-            logger.warning(f"⚠️ [BAYT] Unrecognized proxy scheme '{scheme}', defaulting to http")
-            scheme = "http"
-        
-        # Extract username and password if present
         proxy_username = unquote(parsed_proxy.username) if parsed_proxy.username else None
         proxy_password = unquote(parsed_proxy.password) if parsed_proxy.password else None
         
-        # Log proxy info (mask password for security!)
+        # Build explicit Proxy-Authorization header (Basic) as last-resort fallback
+        PROXY_AUTH_HEADER = None
         if proxy_username and proxy_password:
-            safe_proxy_url = f"{scheme}://{proxy_username}:****@{parsed_proxy.hostname}"
-            if parsed_proxy.port:
-                safe_proxy_url += f":{parsed_proxy.port}"
-            # Build explicit Proxy-Authorization header in case URL auth isn't picked up
             auth_string = f"{proxy_username}:{proxy_password}"
             auth_b64 = base64.b64encode(auth_string.encode("utf-8")).decode("ascii")
             PROXY_AUTH_HEADER = f"Basic {auth_b64}"
-        elif proxy_username:
-            safe_proxy_url = f"{scheme}://{proxy_username}@{parsed_proxy.hostname}"
-            if parsed_proxy.port:
-                safe_proxy_url += f":{parsed_proxy.port}"
+            safe_host = f"{parsed_proxy.hostname}{f':{parsed_proxy.port}' if parsed_proxy.port else ''}"
+            logger.info(f"🌐 [BAYT] Residential proxy configured: {scheme}://{proxy_username}:****@{safe_host}")
         else:
-            safe_proxy_url = f"{scheme}://{parsed_proxy.hostname}"
-            if parsed_proxy.port:
-                safe_proxy_url += f":{parsed_proxy.port}"
-        
-        logger.info(f"🌐 [BAYT] Residential proxy configured: {safe_proxy_url}")
-        
-        PROXIES = {
-            "http": PROXY_URL,
-            "https": PROXY_URL,
-        }
+            PROXY_AUTH_HEADER = None
+            logger.info(f"🌐 [BAYT] Residential proxy configured (no basic auth in URL): {PROXY_URL.split('@')[-1] if '@' in PROXY_URL else PROXY_URL}")
+
+        # Build multiple proxy variants (http, socks5, socks5h) to try in order
+        all_variant_urls = _build_proxy_variants(PROXY_URL)
+        for var_url in all_variant_urls:
+            var_scheme = var_url.split("://")[0].lower() if "://" in var_url else "http"
+            label = f"{var_scheme} (URL-embedded auth)"
+            PROXY_CANDIDATES.append(
+                ({"http": var_url, "https": var_url}, None, label)
+            )
+            if PROXY_AUTH_HEADER:
+                PROXY_CANDIDATES.append(
+                    ({"http": var_url, "https": var_url}, PROXY_AUTH_HEADER, f"{var_scheme} (URL + Proxy-Authorization header)")
+                )
+
+        PROXIES = PROXY_CANDIDATES[0][0]
     except Exception as parse_err:
         logger.warning(f"⚠️ [BAYT] Failed to parse proxy URL, using as-is: {parse_err}")
         logger.info(f"🌐 [BAYT] Residential proxy configured (raw): {PROXY_URL.split('@')[-1] if '@' in PROXY_URL else PROXY_URL}")
-        PROXIES = {
-            "http": PROXY_URL,
-            "https": PROXY_URL,
-        }
+        PROXIES = {"http": PROXY_URL, "https": PROXY_URL}
+        PROXY_CANDIDATES = [(PROXIES, None, "raw URL")]
+        PROXY_AUTH_HEADER = None
 
 BASE_URL = "https://www.bayt.com"
 
@@ -128,7 +153,7 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
     """
     Scrapes live Middle East job listings from Bayt.com using TLS browser impersonation.
     Compatible with backend API expecting scrape_bayt_jobs(keyword, limit).
-    Includes retry logic and extended timeout for residential proxy reliability.
+    Includes proxy variant rotation, multiple auth strategies, and no-proxy fallback.
     
     Can be disabled by setting SKIP_BAYT_SCRAPER=true environment variable.
     """
@@ -136,22 +161,38 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
     if os.getenv("SKIP_BAYT_SCRAPER", "false").lower() == "true":
         logger.info("⚠️ [BAYT] Scraper disabled via SKIP_BAYT_SCRAPER environment variable")
         return []
-        
-    # Quick proxy connectivity test first (if proxy is configured)
-    if PROXIES:
+
+    # --- Step 0: Build the ordered list of (proxies_dict, auth_header, label) strategies to try ---
+    strategies: list[tuple[dict | None, str | None, str]] = []
+    
+    # First: all proxy candidates (http/socks5/socks5h, with & without Proxy-Authorization header)
+    if PROXY_CANDIDATES:
+        strategies.extend(PROXY_CANDIDATES)
+    elif PROXIES:
+        # Fallback to the simple PROXIES dict if PROXY_CANDIDATES wasn't built
+        strategies.append((PROXIES, None, "default PROXIES dict"))
+    
+    # Last-ditch: try direct connection (no proxy) to see if cloud IP is accepted / gives 403
+    # (ONLY if ALLOW_DIRECT_FALLBACK is true; this can save debugging time)
+    allow_direct = os.getenv("ALLOW_BAYT_DIRECT_FALLBACK", "true").lower() == "true"
+    if allow_direct:
+        strategies.append((None, None, "DIRECT (no proxy) - fallback"))
+
+    # --- Step 1: Quick proxy connectivity test (first strategy only) ---
+    first_proxies, first_auth, first_label = strategies[0]
+    if first_proxies:
         try:
-            logger.info("🔗 [BAYT] Testing proxy connectivity first...")
-            # Build headers with Proxy-Authorization if available
+            logger.info(f"🔗 [BAYT] Testing proxy connectivity first (strategy: {first_label})...")
             test_headers = HEADERS.copy()
-            if PROXY_AUTH_HEADER:
-                test_headers["Proxy-Authorization"] = PROXY_AUTH_HEADER
+            if first_auth:
+                test_headers["Proxy-Authorization"] = first_auth
             
             test_response = requests.get(
-                "https://httpbin.org/ip",  # Simple service to return current IP
+                "https://httpbin.org/ip",
                 headers=test_headers,
                 impersonate="chrome120",
-                proxies=PROXIES,
-                timeout=20  # Shorter timeout for test
+                proxies=first_proxies,
+                timeout=20
             )
             if test_response.status_code == 200:
                 test_ip = test_response.json().get("origin", "unknown")
@@ -159,54 +200,80 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
             else:
                 logger.warning(f"⚠️ [BAYT] Proxy test failed with status: {test_response.status_code}")
         except Exception as e:
-            logger.error(f"❌ [BAYT] Proxy test failed: {str(e)}")
-            logger.error("   Double-check: 1) Proxy URL is correct, 2) Auth uses username/password (not IP whitelist), 3) Scheme matches proxy type (http:// vs socks5://)")
+            logger.error(f"❌ [BAYT] Proxy test failed ({first_label}): {str(e)}")
+            logger.error("   Double-check: 1) Proxy URL is correct, 2) Auth uses username/password, 3) Scheme matches proxy type (http:// vs socks5://)")
         
     jobs = []
     keyword_slug = f"{keyword.strip().lower().replace(' ', '-')}-jobs/" if keyword else ""
     base_url = f"https://www.bayt.com/en/{country}/jobs/{keyword_slug}"
 
-    max_retries = 3
     timeout_seconds = 45
     response_text = None
+    winning_strategy_label = None
 
-    for attempt in range(1, max_retries + 1):
-        logger.info(f"🔍 [BAYT] Fetching jobs (Attempt {attempt}/{max_retries}): {base_url}")
-        try:
-            # Build headers with Proxy-Authorization if available
-            request_headers = HEADERS.copy()
-            if PROXY_AUTH_HEADER:
-                request_headers["Proxy-Authorization"] = PROXY_AUTH_HEADER
-            
-            response = requests.get(
-                base_url,
-                headers=request_headers,
-                impersonate="chrome120",
-                proxies=PROXIES,
-                timeout=timeout_seconds
-            )
-            logger.info(f"📡 [BAYT] HTTP Response Status: {response.status_code}")
+    # --- Step 2: Try every strategy in order ---
+    for strat_idx, (strat_proxies, strat_auth, strat_label) in enumerate(strategies, 1):
+        if response_text:
+            break  # already succeeded
+        logger.info(f"🧪 [BAYT] Strategy {strat_idx}/{len(strategies)}: {strat_label}")
 
-            if response.status_code == 200:
-                response_text = response.text
-                logger.info(f"✅ [BAYT] Attempt {attempt} succeeded!")
+        # For each strategy, allow 3 attempts with exponential backoff
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            if response_text:
                 break
-            elif response.status_code == 403:
-                logger.error("❌ [BAYT] Cloudflare 403 Forbidden - Proxy IP may be flagged or inactive.")
-            else:
-                logger.warning(f"⚠️ [BAYT] Non-200 status code: {response.status_code}")
+            logger.info(f"🔍 [BAYT] Fetching jobs (Strategy {strat_idx}, Attempt {attempt}/{max_attempts}): {base_url}")
+            try:
+                request_headers = HEADERS.copy()
+                if strat_auth:
+                    request_headers["Proxy-Authorization"] = strat_auth
 
-        except Exception as e:
-            logger.error(f"❌ [BAYT] Attempt {attempt} failed: {str(e)}")
+                response = requests.get(
+                    base_url,
+                    headers=request_headers,
+                    impersonate="chrome120",
+                    proxies=strat_proxies,  # None = direct connection
+                    timeout=timeout_seconds
+                )
+                logger.info(f"📡 [BAYT] HTTP Response Status: {response.status_code}")
 
-        if attempt < max_retries:
-            delay = 2 * attempt  # Exponential backoff
-            logger.info(f"⏳ [BAYT] Retrying in {delay} seconds...")
-            time.sleep(delay)
+                if response.status_code == 200:
+                    response_text = response.text
+                    winning_strategy_label = strat_label
+                    logger.info(f"✅ [BAYT] Strategy {strat_idx}, Attempt {attempt} SUCCEEDED via {strat_label}!")
+                    break
+                elif response.status_code == 403:
+                    logger.error("❌ [BAYT] Cloudflare 403 Forbidden - Proxy IP may be flagged or inactive.")
+                elif response.status_code == 407:
+                    logger.error("❌ [BAYT] 407 Proxy Authentication Required — this strategy failed auth.")
+                    # No point retrying same strategy 3x on 407; move to next strategy immediately
+                    break
+                else:
+                    logger.warning(f"⚠️ [BAYT] Non-200 status code: {response.status_code}")
+
+            except Exception as e:
+                err_str = str(e)
+                logger.error(f"❌ [BAYT] Strategy {strat_idx}, Attempt {attempt} failed: {err_str}")
+                # If 407 / auth-related in exception text, skip remaining retries for this strategy
+                if "407" in err_str or "Proxy Authentication Required" in err_str:
+                    logger.error("   Skipping remaining retries for this strategy (auth mismatch).")
+                    break
+
+            if attempt < max_attempts and not response_text:
+                delay = 2 * attempt
+                logger.info(f"⏳ [BAYT] Retrying in {delay} seconds...")
+                time.sleep(delay)
 
     if not response_text:
-        logger.error("❌ [BAYT] All retry attempts exhausted for Bayt scraping.")
+        logger.error("❌ [BAYT] All strategies + retries exhausted for Bayt scraping.")
+        logger.error("   Troubleshooting tips:")
+        logger.error("   - Confirm RESIDENTIAL_PROXY_URL user:password are correct (Webshare dashboard)")
+        logger.error("   - Try setting ALLOW_BAYT_DIRECT_FALLBACK=false to skip the no-probe direct fallback")
+        logger.error("   - For Webshare, prefer socks5h:// in RESIDENTIAL_PROXY_URL for HTTPS CONNECT stability")
         return []
+
+    if winning_strategy_label:
+        logger.info(f"🏆 [BAYT] Winning strategy: {winning_strategy_label}")
 
     soup = BeautifulSoup(response_text, "html.parser")
 
