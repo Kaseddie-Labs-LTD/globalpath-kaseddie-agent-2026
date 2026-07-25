@@ -1596,19 +1596,17 @@ async def debug_environment():
         "working_directory": os.getcwd()
     }
 
-@api_router.get("/scrape/bayt")
-@api_router.post("/scrape/bayt")
-async def scrape_bayt_jobs(
-    keyword: str = Query(""),
-    limit: int = Query(20),
+async def _run_bayt_scrape_and_ingest(
+    keyword: str,
+    limit: int,
     background_tasks: BackgroundTasks = None,
-    admin: dict = Depends(require_admin_token)
+    request_source: str = "/api/scrape/bayt"
 ):
     """
-    Scrape jobs from Bayt.com and ingest into Qdrant.
+    Core Bayt scraping + Qdrant ingestion logic shared by both admin and public endpoints.
     """
     logger.info("==================================================")
-    logger.info("🤝 [BAYT HANDSHAKE]: Handshake initiated via /api/scrape/bayt")
+    logger.info(f"🤝 [BAYT HANDSHAKE]: Handshake initiated via {request_source}")
     logger.info("==================================================")
     
     try:
@@ -1623,7 +1621,7 @@ async def scrape_bayt_jobs(
         if not jobs:
             logger.warning("⚠️ [BAYT PIPELINE]: No jobs extracted during this run.")
             logger.info("==================================================")
-            return {"status": "success", "jobs_ingested": 0, "message": "No jobs found"}
+            return {"status": "success", "jobs_ingested": 0, "jobs_found": 0, "message": "No jobs found"}
 
         # 2. Ingest into Qdrant
         def ingest_jobs():
@@ -1668,7 +1666,7 @@ async def scrape_bayt_jobs(
                             skipped_duplicates += 1
                             continue
                     
-                    # Get embedding using Gemini text-embedding-004 (3072-dim)
+                    # Get embedding using FastEmbed
                     embedding = get_job_embedding(doc.page_content)
                     # Create point
                     point_id = job.get("jobId") or str(uuid.uuid4())
@@ -1692,9 +1690,11 @@ async def scrape_bayt_jobs(
                 logger.info("ℹ️ [BAYT PIPELINE]: No new jobs to ingest (all were duplicates or failed processing).")
             logger.info("==================================================")
         
-        # Run ingestion in background
+        # Run ingestion in background if background_tasks provided, otherwise run inline
         if background_tasks:
             background_tasks.add_task(ingest_jobs)
+        else:
+            ingest_jobs()
         
         return {
             "status": "success",
@@ -1705,6 +1705,38 @@ async def scrape_bayt_jobs(
         logger.error(f"❌ [BAYT PIPELINE ERROR]: Pipeline failed: {str(e)}")
         logger.info("==================================================")
         raise HTTPException(status_code=500, detail=f"Bayt pipeline failed: {str(e)}")
+
+@api_router.get("/scrape/bayt")
+@api_router.post("/scrape/bayt")
+async def scrape_bayt_jobs(
+    keyword: str = Query(""),
+    limit: int = Query(20),
+    background_tasks: BackgroundTasks = None,
+    admin: dict = Depends(require_admin_token)
+):
+    """
+    [ADMIN ONLY] Scrape jobs from Bayt.com and ingest into Qdrant.
+    Authentication required.
+    """
+    return await _run_bayt_scrape_and_ingest(keyword, limit, background_tasks, request_source="/api/scrape/bayt (admin)")
+
+@api_router.get("/scrape/bayt/public")
+@api_router.post("/scrape/bayt/public")
+async def scrape_bayt_jobs_public(
+    keyword: str = Query(""),
+    limit: int = Query(10),  # Lower limit for public endpoint to prevent abuse
+    background_tasks: BackgroundTasks = None
+):
+    """
+    [PUBLIC] Quick operational test endpoint for Bayt scraper.
+    Lower limit (max 10) to prevent abuse. Skips background task for immediate test feedback.
+    """
+    # Cap public limit to prevent abuse
+    safe_limit = min(limit, 10)
+    result = await _run_bayt_scrape_and_ingest(keyword, safe_limit, background_tasks=None, request_source="/api/scrape/bayt/public")
+    # Add public warning/disclaimer
+    result["note"] = "Public test endpoint: Max 10 results. Use /api/scrape/bayt with admin auth for production."
+    return result
 
 @api_router.post("/recategorize-leads")
 async def recategorize_existing_leads(admin: dict = Depends(require_admin_token)):
@@ -2988,10 +3020,10 @@ async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
     """Background task to enrich a single lead with full metadata, Gemini Search Grounding, and Ollama processing."""
     try:
         # 1. Identification logic for metadata tagging
-        is_lux = dataset_id == os.getenv("APIFY_DATASET_ID_LUX") or dataset_id == "PxGGxYxvWUH4lbJUJ"
+        is_lux = dataset_id == os.getenv("APIFY_DATASET_ID_LUX")
         is_uae = dataset_id == os.getenv("APIFY_DATASET_ID_UAE")
         is_ksa = dataset_id == os.getenv("APIFY_DATASET_ID_KSA")
-        is_poland = dataset_id == dataset_id == "6hXfOhZjAePxOUFfe"
+        is_poland = dataset_id == os.getenv("APIFY_DATASET_ID_POLAND")
         
         forced_country = None
         outreach_strategy = "General"

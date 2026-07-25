@@ -1,4 +1,5 @@
 import argparse
+import base64
 import json
 import re
 import logging
@@ -50,32 +51,58 @@ def get_floppydata_proxy() -> str | None:
     
     return None
 
+from urllib.parse import urlparse, unquote
+
 # Check explicit proxy env var first, fallback to dynamic Floppydata API session
 PROXY_URL = os.getenv("RESIDENTIAL_PROXY_URL") or get_floppydata_proxy()
 PROXIES = None
+PROXY_AUTH_HEADER = None
 if PROXY_URL:
-    # Validate proxy URL scheme (supports http/https and socks5/socks5h)
-    scheme = PROXY_URL.split("://")[0].lower() if "://" in PROXY_URL else ""
-    if scheme not in ["http", "https", "socks5", "socks5h"]:
-        logger.warning(f"⚠️ [BAYT] Unrecognized proxy scheme '{scheme}', defaulting to http")
-    
-    # Log proxy info (mask password for security!)
-    safe_proxy_url = PROXY_URL
-    if "@" in safe_proxy_url:
-        parts = safe_proxy_url.split("@")
-        auth_part, host_part = parts[0], "@".join(parts[1:])
-        if ":" in auth_part:
-            # Split only after scheme to handle auth correctly
-            scheme_part, rest = auth_part.split("://", 1) if "://" in auth_part else ("http", auth_part)
-            if ":" in rest:
-                username, password = rest.split(":", 1)
-                safe_proxy_url = f"{scheme_part}://{username}:****@{host_part}"
-    logger.info(f"🌐 [BAYT] Residential proxy configured: {safe_proxy_url}")
-    
-    PROXIES = {
-        "http": PROXY_URL,
-        "https": PROXY_URL,
-    }
+    # Parse proxy URL properly to extract scheme, auth, host, port
+    try:
+        parsed_proxy = urlparse(PROXY_URL)
+        scheme = parsed_proxy.scheme.lower() if parsed_proxy.scheme else "http"
+        
+        # Validate proxy URL scheme (supports http/https and socks5/socks5h)
+        if scheme not in ["http", "https", "socks5", "socks5h"]:
+            logger.warning(f"⚠️ [BAYT] Unrecognized proxy scheme '{scheme}', defaulting to http")
+            scheme = "http"
+        
+        # Extract username and password if present
+        proxy_username = unquote(parsed_proxy.username) if parsed_proxy.username else None
+        proxy_password = unquote(parsed_proxy.password) if parsed_proxy.password else None
+        
+        # Log proxy info (mask password for security!)
+        if proxy_username and proxy_password:
+            safe_proxy_url = f"{scheme}://{proxy_username}:****@{parsed_proxy.hostname}"
+            if parsed_proxy.port:
+                safe_proxy_url += f":{parsed_proxy.port}"
+            # Build explicit Proxy-Authorization header in case URL auth isn't picked up
+            auth_string = f"{proxy_username}:{proxy_password}"
+            auth_b64 = base64.b64encode(auth_string.encode("utf-8")).decode("ascii")
+            PROXY_AUTH_HEADER = f"Basic {auth_b64}"
+        elif proxy_username:
+            safe_proxy_url = f"{scheme}://{proxy_username}@{parsed_proxy.hostname}"
+            if parsed_proxy.port:
+                safe_proxy_url += f":{parsed_proxy.port}"
+        else:
+            safe_proxy_url = f"{scheme}://{parsed_proxy.hostname}"
+            if parsed_proxy.port:
+                safe_proxy_url += f":{parsed_proxy.port}"
+        
+        logger.info(f"🌐 [BAYT] Residential proxy configured: {safe_proxy_url}")
+        
+        PROXIES = {
+            "http": PROXY_URL,
+            "https": PROXY_URL,
+        }
+    except Exception as parse_err:
+        logger.warning(f"⚠️ [BAYT] Failed to parse proxy URL, using as-is: {parse_err}")
+        logger.info(f"🌐 [BAYT] Residential proxy configured (raw): {PROXY_URL.split('@')[-1] if '@' in PROXY_URL else PROXY_URL}")
+        PROXIES = {
+            "http": PROXY_URL,
+            "https": PROXY_URL,
+        }
 
 BASE_URL = "https://www.bayt.com"
 
@@ -114,9 +141,14 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
     if PROXIES:
         try:
             logger.info("🔗 [BAYT] Testing proxy connectivity first...")
+            # Build headers with Proxy-Authorization if available
+            test_headers = HEADERS.copy()
+            if PROXY_AUTH_HEADER:
+                test_headers["Proxy-Authorization"] = PROXY_AUTH_HEADER
+            
             test_response = requests.get(
                 "https://httpbin.org/ip",  # Simple service to return current IP
-                headers=HEADERS,
+                headers=test_headers,
                 impersonate="chrome120",
                 proxies=PROXIES,
                 timeout=20  # Shorter timeout for test
@@ -141,9 +173,14 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
     for attempt in range(1, max_retries + 1):
         logger.info(f"🔍 [BAYT] Fetching jobs (Attempt {attempt}/{max_retries}): {base_url}")
         try:
+            # Build headers with Proxy-Authorization if available
+            request_headers = HEADERS.copy()
+            if PROXY_AUTH_HEADER:
+                request_headers["Proxy-Authorization"] = PROXY_AUTH_HEADER
+            
             response = requests.get(
                 base_url,
-                headers=HEADERS,
+                headers=request_headers,
                 impersonate="chrome120",
                 proxies=PROXIES,
                 timeout=timeout_seconds
