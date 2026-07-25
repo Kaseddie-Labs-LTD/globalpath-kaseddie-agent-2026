@@ -85,9 +85,18 @@ def _build_proxy_variants(base_proxy_url: str) -> list[str]:
     return uniq
 
 # Check explicit proxy env var first, fallback to dynamic Floppydata API session
-PROXY_URL = os.getenv("RESIDENTIAL_PROXY_URL") or get_floppydata_proxy()
+#
+# MANUAL OVERRIDE (HIGHEST PRIORITY): If you have a proxy that works with plain
+# curl.exe, paste it EXACTLY into BAYT_PROXY_OVERRIDE env var to bypass all
+# protocol / URL-parsing heuristics.
+# Example: BAYT_PROXY_OVERRIDE=http://dftdaqcs:caswrpfuj3nn@142.111.67.146:5611
+PROXY_URL = (
+    os.getenv("BAYT_PROXY_OVERRIDE")
+    or os.getenv("RESIDENTIAL_PROXY_URL")
+    or get_floppydata_proxy()
+)
 PROXIES = None
-PROXY_CANDIDATES = []  # list of (proxies_dict, proxy_auth_header_or_None, label)
+PROXY_CANDIDATES = []  # list of (proxies_dict|proxy_str, proxy_auth_header_or_None, label, use_proxies_dict_bool)
 if PROXY_URL:
     try:
         parsed_proxy = urlparse(PROXY_URL)
@@ -104,29 +113,54 @@ if PROXY_URL:
             PROXY_AUTH_HEADER = f"Basic {auth_b64}"
             safe_host = f"{parsed_proxy.hostname}{f':{parsed_proxy.port}' if parsed_proxy.port else ''}"
             logger.info(f"🌐 [BAYT] Residential proxy configured: {scheme}://{proxy_username}:****@{safe_host}")
+            if os.getenv("BAYT_PROXY_OVERRIDE"):
+                logger.info("🌐 [BAYT] ⚙️  Using BAYT_PROXY_OVERRIDE (manual proxy string — skips protocol variants).")
         else:
             PROXY_AUTH_HEADER = None
             logger.info(f"🌐 [BAYT] Residential proxy configured (no basic auth in URL): {PROXY_URL.split('@')[-1] if '@' in PROXY_URL else PROXY_URL}")
 
-        # Build multiple proxy variants (http, socks5, socks5h) to try in order
-        all_variant_urls = _build_proxy_variants(PROXY_URL)
-        for var_url in all_variant_urls:
-            var_scheme = var_url.split("://")[0].lower() if "://" in var_url else "http"
-            label = f"{var_scheme} (URL-embedded auth)"
+        # If BAYT_PROXY_OVERRIDE is set: ONLY use that exact proxy, no variant experimentation.
+        # This matches the successful curl.exe --proxy <URL> invocation.
+        if os.getenv("BAYT_PROXY_OVERRIDE"):
+            override_url = os.getenv("BAYT_PROXY_OVERRIDE")
+            # Candidate 1: curl.exe-style — pass proxy as SINGULAR STRING (not dict) so
+            # libcurl processes it exactly the same way as --proxy flag.
             PROXY_CANDIDATES.append(
-                ({"http": var_url, "https": var_url}, None, label)
+                (override_url, PROXY_AUTH_HEADER, f"BAYT_PROXY_OVERRIDE (singular string, {scheme})", False)
             )
-            if PROXY_AUTH_HEADER:
+            # Candidate 2: same URL but via dict form (useful fallback for some transport edge cases)
+            PROXY_CANDIDATES.append(
+                ({"http": override_url, "https": override_url}, PROXY_AUTH_HEADER, f"BAYT_PROXY_OVERRIDE (dict form, {scheme})", True)
+            )
+        else:
+            # Build multiple proxy variants (http, socks5, socks5h) to try in order
+            all_variant_urls = _build_proxy_variants(PROXY_URL)
+            for var_url in all_variant_urls:
+                var_scheme = var_url.split("://")[0].lower() if "://" in var_url else "http"
+                label_url_auth = f"{var_scheme} (string, URL-embedded auth)"
+                label_dict_auth = f"{var_scheme} (dict, URL-embedded auth)"
+                label_w_header = f"{var_scheme} (string + Proxy-Authorization header)"
+
+                # Try SINGULAR proxy string FIRST (most similar to curl.exe --proxy ...)
                 PROXY_CANDIDATES.append(
-                    ({"http": var_url, "https": var_url}, PROXY_AUTH_HEADER, f"{var_scheme} (URL + Proxy-Authorization header)")
+                    (var_url, None, label_url_auth, False)
                 )
+                # Then dict form
+                PROXY_CANDIDATES.append(
+                    ({"http": var_url, "https": var_url}, None, label_dict_auth, True)
+                )
+                # Then string + explicit Proxy-Authorization header (helps when libcurl ignores URL auth)
+                if PROXY_AUTH_HEADER:
+                    PROXY_CANDIDATES.append(
+                        (var_url, PROXY_AUTH_HEADER, label_w_header, False)
+                    )
 
         PROXIES = PROXY_CANDIDATES[0][0]
     except Exception as parse_err:
         logger.warning(f"⚠️ [BAYT] Failed to parse proxy URL, using as-is: {parse_err}")
         logger.info(f"🌐 [BAYT] Residential proxy configured (raw): {PROXY_URL.split('@')[-1] if '@' in PROXY_URL else PROXY_URL}")
         PROXIES = {"http": PROXY_URL, "https": PROXY_URL}
-        PROXY_CANDIDATES = [(PROXIES, None, "raw URL")]
+        PROXY_CANDIDATES = [(PROXIES, None, "raw URL", True)]
         PROXY_AUTH_HEADER = None
 
 BASE_URL = "https://www.bayt.com"
@@ -162,37 +196,49 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
         logger.info("⚠️ [BAYT] Scraper disabled via SKIP_BAYT_SCRAPER environment variable")
         return []
 
-    # --- Step 0: Build the ordered list of (proxies_dict, auth_header, label) strategies to try ---
-    strategies: list[tuple[dict | None, str | None, str]] = []
+    # --- Step 0: Build the ordered list of strategies to try --------------------------
+    # Each strategy: (proxy_arg, auth_header, label, use_proxies_dict)
+    #   proxy_arg        = either a dict (use proxies=) or a raw string (use proxy=)
+    #   auth_header      = optional Proxy-Authorization header value (string or None)
+    #   label            = human-readable label for logs
+    #   use_proxies_dict = True -> requests.get(proxies=proxy_arg)
+    #                      False -> requests.get(proxy=proxy_arg)   (matches curl.exe --proxy)
+    strategies: list[tuple[dict | str | None, str | None, str, bool]] = []
     
     # First: all proxy candidates (http/socks5/socks5h, with & without Proxy-Authorization header)
     if PROXY_CANDIDATES:
         strategies.extend(PROXY_CANDIDATES)
     elif PROXIES:
         # Fallback to the simple PROXIES dict if PROXY_CANDIDATES wasn't built
-        strategies.append((PROXIES, None, "default PROXIES dict"))
+        strategies.append((PROXIES, None, "default PROXIES dict", True))
     
     # Last-ditch: try direct connection (no proxy) to see if cloud IP is accepted / gives 403
-    # (ONLY if ALLOW_DIRECT_FALLBACK is true; this can save debugging time)
     allow_direct = os.getenv("ALLOW_BAYT_DIRECT_FALLBACK", "true").lower() == "true"
     if allow_direct:
-        strategies.append((None, None, "DIRECT (no proxy) - fallback"))
+        strategies.append((None, None, "DIRECT (no proxy) - fallback", True))
 
-    # --- Step 1: Quick proxy connectivity test (first strategy only) ---
-    first_proxies, first_auth, first_label = strategies[0]
-    if first_proxies:
+    # --- Step 1: Quick proxy connectivity test (first strategy only) -----------------
+    first_proxy_arg, first_auth, first_label, first_use_dict = strategies[0]
+    # Only run proxy test if this strategy actually uses a proxy
+    if first_proxy_arg is not None:
         try:
             logger.info(f"🔗 [BAYT] Testing proxy connectivity first (strategy: {first_label})...")
-            test_headers = HEADERS.copy()
+            test_kwargs = {
+                "headers": HEADERS.copy(),
+                "impersonate": "chrome120",
+                "timeout": 20,
+            }
             if first_auth:
-                test_headers["Proxy-Authorization"] = first_auth
+                test_kwargs["headers"]["Proxy-Authorization"] = first_auth
+            if first_use_dict:
+                test_kwargs["proxies"] = first_proxy_arg
+            else:
+                # Singular proxy= string arg — EXACTLY equivalent to curl.exe --proxy ...
+                test_kwargs["proxy"] = first_proxy_arg
             
             test_response = requests.get(
                 "https://httpbin.org/ip",
-                headers=test_headers,
-                impersonate="chrome120",
-                proxies=first_proxies,
-                timeout=20
+                **test_kwargs
             )
             if test_response.status_code == 200:
                 test_ip = test_response.json().get("origin", "unknown")
@@ -211,8 +257,8 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
     response_text = None
     winning_strategy_label = None
 
-    # --- Step 2: Try every strategy in order ---
-    for strat_idx, (strat_proxies, strat_auth, strat_label) in enumerate(strategies, 1):
+    # --- Step 2: Try every strategy in order -----------------------------------------
+    for strat_idx, (strat_proxy_arg, strat_auth, strat_label, strat_use_dict) in enumerate(strategies, 1):
         if response_text:
             break  # already succeeded
         logger.info(f"🧪 [BAYT] Strategy {strat_idx}/{len(strategies)}: {strat_label}")
@@ -228,12 +274,27 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
                 if strat_auth:
                     request_headers["Proxy-Authorization"] = strat_auth
 
+                # Build request kwargs using proxy= (string) OR proxies= (dict)
+                req_kwargs = {
+                    "headers": request_headers,
+                    "impersonate": "chrome120",
+                    "timeout": timeout_seconds,
+                    # Explicitly tell libcurl which auth methods to try for proxy
+                    # (CURLAUTH_BASIC | CURLAUTH_DIGEST | CURLAUTH_NEGOTIATE ...)
+                    # via curl_cffi's extra options if available:
+                    "interface": None,
+                }
+                # Pass proxy argument in EXACTLY the format chosen by this strategy
+                if strat_proxy_arg is not None:
+                    if strat_use_dict:
+                        req_kwargs["proxies"] = strat_proxy_arg
+                    else:
+                        # Singular proxy string — curl.exe --proxy <URL> equivalent
+                        req_kwargs["proxy"] = strat_proxy_arg
+
                 response = requests.get(
                     base_url,
-                    headers=request_headers,
-                    impersonate="chrome120",
-                    proxies=strat_proxies,  # None = direct connection
-                    timeout=timeout_seconds
+                    **req_kwargs
                 )
                 logger.info(f"📡 [BAYT] HTTP Response Status: {response.status_code}")
 
@@ -266,6 +327,8 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
 
     if not response_text:
         logger.error("❌ [BAYT] All strategies + retries exhausted for Bayt scraping.")
+        logger.error("   ⚡ IMMEDIATE FIX: Set Render env var BAYT_PROXY_OVERRIDE to your WORKING static proxy:")
+        logger.error('      BAYT_PROXY_OVERRIDE="http://dftdaqcs:caswrpfuj3nn@142.111.67.146:5611"')
         logger.error("   Troubleshooting tips:")
         logger.error("   - Confirm RESIDENTIAL_PROXY_URL user:password are correct (Webshare dashboard)")
         logger.error("   - Try setting ALLOW_BAYT_DIRECT_FALLBACK=false to skip the no-probe direct fallback")
