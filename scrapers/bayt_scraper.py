@@ -165,6 +165,95 @@ if PROXY_URL:
 
 BASE_URL = "https://www.bayt.com"
 
+# ==============================================================
+# TARGETED GCC / MIDDLE EAST CORRIDORS (28,421+ active listings)
+# Each entry:
+#   slug           -> Bayt.com URL slug, matches /en/{slug}/jobs/ pattern
+#                     (country-level for national hubs, city-level for dense metro hubs)
+#   label          -> Human-readable corridor label used in badges / stats
+#   tag            -> Short uppercase tag for payload / quick filtering
+#   corridor_field -> Value stored in Qdrant `corridor` payload field so the
+#                     dashboard surfaces these leads (follows project convention
+#                     of "Hub / Middle East" for visibility rules)
+#   sectors        -> Strategic focus areas (stored in payload for downstream AI)
+# ==============================================================
+BAYT_TARGET_CORRIDORS: list[dict] = [
+    {
+        "rank": 1,
+        "slug": "uae",
+        "label": "UAE (Federal)",
+        "tag": "UAE",
+        "corridor_field": "UAE / Middle East",
+        "sectors": ["corporate", "engineering", "hospitality", "administrative"],
+    },
+    {
+        "rank": 2,
+        "slug": "saudi-arabia",
+        "label": "Saudi Arabia",
+        "tag": "KSA",
+        "corridor_field": "Saudi Arabia / Middle East",
+        "sectors": ["infrastructure", "healthcare", "construction", "industrial"],
+    },
+    {
+        "rank": 3,
+        "slug": "dubai",
+        "label": "Dubai (City Hub)",
+        "tag": "DXB",
+        "corridor_field": "Dubai / Middle East",
+        "sectors": ["commercial", "finance", "logistics", "tourism"],
+    },
+    {
+        "rank": 4,
+        "slug": "qatar",
+        "label": "Qatar",
+        "tag": "QAT",
+        "corridor_field": "Qatar / Middle East",
+        "sectors": ["engineering", "aviation", "hospitality", "public-sector"],
+    },
+    {
+        "rank": 5,
+        "slug": "jordan",
+        "label": "Jordan",
+        "tag": "JOR",
+        "corridor_field": "Jordan / Middle East",
+        "sectors": ["education", "administration", "regional-corporate"],
+    },
+    {
+        "rank": 6,
+        "slug": "kuwait",
+        "label": "Kuwait",
+        "tag": "KWT",
+        "corridor_field": "Kuwait / Middle East",
+        "sectors": ["petroleum", "engineering", "trade", "commercial-support"],
+    },
+    {
+        "rank": 7,
+        "slug": "lebanon",
+        "label": "Lebanon",
+        "tag": "LBN",
+        "corridor_field": "Lebanon / Middle East",
+        "sectors": ["technical", "media", "multilingual-corporate"],
+    },
+    {
+        "rank": 8,
+        "slug": "oman",
+        "label": "Oman",
+        "tag": "OMN",
+        "corridor_field": "Oman / Middle East",
+        "sectors": ["logistics", "energy", "maritime", "infrastructure"],
+    },
+    {
+        "rank": 9,
+        "slug": "bahrain",
+        "label": "Bahrain",
+        "tag": "BHR",
+        "corridor_field": "Bahrain / Middle East",
+        "sectors": ["financial-services", "trade", "manufacturing", "hospitality"],
+    },
+]
+
+BAYT_CORRIDOR_BY_SLUG: dict[str, dict] = {c["slug"]: c for c in BAYT_TARGET_CORRIDORS}
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -183,14 +272,33 @@ HEADERS = {
     "Referer": "https://www.bayt.com/",
 }
 
-def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
+def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae", corridor_slug: str | None = None):
     """
     Scrapes live Middle East job listings from Bayt.com using TLS browser impersonation.
     Compatible with backend API expecting scrape_bayt_jobs(keyword, limit).
-    Includes proxy variant rotation, multiple auth strategies, and no-proxy fallback.
-    
-    Can be disabled by setting SKIP_BAYT_SCRAPER=true environment variable.
+
+    Args:
+        keyword:        Optional search keyword (e.g., "civil engineer").
+        limit:          Max jobs to extract from the first results page.
+        country:        Backward-compatible Bayt URL slug — used when corridor_slug
+                        is not provided (legacy callers).
+        corridor_slug:  Explicit slug from BAYT_TARGET_CORRIDORS — when provided,
+                        the returned jobs are tagged with full corridor metadata
+                        (corridor_field, tag, sectors, rank, label).
+    Returns:
+        list[dict]: Each dict includes all original fields PLUS corridor metadata.
     """
+    # Resolve effective corridor slug & metadata
+    effective_slug = corridor_slug or country
+    corridor_meta = BAYT_CORRIDOR_BY_SLUG.get(effective_slug) or {
+        "slug": effective_slug,
+        "label": effective_slug.upper(),
+        "tag": effective_slug[:3].upper(),
+        "corridor_field": f"{effective_slug.title()} / Middle East",
+        "sectors": ["general"],
+        "rank": 99,
+    }
+
     # Check if scraper is disabled via environment variable
     if os.getenv("SKIP_BAYT_SCRAPER", "false").lower() == "true":
         logger.info("⚠️ [BAYT] Scraper disabled via SKIP_BAYT_SCRAPER environment variable")
@@ -251,7 +359,20 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
         
     jobs = []
     keyword_slug = f"{keyword.strip().lower().replace(' ', '-')}-jobs/" if keyword else ""
-    base_url = f"https://www.bayt.com/en/{country}/jobs/{keyword_slug}"
+
+    # Fix Dubai URL structure: Bayt uses /en/uae/jobs/jobs-in-dubai/ for city-level listings
+    if effective_slug == "dubai":
+        base_url = f"https://www.bayt.com/en/uae/jobs/jobs-in-dubai/{keyword_slug}"
+    elif effective_slug == "uae":
+        base_url = f"https://www.bayt.com/en/uae/jobs/{keyword_slug}"
+    else:
+        base_url = f"https://www.bayt.com/en/{effective_slug}/jobs/{keyword_slug}"
+
+    # Log corridor context (rank + label + slug) for pipeline tracing
+    logger.info(
+        f"🌐 [BAYT] Target corridor: #{corridor_meta.get('rank')} "
+        f"{corridor_meta.get('label')} (slug='{effective_slug}', sectors={corridor_meta.get('sectors')})"
+    )
 
     timeout_seconds = 45
     response_text = None
@@ -403,7 +524,15 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae"):
                 "applyUrl": apply_url,
                 "salaryText": salary_text,
                 "source": "Bayt (Middle East)",
-                "zeroFeeMandate": True
+                "zeroFeeMandate": True,
+                # Corridor expansion tags: ensure dashboard visibility +
+                # downstream AI enrichment has strategic context.
+                "corridor": corridor_meta.get("corridor_field"),
+                "corridor_label": corridor_meta.get("label"),
+                "corridor_tag": corridor_meta.get("tag"),
+                "corridor_slug": corridor_meta.get("slug"),
+                "corridor_rank": corridor_meta.get("rank"),
+                "target_sectors": corridor_meta.get("sectors"),
             })
 
     logger.info(f"✅ [BAYT] Successfully extracted {len(jobs)} Middle East jobs.")

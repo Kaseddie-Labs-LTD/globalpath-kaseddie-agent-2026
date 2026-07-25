@@ -530,21 +530,86 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         print(f"⚠️ [QDRANT INIT NOTICE]: {e}" )
     
+    # 1b. Report Apify sync config status immediately (no network calls made)
+    try:
+        apify_cfg = _apify_sync_env_status()
+        apify_ready = apify_cfg.get("token_found") and bool(apify_cfg.get("datasets", {}).get("configured"))
+        if apify_ready:
+            configured = apify_cfg["datasets"]["configured"]
+            corridor_list = ", ".join([f"{d['corridor']}={d['id'][:8]}…" for d in configured])
+            print(f"✅ [APIFY CONFIG READY]: Token OK. {len(configured)} dataset(s) configured: {corridor_list}")
+            logger.info(
+                f"✅ [APIFY CONFIG READY]: Token OK. {len(configured)} dataset(s) configured: {corridor_list}"
+            )
+        else:
+            missing_bits = []
+            if not apify_cfg.get("token_found"):
+                missing_bits.append("Token (APIFY_TOKEN / VITE_APIFY_JOBS_TOKEN)")
+            if not apify_cfg.get("datasets", {}).get("configured"):
+                missing_bits.append("Dataset IDs (APIFY_DATASET_ID_UAE / APIFY_DATASET_IDS / etc.)")
+            print(
+                "⚠️ [APIFY CONFIG NOT READY]: Apify sync is disabled until env vars are set on Render. "
+                + "Missing: "
+                + ", ".join(missing_bits)
+            )
+            logger.warning(
+                "⚠️ [APIFY CONFIG NOT READY]: Missing: " + ", ".join(missing_bits)
+            )
+    except Exception as apify_status_err:
+        print(f"⚠️ [APIFY CONFIG CHECK FAILED]: {apify_status_err}")
+    
     # 2. Start non-blocking background tasks (daemon threads return immediately)
     startup_task = None
     scraper_thread = None
     
     def run_background_sync():
         try:
-            print("🚀 [BAYT HANDSHAKE]: Activating Bayt GCC Scraper in background...")
-            from scrapers.bayt_scraper import scrape_bayt_jobs as run_bayt_scraper
-            
-            jobs = run_bayt_scraper(keyword="", limit=20)
-            if jobs:
-                print(f"✅ [BAYT HANDSHAKE]: Scraper returned {len(jobs)} jobs!")
+            print("🚀 [BAYT HANDSHAKE]: Activating Bayt GCC Scraper in background (9 corridors)...")
+            from scrapers.bayt_scraper import (
+                scrape_bayt_jobs as run_bayt_scraper,
+                BAYT_TARGET_CORRIDORS,
+            )
+
+            total_corridors = len(BAYT_TARGET_CORRIDORS)
+            total_jobs_ingested_global = 0
+            total_skipped_duplicates_global = 0
+
+            for corridor_idx, corridor in enumerate(BAYT_TARGET_CORRIDORS, 1):
+                corridor_slug = corridor["slug"]
+                corridor_label = corridor["label"]
+                corridor_field = corridor["corridor_field"]
+                corridor_rank = corridor["rank"]
+
+                print(
+                    f"\n🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
+                    f"— #{corridor_rank} {corridor_label} (slug='{corridor_slug}')"
+                )
+                logger.info(
+                    f"🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
+                    f"— #{corridor_rank} {corridor_label}"
+                )
+
+                # Scrape this specific corridor
+                jobs = run_bayt_scraper(keyword="", limit=30, corridor_slug=corridor_slug)
+                if not jobs:
+                    print(f"⚠️ [BAYT PIPELINE]: No jobs found for {corridor_label}. Moving on.")
+                    continue
+
+                print(f"✅ [BAYT PIPELINE]: {corridor_label} scraper returned {len(jobs)} jobs!")
                 points = []
                 skipped_duplicates = 0
+
                 for job in jobs:
+                    # Pitch Priority Lane: Wait if B2B generation is running
+                    # (in sync context we use asyncio.run_coroutine_threadsafe for events if needed;
+                    #  for daemon thread simplicity we use a quick non-blocking check pattern)
+                    try:
+                        if pitch_priority_event.is_set() is False:
+                            print("⏸️ [BAYT PIPELINE]: Pitch lane is active — pausing ingestion briefly.")
+                            time.sleep(0.5)
+                    except Exception:
+                        pass
+
                     item = {
                         "jobTitle": job.get("title"),
                         "title": job.get("title"),
@@ -553,45 +618,99 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                         "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
                         "snippet": job.get("salaryText"),
                         "url": job.get("applyUrl"),
-                        "link": job.get("applyUrl")
+                        "link": job.get("applyUrl"),
                     }
                     try:
-                        doc = dataset_mapping_function(item, category="general", forced_country="UAE")
-                        doc.metadata["source"] = "Bayt (Middle East)"
+                        # Use corridor-specific forced_country so dataset_mapping_function
+                        # tags the Document correctly
+                        forced_country_hint = corridor.get("tag")
+                        doc = dataset_mapping_function(
+                            item,
+                            category="general",
+                            forced_country=forced_country_hint,
+                        )
+                        doc.metadata["source"] = job.get("source", "Bayt (Middle East)")
                         doc.metadata["vetted"] = True
                         doc.metadata["status"] = "verified"
                         doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
                         doc.metadata["created_at"] = datetime.now().isoformat()
-                        
+
+                        # --- Corridor expansion payload fields (dashboard visibility) ---
+                        # Use job-specific corridor value (already set by scraper) first,
+                        # then fall back to the corridor config we're iterating over.
+                        doc.metadata["corridor"] = job.get("corridor") or corridor_field
+                        doc.metadata["corridor_label"] = job.get("corridor_label") or corridor_label
+                        doc.metadata["corridor_tag"] = job.get("corridor_tag") or corridor.get("tag")
+                        doc.metadata["corridor_slug"] = job.get("corridor_slug") or corridor_slug
+                        doc.metadata["corridor_rank"] = job.get("corridor_rank") or corridor_rank
+                        doc.metadata["target_sectors"] = job.get("target_sectors") or corridor.get("sectors", [])
+
                         fingerprint = doc.metadata.get("fingerprint")
                         if fingerprint:
                             search_result = qdrant_client.scroll(
                                 collection_name=COLLECTION_NAME,
                                 scroll_filter=models.Filter(
-                                    must=[models.FieldCondition(key="fingerprint", match=models.MatchValue(value=fingerprint))]
+                                    must=[
+                                        models.FieldCondition(
+                                            key="fingerprint",
+                                            match=models.MatchValue(value=fingerprint),
+                                        )
+                                    ]
                                 ),
-                                limit=1
+                                limit=1,
                             )
                             if search_result[0]:
-                                skipped_duplicates +=1
+                                skipped_duplicates += 1
                                 continue
                         embedding = get_job_embedding(doc.page_content)
                         point_id = job.get("jobId") or str(uuid.uuid4())
-                        point = models.PointStruct(id=to_qdrant_id(point_id), vector=embedding, payload=doc.metadata)
+                        point = models.PointStruct(
+                            id=to_qdrant_id(point_id),
+                            vector=embedding,
+                            payload=doc.metadata,
+                        )
                         points.append(point)
                     except Exception as e:
-                        print(f"⚠️ [BAYT INGEST]: Skipping job: {e}")
+                        print(f"⚠️ [BAYT INGEST]: Skipping job ({corridor_label}): {e}")
+
+                # Upsert points for THIS corridor
                 if points:
-                    print(f"🚀 [BAYT PIPELINE]: Upserting {len(points)} points into Qdrant collection 'globalpath_leads'...")
+                    print(
+                        f"🚀 [BAYT PIPELINE]: Upserting {len(points)} {corridor_label} points "
+                        f"into Qdrant collection 'globalpath_leads'..."
+                    )
                     qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
-                    print(f"✅ [BAYT HANDSHAKE COMPLETE]: Successfully ingested {len(points)} jobs (skipped {skipped_duplicates} duplicates)!")
+                    total_jobs_ingested_global += len(points)
+                    total_skipped_duplicates_global += skipped_duplicates
+                    print(
+                        f"✅ [BAYT PIPELINE]: {corridor_label} complete — "
+                        f"ingested {len(points)} (skipped {skipped_duplicates} duplicates)"
+                    )
+
+            # Final summary
+            print(
+                f"\n✅ [BAYT HANDSHAKE COMPLETE]: All {total_corridors} corridors processed. "
+                f"Total new leads ingested: {total_jobs_ingested_global} "
+                f"(skipped {total_skipped_duplicates_global} duplicates total)."
+            )
+            logger.info(
+                f"✅ [BAYT HANDSHAKE COMPLETE]: All corridors processed. "
+                f"Ingested {total_jobs_ingested_global} leads, skipped {total_skipped_duplicates_global} duplicates."
+            )
         except Exception as e:
             print(f"❌ Background sync error: {e}")
     
     # Launch both background tasks in daemon threads/tasks
     import threading
     threading.Thread(target=run_background_sync, daemon=True).start()
-    startup_task = asyncio.create_task(sync_all_apify_datasets())
+
+    # Pausing Apify dataset sync to focus purely on Bayt 9 corridors
+    apify_sync_enabled = os.getenv("ENABLE_APIFY_SYNC", "false").lower() == "true"
+    if apify_sync_enabled:
+        startup_task = asyncio.create_task(sync_all_apify_datasets())
+    else:
+        logger.info("⏸️ [APIFY SYNC]: Paused by configuration. Running 9-Corridor Bayt Pipeline exclusively.")
+        startup_task = None
     
     # 2. Yield immediately so FastAPI opens port 10000 RIGHT AWAY!
     print("Port 10000 is now open.")
@@ -902,14 +1021,144 @@ async def sync_apify_leads(background_tasks: BackgroundTasks):
     """
     Syncs lead data from multiple Apify datasets and ingests it into Qdrant in the background.
     Returns immediately to avoid frontend timeout.
+
+    Pre-flight behavior: Before scheduling the background sync, this endpoint does a
+    quick env-var check and returns detailed configuration status so callers can tell
+    exactly which env vars are missing (token + dataset IDs).
     """
-    # Trigger background sync
+    # 1. Pre-flight config check WITHOUT running actual sync (just scans env vars)
+    preflight = _apify_sync_env_status()
+
+    # 2. If preflight found no token or no datasets, don't waste a background slot.
+    #    Return immediately with the diagnostic details.
+    if (not preflight.get("token_found")) or (not preflight.get("datasets", {}).get("configured")):
+        missing_parts = []
+        if not preflight.get("token_found"):
+            missing_parts.append("API Token (set APIFY_TOKEN or VITE_APIFY_JOBS_TOKEN)")
+        if not preflight.get("datasets", {}).get("configured"):
+            missing_parts.append(
+                "Dataset IDs (set APIFY_DATASET_ID_UAE / APIFY_DATASET_IDS / etc.)"
+            )
+        return {
+            "status": "Skipped",
+            "message": f"Apify sync skipped — missing: {', '.join(missing_parts)}",
+            "details": (
+                "Configure these env vars on your Render service to enable live Apify ingestion: "
+                "APIFY_TOKEN (or VITE_APIFY_JOBS_TOKEN) + "
+                "APIFY_DATASET_ID_UAE / APIFY_DATASET_ID_KSA / APIFY_DATASET_ID_POLAND / "
+                "APIFY_DATASET_ID_LUX / or comma-separated APIFY_DATASET_IDS"
+            ),
+            "preflight": preflight,
+        }
+    
+    # 3. Everything looks OK: schedule background sync
     background_tasks.add_task(sync_all_apify_datasets)
     
     return {
         "status": "Accepted",
         "message": "The Hub is now rotating sectors. Leads will appear as they are processed.",
-        "details": "The Hub is now rotating sectors. Leads will appear as they are processed."
+        "details": "The Hub is now rotating sectors. Leads will appear as they are processed.",
+        "preflight": preflight,
+    }
+
+
+def _apify_sync_env_status() -> dict:
+    """
+    Scans current process env vars for Apify token + dataset ID configuration.
+    Returns a status dict identical to sync_all_apify_datasets(_return_details=True),
+    but DOES NOT initiate any network requests or sync work.
+    """
+    status = {
+        "token_found": False,
+        "token_env_vars_checked": [
+            "APIFY_TOKEN",
+            "APIFY_API_TOKEN",
+            "VITE_APIFY_JOBS_TOKEN",
+            "VITE_APIFY_TOKEN",
+        ],
+        "datasets": {
+            "configured": [],
+            "raw_env_vars_checked": [
+                "APIFY_DATASET_ID_UAE",
+                "APIFY_DATASET_ID_KSA",
+                "APIFY_DATASET_ID_POLAND",
+                "APIFY_DATASET_ID_LUX",
+                "APIFY_DATASET_IDS",
+                "VITE_APIFY_LUX_DATASET_ID",
+                "VITE_APIFY_DATASET_IDS",
+            ],
+        },
+        "total_synced": 0,
+        "errors": [],
+        "warnings": [],
+    }
+
+    # Token check
+    apify_token = (
+        os.getenv("APIFY_TOKEN")
+        or os.getenv("APIFY_API_TOKEN")
+        or os.getenv("VITE_APIFY_JOBS_TOKEN")
+        or os.getenv("VITE_APIFY_TOKEN")
+        or None
+    )
+    status["token_found"] = bool(apify_token)
+    if not apify_token:
+        status["warnings"].append(
+            "No Apify API token configured. Set APIFY_TOKEN or VITE_APIFY_JOBS_TOKEN on Render."
+        )
+
+    # Dataset ID check
+    all_datasets: list[dict] = []
+    ds_uae = os.getenv("APIFY_DATASET_ID_UAE") or os.getenv("VITE_APIFY_UAE_DATASET_ID")
+    ds_ksa = os.getenv("APIFY_DATASET_ID_KSA") or os.getenv("VITE_APIFY_KSA_DATASET_ID")
+    ds_poland = os.getenv("APIFY_DATASET_ID_POLAND") or os.getenv("VITE_APIFY_POLAND_DATASET_ID")
+    ds_lux = os.getenv("APIFY_DATASET_ID_LUX") or os.getenv("VITE_APIFY_LUX_DATASET_ID")
+    ds_gen = os.getenv("APIFY_DATASET_IDS") or os.getenv("VITE_APIFY_DATASET_IDS")
+
+    if ds_uae:
+        all_datasets.append({"id": ds_uae.strip(), "corridor": "UAE", "source_env": "APIFY_DATASET_ID_UAE"})
+    if ds_ksa:
+        all_datasets.append({"id": ds_ksa.strip(), "corridor": "KSA", "source_env": "APIFY_DATASET_ID_KSA"})
+    if ds_poland:
+        all_datasets.append({"id": ds_poland.strip(), "corridor": "Poland", "source_env": "APIFY_DATASET_ID_POLAND"})
+    if ds_lux:
+        all_datasets.append({"id": ds_lux.strip(), "corridor": "Luxembourg", "source_env": "APIFY_DATASET_ID_LUX"})
+    if ds_gen:
+        gen_dataset_ids = [ds_id.strip() for ds_id in ds_gen.split(",") if ds_id.strip()]
+        for i, ds_id in enumerate(gen_dataset_ids):
+            all_datasets.append({"id": ds_id, "corridor": f"General_{i}", "source_env": "APIFY_DATASET_IDS"})
+
+    dataset_list = sorted(
+        all_datasets,
+        key=lambda x: (x["id"] in PRIORITY_DATASETS),
+        reverse=True,
+    )
+    status["datasets"]["configured"] = dataset_list
+
+    if apify_token and not dataset_list:
+        status["warnings"].append(
+            "Token present but no dataset IDs configured. "
+            "Expected env vars: APIFY_DATASET_ID_UAE, APIFY_DATASET_ID_KSA, APIFY_DATASET_ID_POLAND, "
+            "APIFY_DATASET_ID_LUX, or comma-separated APIFY_DATASET_IDS"
+        )
+    return status
+
+
+@api_router.get("/apify/status")
+async def get_apify_status():
+    """
+    Read-only diagnostic endpoint to verify Apify token + dataset ID env vars are
+    correctly wired up in the running process. No network calls, no sync triggered.
+    """
+    status = _apify_sync_env_status()
+    return {
+        "ok": status.get("token_found") and bool(status.get("datasets", {}).get("configured")),
+        "message": (
+            "Apify sync is READY"
+            if (status.get("token_found") and status.get("datasets", {}).get("configured"))
+            else "Apify sync is NOT configured"
+        ),
+        "config": status,
     }
 
 # Collection settings
@@ -1600,36 +1849,97 @@ async def _run_bayt_scrape_and_ingest(
     keyword: str,
     limit: int,
     background_tasks: BackgroundTasks = None,
-    request_source: str = "/api/scrape/bayt"
+    request_source: str = "/api/scrape/bayt",
+    corridor_slugs: list[str] | None = None,
+    scan_all_corridors: bool = False,
 ):
     """
-    Core Bayt scraping + Qdrant ingestion logic shared by both admin and public endpoints.
+    Core Bayt scraping + Qdrant ingestion logic shared by admin, public, and
+    startup background tasks. Supports:
+      - Single corridor via corridor_slugs=["dubai"]
+      - Multi-corridor scan via corridor_slugs=["uae","saudi-arabia","qatar"]
+      - Full 9-corridor GCC/MENA sweep via scan_all_corridors=True
     """
     logger.info("==================================================")
     logger.info(f"🤝 [BAYT HANDSHAKE]: Handshake initiated via {request_source}")
     logger.info("==================================================")
+
+    # Import corridor config once (scraper module is the single source of truth)
+    from scrapers.bayt_scraper import (
+        scrape_bayt_jobs as scrape_func,
+        BAYT_TARGET_CORRIDORS,
+        BAYT_CORRIDOR_BY_SLUG,
+    )
+
+    # Resolve which corridors we will scan (ordered by priority rank)
+    resolved_corridors: list[dict] = []
+    if scan_all_corridors:
+        resolved_corridors = list(BAYT_TARGET_CORRIDORS)
+    elif corridor_slugs:
+        seen_slugs = set()
+        for slug in corridor_slugs:
+            slug = (slug or "").strip().lower()
+            if slug and slug not in seen_slugs and slug in BAYT_CORRIDOR_BY_SLUG:
+                seen_slugs.add(slug)
+                resolved_corridors.append(BAYT_CORRIDOR_BY_SLUG[slug])
+        if not resolved_corridors:
+            # Fallback: if caller passed unrecognized slugs, default to UAE only
+            resolved_corridors = [BAYT_CORRIDOR_BY_SLUG["uae"]]
+    else:
+        # Default behavior when no corridor params are provided: single UAE scrape
+        resolved_corridors = [BAYT_CORRIDOR_BY_SLUG["uae"]]
+
+    logger.info(
+        f"🔍 [BAYT PIPELINE]: Corridor plan = {len(resolved_corridors)} hub(s): "
+        + ", ".join([f"{c['tag']}={c['slug']}" for c in resolved_corridors])
+    )
     
     try:
-        from scrapers.bayt_scraper import scrape_bayt_jobs as scrape_func
-        logger.info(f"🔍 [BAYT PIPELINE]: Executing Bayt TLS scraper bridge (keyword='{keyword}', limit={limit})...")
+        # 1. Scrape each corridor sequentially (to avoid proxy/rate spikes)
+        all_jobs: list[dict] = []
+        per_corridor_counts: list[dict] = []
+
+        for corridor in resolved_corridors:
+            c_slug = corridor["slug"]
+            c_label = corridor["label"]
+            c_rank = corridor["rank"]
+            logger.info(
+                f"🔍 [BAYT PIPELINE]: Scraping #{c_rank} {c_label} (keyword='{keyword}', limit={limit})..."
+            )
+            corridor_jobs = scrape_func(
+                keyword=keyword,
+                limit=limit,
+                corridor_slug=c_slug,
+            )
+            n = len(corridor_jobs) if corridor_jobs else 0
+            logger.info(f"⚡ [BAYT PIPELINE]: {c_label} returned {n} raw job listings.")
+            per_corridor_counts.append({
+                "corridor": c_label, "slug": c_slug, "jobs_found": n, "tag": corridor["tag"],
+            })
+            if corridor_jobs:
+                all_jobs.extend(corridor_jobs)
+
+        total_scraped = len(all_jobs)
+        logger.info(f"⚡ [BAYT PIPELINE]: All corridors done — {total_scraped} raw listings total.")
         
-        # 1. Trigger Scraper
-        jobs = scrape_func(keyword=keyword, limit=limit)
-        total_scraped = len(jobs) if jobs else 0
-        logger.info(f"⚡ [BAYT PIPELINE]: Scraper returned {total_scraped} raw job listings.")
-        
-        if not jobs:
+        if not all_jobs:
             logger.warning("⚠️ [BAYT PIPELINE]: No jobs extracted during this run.")
             logger.info("==================================================")
-            return {"status": "success", "jobs_ingested": 0, "jobs_found": 0, "message": "No jobs found"}
+            return {
+                "status": "success",
+                "jobs_ingested": 0,
+                "jobs_found": 0,
+                "message": "No jobs found",
+                "corridors_scanned": per_corridor_counts,
+            }
 
-        # 2. Ingest into Qdrant
+        # 2. Ingest into Qdrant (supports background_tasks OR inline execution)
         def ingest_jobs():
             logger.info("⚙️ [BAYT PIPELINE]: Transforming raw data into GlobalPath lead schema...")
             points = []
             skipped_duplicates = 0
-            
-            for job in jobs:
+
+            for job in all_jobs:
                 # Map Bayt job to our document format
                 item = {
                     "jobTitle": job.get("title"),
@@ -1642,100 +1952,210 @@ async def _run_bayt_scrape_and_ingest(
                     "link": job.get("applyUrl")
                 }
                 try:
-                    doc = dataset_mapping_function(item, category="general", forced_country="UAE")
-                    # Update source to Bayt
-                    doc.metadata["source"] = "Bayt (Middle East)"
-                    doc.metadata["vetted"] = True  # Ensure it's visible in the UI
-                    doc.metadata["status"] = "verified"  # Mark as verified
-                    doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)  # Add zero fee flag
+                    # Use the corridor tag (3-letter code) from the job (set by scraper)
+                    # as the forced_country hint for dataset_mapping_function
+                    forced_country_hint = (
+                        job.get("corridor_tag")
+                        or job.get("corridor_label")
+                        or "UAE"
+                    )
+                    doc = dataset_mapping_function(
+                        item,
+                        category="general",
+                        forced_country=forced_country_hint,
+                    )
+                    doc.metadata["source"] = job.get("source", "Bayt (Middle East)")
+                    doc.metadata["vetted"] = True
+                    doc.metadata["status"] = "verified"
+                    doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
                     doc.metadata["created_at"] = datetime.now().isoformat()
+
+                    # --- Corridor expansion payload fields (dashboard visibility) ---
+                    # Job already has these from scraper; surface them safely with defaults
+                    doc.metadata["corridor"] = job.get("corridor") or "UAE / Middle East"
+                    if job.get("corridor_label"):
+                        doc.metadata["corridor_label"] = job["corridor_label"]
+                    if job.get("corridor_tag"):
+                        doc.metadata["corridor_tag"] = job["corridor_tag"]
+                    if job.get("corridor_slug"):
+                        doc.metadata["corridor_slug"] = job["corridor_slug"]
+                    if job.get("corridor_rank") is not None:
+                        doc.metadata["corridor_rank"] = job["corridor_rank"]
+                    if job.get("target_sectors"):
+                        doc.metadata["target_sectors"] = job["target_sectors"]
                     
-                    # Generate fingerprint for deduplication
                     fingerprint = doc.metadata.get("fingerprint")
                     if fingerprint:
-                        # Check if fingerprint already exists
                         search_result = qdrant_client.scroll(
                             collection_name=COLLECTION_NAME,
                             scroll_filter=models.Filter(
-                                must=[models.FieldCondition(key="fingerprint", match=models.MatchValue(value=fingerprint))]
+                                must=[
+                                    models.FieldCondition(
+                                        key="fingerprint",
+                                        match=models.MatchValue(value=fingerprint),
+                                    )
+                                ]
                             ),
-                            limit=1
+                            limit=1,
                         )
                         if search_result[0]:
-                            # Fingerprint already exists, skip this job
                             skipped_duplicates += 1
                             continue
                     
-                    # Get embedding using FastEmbed
                     embedding = get_job_embedding(doc.page_content)
-                    # Create point
                     point_id = job.get("jobId") or str(uuid.uuid4())
                     point = models.PointStruct(
                         id=to_qdrant_id(point_id),
                         vector=embedding,
-                        payload=doc.metadata
+                        payload=doc.metadata,
                     )
                     points.append(point)
                 except Exception as e:
                     logger.warning(f"⚠️ [BAYT INGEST]: Skipping job: {e}")
             
             if points:
-                logger.info(f"🚀 [BAYT PIPELINE]: Upserting {len(points)} points into Qdrant collection 'globalpath_leads'...")
+                logger.info(
+                    f"🚀 [BAYT PIPELINE]: Upserting {len(points)} points into Qdrant collection 'globalpath_leads'..."
+                )
                 qdrant_client.upsert(
                     collection_name=COLLECTION_NAME,
-                    points=points
+                    points=points,
                 )
-                logger.info(f"✅ [BAYT HANDSHAKE COMPLETE]: Successfully ingested {len(points)} jobs (skipped {skipped_duplicates} duplicates)!")
+                logger.info(
+                    f"✅ [BAYT HANDSHAKE COMPLETE]: Successfully ingested {len(points)} jobs "
+                    f"(skipped {skipped_duplicates} duplicates)!"
+                )
             else:
-                logger.info("ℹ️ [BAYT PIPELINE]: No new jobs to ingest (all were duplicates or failed processing).")
+                logger.info(
+                    "ℹ️ [BAYT PIPELINE]: No new jobs to ingest (all were duplicates or failed processing)."
+                )
             logger.info("==================================================")
+            return {
+                "points_upserted": len(points),
+                "skipped_duplicates": skipped_duplicates,
+            }
         
         # Run ingestion in background if background_tasks provided, otherwise run inline
+        ingestion_summary = None
         if background_tasks:
             background_tasks.add_task(ingest_jobs)
         else:
-            ingest_jobs()
+            ingestion_summary = ingest_jobs()
         
-        return {
+        response = {
             "status": "success",
-            "jobs_found": len(jobs),
-            "source": "Bayt (Middle East)"
+            "jobs_found": total_scraped,
+            "source": "Bayt (Middle East)",
+            "corridors_scanned": per_corridor_counts,
         }
+        if ingestion_summary:
+            response["jobs_ingested"] = ingestion_summary.get("points_upserted", 0)
+            response["skipped_duplicates"] = ingestion_summary.get("skipped_duplicates", 0)
+        return response
     except Exception as e:
         logger.error(f"❌ [BAYT PIPELINE ERROR]: Pipeline failed: {str(e)}")
         logger.info("==================================================")
         raise HTTPException(status_code=500, detail=f"Bayt pipeline failed: {str(e)}")
+
+
+@api_router.get("/scrape/bayt/corridors")
+async def list_bayt_corridors():
+    """
+    [PUBLIC] Lists all 9 configured Bayt target corridors: their slugs, tags, labels,
+    ranks, and target sectors. Useful for UI selectors and quick diagnostics.
+    """
+    from scrapers.bayt_scraper import BAYT_TARGET_CORRIDORS
+    return {
+        "total": len(BAYT_TARGET_CORRIDORS),
+        "corridors": BAYT_TARGET_CORRIDORS,
+    }
+
 
 @api_router.get("/scrape/bayt")
 @api_router.post("/scrape/bayt")
 async def scrape_bayt_jobs(
     keyword: str = Query(""),
     limit: int = Query(20),
+    corridor: str | None = Query(
+        None,
+        description="Single corridor slug to scan (e.g. 'dubai', 'saudi-arabia', 'qatar')."
+    ),
+    corridors: str | None = Query(
+        None,
+        description="Comma-separated corridor slugs to scan (e.g. 'uae,dubai,qatar'). Overrides 'corridor' if both provided."
+    ),
+    all_corridors: bool = Query(False, description="Set true to scan ALL 9 GCC/MENA target corridors."),
     background_tasks: BackgroundTasks = None,
-    admin: dict = Depends(require_admin_token)
+    admin: dict = Depends(require_admin_token),
 ):
     """
     [ADMIN ONLY] Scrape jobs from Bayt.com and ingest into Qdrant.
+    Supports corridor filter params: corridor, corridors (comma-sep), all_corridors=true.
     Authentication required.
     """
-    return await _run_bayt_scrape_and_ingest(keyword, limit, background_tasks, request_source="/api/scrape/bayt (admin)")
+    parsed_corridor_slugs: list[str] | None = None
+    if corridors:
+        parsed_corridor_slugs = [s.strip() for s in str(corridors).split(",") if s.strip()]
+    elif corridor:
+        parsed_corridor_slugs = [corridor.strip()]
+
+    return await _run_bayt_scrape_and_ingest(
+        keyword=keyword,
+        limit=limit,
+        background_tasks=background_tasks,
+        request_source="/api/scrape/bayt (admin)",
+        corridor_slugs=parsed_corridor_slugs,
+        scan_all_corridors=bool(all_corridors),
+    )
+
 
 @api_router.get("/scrape/bayt/public")
 @api_router.post("/scrape/bayt/public")
 async def scrape_bayt_jobs_public(
     keyword: str = Query(""),
-    limit: int = Query(10),  # Lower limit for public endpoint to prevent abuse
-    background_tasks: BackgroundTasks = None
+    limit: int = Query(10),
+    corridor: str | None = Query(
+        None,
+        description="Single corridor slug to scan (e.g. 'dubai', 'saudi-arabia', 'qatar')."
+    ),
+    corridors: str | None = Query(
+        None,
+        description="Comma-separated corridor slugs to scan (e.g. 'uae,dubai'). Overrides 'corridor' if both provided."
+    ),
+    all_corridors: bool = Query(False, description="Set true to scan ALL 9 corridors (public endpoint caps each at 5 jobs)."),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     [PUBLIC] Quick operational test endpoint for Bayt scraper.
-    Lower limit (max 10) to prevent abuse. Skips background task for immediate test feedback.
+    - Default max 10 jobs total
+    - If all_corridors=true: each corridor is capped at 5 jobs to prevent abuse
+    - Skips background task for immediate test feedback
     """
-    # Cap public limit to prevent abuse
-    safe_limit = min(limit, 10)
-    result = await _run_bayt_scrape_and_ingest(keyword, safe_limit, background_tasks=None, request_source="/api/scrape/bayt/public")
-    # Add public warning/disclaimer
-    result["note"] = "Public test endpoint: Max 10 results. Use /api/scrape/bayt with admin auth for production."
+    # Apply public abuse guards
+    if all_corridors:
+        # Full sweep on public = cap each corridor at 5 jobs
+        safe_per_corridor_limit = min(limit, 5)
+    else:
+        safe_per_corridor_limit = min(limit, 10)
+
+    parsed_corridor_slugs: list[str] | None = None
+    if corridors:
+        parsed_corridor_slugs = [s.strip() for s in str(corridors).split(",") if s.strip()]
+    elif corridor:
+        parsed_corridor_slugs = [corridor.strip()]
+
+    result = await _run_bayt_scrape_and_ingest(
+        keyword=keyword,
+        limit=safe_per_corridor_limit,
+        background_tasks=None,  # No background for public; run inline for immediate feedback
+        request_source="/api/scrape/bayt/public",
+        corridor_slugs=parsed_corridor_slugs,
+        scan_all_corridors=bool(all_corridors),
+    )
+    result["note"] = (
+        "Public test endpoint: Max 10 results (5 per corridor with all_corridors=true). "
+        "Use /api/scrape/bayt with admin auth for production volume."
+    )
     return result
 
 @api_router.post("/recategorize-leads")
@@ -2786,39 +3206,134 @@ async def search_leads(query: str = Query(..., description="The query to search 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def sync_all_apify_datasets():
-    """Helper function to sync all datasets from .env to Qdrant with immediate save and async enrichment."""
+async def sync_all_apify_datasets(_return_details: bool = False):
+    """
+    Helper function to sync all datasets from .env to Qdrant with immediate save and async enrichment.
+    
+    Args:
+        _return_details: If True, returns a detailed dict instead of the raw count.
+                         Used by API endpoints so the caller can tell the user exactly
+                         which env vars are missing.
+    """
+    # Detailed status tracker for diagnostics (returned when _return_details=True)
+    status = {
+        "token_found": False,
+        "token_env_vars_checked": [
+            "APIFY_TOKEN",
+            "APIFY_API_TOKEN",
+            "VITE_APIFY_JOBS_TOKEN",
+            "VITE_APIFY_TOKEN",
+        ],
+        "datasets": {
+            "configured": [],
+            "raw_env_vars_checked": [
+                "APIFY_DATASET_ID_UAE",
+                "APIFY_DATASET_ID_KSA",
+                "APIFY_DATASET_ID_POLAND",
+                "APIFY_DATASET_ID_LUX",
+                "APIFY_DATASET_IDS",
+                "VITE_APIFY_LUX_DATASET_ID",
+                "VITE_APIFY_DATASET_IDS",
+            ],
+        },
+        "total_synced": 0,
+        "errors": [],
+        "warnings": [],
+    }
+
     try:
-        # 1. Gather all dataset IDs from .env
-        apify_token = os.getenv("APIFY_TOKEN") or os.getenv("VITE_APIFY_JOBS_TOKEN")
-        all_datasets = []
-        
-        # Collect individual dataset IDs
-        ds_uae = os.getenv("APIFY_DATASET_ID_UAE")
-        ds_ksa = os.getenv("APIFY_DATASET_ID_KSA")
-        ds_poland = os.getenv("APIFY_DATASET_ID_POLAND")
-        ds_lux = os.getenv("APIFY_DATASET_ID_LUX")
-        ds_gen = os.getenv("APIFY_DATASET_IDS")
-        
+        # ============================================================
+        # 1. Gather Apify API token (comprehensive env var fallbacks)
+        # ============================================================
+        apify_token = (
+            os.getenv("APIFY_TOKEN")
+            or os.getenv("APIFY_API_TOKEN")
+            or os.getenv("VITE_APIFY_JOBS_TOKEN")
+            or os.getenv("VITE_APIFY_TOKEN")
+            or None
+        )
+        status["token_found"] = bool(apify_token)
+        if not apify_token:
+            msg = (
+                "Apify credentials or dataset IDs not found in environment. "
+                "Missing APIFY_TOKEN / VITE_APIFY_JOBS_TOKEN."
+            )
+            print(msg)
+            logger.warning(
+                "🚀 [APIFY SYNC SKIPPED]: No Apify API token found. "
+                "Check these env vars on Render: APIFY_TOKEN, APIFY_API_TOKEN, VITE_APIFY_JOBS_TOKEN, VITE_APIFY_TOKEN"
+            )
+            status["warnings"].append(
+                "No Apify API token configured. Set APIFY_TOKEN or VITE_APIFY_JOBS_TOKEN on Render."
+            )
+            return status if _return_details else 0
+
+        # ============================================================
+        # 2. Gather all dataset IDs (comprehensive env var fallbacks)
+        # ============================================================
+        all_datasets: list[dict] = []
+
+        # Individual corridor datasets (supports both plain & VITE_ prefixed)
+        ds_uae = os.getenv("APIFY_DATASET_ID_UAE") or os.getenv("VITE_APIFY_UAE_DATASET_ID")
+        ds_ksa = os.getenv("APIFY_DATASET_ID_KSA") or os.getenv("VITE_APIFY_KSA_DATASET_ID")
+        ds_poland = os.getenv("APIFY_DATASET_ID_POLAND") or os.getenv("VITE_APIFY_POLAND_DATASET_ID")
+        ds_lux = os.getenv("APIFY_DATASET_ID_LUX") or os.getenv("VITE_APIFY_LUX_DATASET_ID")
+
+        # Comma-separated generic list (supports both names)
+        ds_gen = os.getenv("APIFY_DATASET_IDS") or os.getenv("VITE_APIFY_DATASET_IDS")
+
         # Add individual datasets
-        if ds_uae: all_datasets.append({"id": ds_uae, "corridor": "UAE"})
-        if ds_ksa: all_datasets.append({"id": ds_ksa, "corridor": "KSA"})
-        if ds_poland: all_datasets.append({"id": ds_poland, "corridor": "Poland"})
-        if ds_lux: all_datasets.append({"id": ds_lux, "corridor": "Luxembourg"})
-        
-        # SPLIT APIFY_DATASET_IDS by comma and add each as individual dataset
+        if ds_uae:
+            all_datasets.append({"id": ds_uae.strip(), "corridor": "UAE", "source_env": "APIFY_DATASET_ID_UAE"})
+        if ds_ksa:
+            all_datasets.append({"id": ds_ksa.strip(), "corridor": "KSA", "source_env": "APIFY_DATASET_ID_KSA"})
+        if ds_poland:
+            all_datasets.append({"id": ds_poland.strip(), "corridor": "Poland", "source_env": "APIFY_DATASET_ID_POLAND"})
+        if ds_lux:
+            all_datasets.append({"id": ds_lux.strip(), "corridor": "Luxembourg", "source_env": "APIFY_DATASET_ID_LUX"})
+
+        # Comma-separated dataset IDs
         if ds_gen:
-            gen_dataset_ids = [ds_id.strip() for ds_id in ds_gen.split(',') if ds_id.strip()]
+            gen_dataset_ids = [ds_id.strip() for ds_id in ds_gen.split(",") if ds_id.strip()]
             for i, ds_id in enumerate(gen_dataset_ids):
-                all_datasets.append({"id": ds_id, "corridor": f"General_{i}"})
-        
-        # Sort so PRIORITY_DATASETS are first (Index 0)
-        dataset_list = sorted(all_datasets, key=lambda x: x['id'] in PRIORITY_DATASETS, reverse=True)
-        dataset_ids = [d['id'] for d in dataset_list]
-            
-        if not apify_token or not dataset_ids:
-            print("Apify credentials or dataset IDs not found in environment.")
-            return 0
+                all_datasets.append(
+                    {"id": ds_id, "corridor": f"General_{i}", "source_env": "APIFY_DATASET_IDS"}
+                )
+
+        # Sort so PRIORITY_DATASETS are first
+        dataset_list = sorted(
+            all_datasets,
+            key=lambda x: (x["id"] in PRIORITY_DATASETS),
+            reverse=True,
+        )
+        dataset_ids = [d["id"] for d in dataset_list]
+        status["datasets"]["configured"] = dataset_list
+
+        if not dataset_ids:
+            msg = (
+                "Apify credentials or dataset IDs not found in environment. "
+                "No dataset IDs configured."
+            )
+            print(msg)
+            logger.warning(
+                "🚀 [APIFY SYNC SKIPPED]: Token found, but zero dataset IDs configured. "
+                "Set one or more of: APIFY_DATASET_ID_UAE / APIFY_DATASET_IDS / VITE_APIFY_LUX_DATASET_ID on Render"
+            )
+            status["warnings"].append(
+                "Token present but no dataset IDs configured. "
+                "Expected env vars: APIFY_DATASET_ID_UAE, APIFY_DATASET_ID_KSA, APIFY_DATASET_ID_POLAND, "
+                "APIFY_DATASET_ID_LUX, or comma-separated APIFY_DATASET_IDS"
+            )
+            return status if _return_details else 0
+
+        logger.info(
+            f"🚀 [APIFY SYNC START]: Token OK. Found {len(dataset_ids)} dataset(s): "
+            + ", ".join([f"{d['corridor']}={d['id'][:8]}…" for d in dataset_list])
+        )
+        print(
+            f"[APIFY SYNC]: Token OK. Syncing {len(dataset_ids)} dataset(s): "
+            + ", ".join([d["corridor"] for d in dataset_list])
+        )
             
         # Initialize Apify Client
         client = ApifyClient(token=apify_token)
@@ -2827,15 +3342,17 @@ async def sync_all_apify_datasets():
         # Semaphore to limit concurrent dataset syncs (Task requirement: limit to 2)
         semaphore = asyncio.Semaphore(2)
 
-        async def sync_dataset(ds_id, corridor):
+        async def sync_dataset(ds_id, corridor, source_env=None):
             nonlocal total_synced
             async with semaphore:
                 print(f"Direct fetching from dataset: {ds_id} (Corridor: {corridor})...")
+                logger.info(f"APIFY DATASET FETCH: Corridor {corridor} dataset {ds_id[:12]}…{ds_id[-6:]}")
                 
                 try:
                     # Fetch dataset items directly using client with limit
                     items_list = client.dataset(ds_id).list_items(limit=150).items
                     logger.info(f"APIFY DATASET FETCH: Retrieved {len(items_list)} items from dataset {ds_id}")
+                    print(f"[APIFY SYNC]: Retrieved {len(items_list)} items from {corridor} dataset")
                     
                     # Step 1: Immediate save of raw data to Qdrant
                     raw_points_to_upsert = []
@@ -3005,15 +3522,29 @@ async def sync_all_apify_datasets():
                         asyncio.create_task(run_async_enrichment(enrichment_tasks))
 
                 except Exception as e:
-                    print(f"Failed to sync dataset {ds_id}: {e}")
+                    err_str = f"Failed to sync dataset {ds_id} (Corridor {corridor}): {e}"
+                    print(err_str)
+                    logger.error(f"🚀 [APIFY SYNC ERROR]: {err_str}")
+                    if _return_details:
+                        status["errors"].append({"corridor": corridor, "dataset_id": ds_id, "error": str(e)})
 
         # Run dataset syncs - Re-ordered list ensure priority datasets hit the semaphore first
-        await asyncio.gather(*(sync_dataset(ds_info['id'], ds_info['corridor']) for ds_info in dataset_list))
+        await asyncio.gather(*(
+            sync_dataset(ds_info['id'], ds_info['corridor'], ds_info.get('source_env'))
+            for ds_info in dataset_list
+        ))
                 
         print(f"Immediate sync complete. Total new leads saved: {total_synced}")
-        return total_synced
+        logger.info(f"🚀 [APIFY SYNC COMPLETE]: Total new leads saved = {total_synced}")
+        status["total_synced"] = total_synced
+        return status if _return_details else total_synced
     except Exception as e:
-        print(f"Error during bulk sync: {e}")
+        err_str = f"Error during bulk sync: {e}"
+        print(err_str)
+        logger.error(f"🚀 [APIFY SYNC FATAL]: {err_str}")
+        if _return_details:
+            status["errors"].append({"fatal": True, "error": str(e)})
+            return status
         return 0
 
 async def enrich_lead_data(point_id: str, item: dict, dataset_id: str):
