@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Job } from '../types';
 import { getJobLocationString } from '../types';
+import { formatSalaryToUSD } from '../utils/salaryConverter';
 
 interface LeadCardProps {
   lead?: Partial<Job> & Record<string, any>;
@@ -43,10 +44,11 @@ export const JobLeadCard: React.FC<LeadCardProps> = ({ lead, job }) => {
   const applyUrl: string | undefined =
     data.apply_url ?? data.applyUrl ?? data.link ?? data.url ?? data.source_url;
 
+  // Corrected Job Title mapping - prioritize title fields over market/country
   const rawTitle: string | undefined =
-    data.title ?? data.jobTitle ?? data.positionName ?? data.name;
+    data.title ?? data.jobTitle ?? data.positionName ?? data.position ?? data.name;
 
-  const jobTitle: string = rawTitle || getCleanTitle(applyUrl);
+  const jobTitle: string = rawTitle || getCleanTitle(applyUrl) || 'Untitled Position';
 
   // Market / location / corridor resolution
   const market: string = (() => {
@@ -70,18 +72,30 @@ export const JobLeadCard: React.FC<LeadCardProps> = ({ lead, job }) => {
     return 'UAE';
   })();
 
-  // Salary / compensation
+  // Salary / compensation - Fixed concatenation bug with proper fallback
   const salary: string = (() => {
-    if (data.salary) return String(data.salary);
-    if (data.salaryText) return String(data.salaryText);
+    // Priority 1: Use salary_range if available and not "Not specified"
+    if (data.salary_range && data.salary_range !== "Not specified") {
+      return String(data.salary_range);
+    }
+    // Priority 2: Use salary if available and not just "Competitive"
+    if (data.salary && data.salary !== "Competitive") {
+      return String(data.salary);
+    }
+    // Priority 3: Use salaryText if available
+    if (data.salaryText && data.salaryText !== "Competitive") {
+      return String(data.salaryText);
+    }
+    // Priority 4: Build range from min/max if available
     const min = Number(data.salary_min);
     const max = Number(data.salary_max);
     if (min && max) {
-      // Pretty-print ranges with whole numbers
       const fmt = (n: number) => (n % 1 === 0 ? n.toString() : n.toFixed(2));
       return `${fmt(min)} – ${fmt(max)}`;
     }
+    // Priority 5: Commission based
     if (data.is_commission_only) return 'Performance Based';
+    // Default fallback
     return 'Competitive';
   })();
 
@@ -141,7 +155,12 @@ export const JobLeadCard: React.FC<LeadCardProps> = ({ lead, job }) => {
 
         {/* Salary Indicator */}
         <div className="text-sm font-medium text-cyan-400 mb-4">
-          💰 {salary}
+          💰 {formatSalaryToUSD({
+            salaryText: salary,
+            corridorOrCountry: market,
+            jobTitleOrCategory: jobTitle,
+            description: data.description || data.interests
+          })}
         </div>
       </div>
 

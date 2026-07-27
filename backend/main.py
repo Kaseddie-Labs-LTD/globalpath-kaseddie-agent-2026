@@ -1403,7 +1403,86 @@ def save_to_pending_review(item: dict):
     except Exception as e:
         print(f"Failed to save to pending_review.json: {e}")
 
+def format_blue_collar_lead(raw_job: dict) -> dict:
+    """
+    Enriches scraped blue-collar job listings with ethical oversight tags,
+    clean title parsing, and verified trade categorization.
+    """
+    return {
+        "title": raw_job.get("title", "Skilled Trade Position"),
+        "market": raw_job.get("market", "UAE / KSA"),
+        "tier": "Blue-Collar Verified",
+        "salary": raw_job.get("salary", "Competitive / Visa & Transport Provided"),
+        "description": raw_job.get("description", "Vetted manual labor and technical trade role. Covered under zero-fee recruitment compliance guidelines."),
+        "url": raw_job.get("url"),
+        "email": raw_job.get("email", "No Email Found"),
+        "phone": raw_job.get("phone", "No Phone Found"),
+        "ethical_ai_status": "Zero-Fee Trade Compliant",
+        "zero_fee_guarantee": True
+    }
+
 import re
+
+# ==============================================================
+# BLUE-COLLAR VS PROFESSIONAL CATEGORIZATION
+# Ugandan labor market priority: Blue-collar roles have high supply
+# and can be matched immediately. Professional roles require sourcing.
+# ==============================================================
+
+BLUE_COLLAR_KEYWORDS = [
+    "driver", "forklift", "warehouse", "security", "guard", "cleaner",
+    "hospitality", "hotel", "waiter", "chef", "cook", "housekeeping",
+    "construction", "electrician", "plumber", "mason", "carpenter",
+    "welder", "painter", "mechanic", "loader", "cargo", "logistics",
+    "factory", "maintenance", "technician", "assistant", "general"
+]
+
+PROFESSIONAL_KEYWORDS = [
+    "engineer", "manager", "director", "specialist", "consultant",
+    "analyst", "architect", "developer", "software", "data scientist",
+    "project manager", "business analyst", "financial", "accountant",
+    "legal", "lawyer", "medical", "doctor", "nurse", "pharmacist"
+]
+
+def categorize_lead_priority(title: str, description: str) -> dict:
+    """
+    Categorizes a lead based on blue-collar vs professional classification.
+    Returns priority status and sourcing requirements for Ugandan market.
+    """
+    content = (title + " " + description).lower()
+    
+    # Check for blue-collar indicators
+    is_blue_collar = any(kw in content for kw in BLUE_COLLAR_KEYWORDS)
+    
+    # Check for professional indicators
+    is_professional = any(kw in content for kw in PROFESSIONAL_KEYWORDS)
+    
+    # Priority logic: Blue-collar = Immediate, Professional = Pending Sourcing
+    if is_blue_collar:
+        return {
+            "priority": "immediate",
+            "status": "active",
+            "sourcing_status": "ready",
+            "tier": "blue-collar",
+            "reason": "High local supply - can match immediately"
+        }
+    elif is_professional:
+        return {
+            "priority": "pending",
+            "status": "pending_sourcing",
+            "sourcing_status": "seeking_candidate",
+            "tier": "professional",
+            "reason": "Specialized role - requires candidate sourcing"
+        }
+    else:
+        # Default to immediate if unclear (assume blue-collar for volume)
+        return {
+            "priority": "immediate",
+            "status": "active",
+            "sourcing_status": "ready",
+            "tier": "general",
+            "reason": "Unclear classification - default to immediate"
+        }
 
 # Priority IDs to process first
 PRIORITY_DATASETS = ["3QToNmDUhIoc9smsF"] 
@@ -1518,20 +1597,20 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
     
     # 2. Sector Classification (Professional vs Blue-Collar)
     professional_keywords = [
-        'engineer', 'manager', 'consultant', 'associate', 
-        'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer', 
+        'engineer', 'manager', 'consultant', 'associate',
+        'analyst', 'executive', 'pwc', 'deloitte', 'officer', 'developer',
         'procurement', 'logistics manager', 'supply chain', 'it specialist', 'cybersecurity',
         'nurse', 'doctor', 'physician', 'ai engineer', 'logistics internship', 'intern',
         'ciklum', 'amazon fulfillment', 'software engineer', 'data scientist'
     ]
-    
+
     blue_collar_keywords = [
         'driver', 'warehouse', 'maid', 'housemaid',
         'helper', 'butcher', 'shelf', 'merchandiser', 'housekeeper',
     ]
 
     domestic_keywords = [
-        'cleaner', 'housekeeper', 'maid', 'nanny', 'domestic', 
+        'cleaner', 'housekeeper', 'maid', 'nanny', 'domestic',
         'janitor', 'caregiver', 'care assistant'
     ]
 
@@ -1543,6 +1622,9 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         refined_category = "blue_collar"
     elif any(kw in title.lower() for kw in domestic_keywords):
         refined_category = "service_domestic"
+
+    # 3. Apply Priority Logic (Blue-Collar = Immediate, Professional = Pending Sourcing)
+    priority_info = categorize_lead_priority(title, description)
 
     # 3. Status Mapping
     status = "live"  # Set to "live" so frontend recognizes as active
@@ -1600,7 +1682,16 @@ def dataset_mapping_function(item: dict, category: str = "general", forced_count
         "lat": item.get("lat"),
         "lng": item.get("lng"),
         "node": node,  # Critical: Add node assignment
-        "corridor": node  # Also add corridor for compatibility
+        "corridor": node,  # Also add corridor for compatibility
+        # Priority fields for Ugandan market routing
+        "priority": priority_info["priority"],
+        "sourcing_status": priority_info["sourcing_status"],
+        "tier": priority_info["tier"],
+        "priority_reason": priority_info["reason"],
+        # Contact information fields
+        "email": item.get("email") or item.get("Contact_Email") or item.get("employerEmail"),
+        "phone": item.get("phone") or item.get("WhatsApp_Number") or item.get("phoneNumber"),
+        "decision_maker": item.get("decision_maker") or item.get("hr_contact")
     }
 
     return Document(

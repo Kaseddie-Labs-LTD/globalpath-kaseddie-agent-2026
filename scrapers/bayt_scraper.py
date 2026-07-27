@@ -166,6 +166,38 @@ if PROXY_URL:
 BASE_URL = "https://www.bayt.com"
 
 # ==============================================================
+# BLUE-COLLAR & TRADE FOCUS KEYWORDS
+# Targeted search terms for manual labor, construction, logistics, and hospitality roles
+# ==============================================================
+BLUE_COLLAR_TARGET_KEYWORDS = [
+    "construction worker",
+    "electrician",
+    "plumber",
+    "mason",
+    "carpenter",
+    "welder",
+    "driver",
+    "forklift operator",
+    "warehouse worker",
+    "security guard",
+    "hotel assistant",
+    "general cleaner",
+    "maintenance technician",
+    "factory assistant",
+    "aviation loader",
+    "cargo handler",
+    "painter",
+    "diesel mechanic"
+]
+
+def build_blue_collar_query(corridor: str) -> str:
+    """
+    Generates targeted search queries for blue-collar and trade positions
+    optimized for regional job boards like Bayt.
+    """
+    return f"site:bayt.com/en/ jobs ({' OR '.join(BLUE_COLLAR_TARGET_KEYWORDS)})"
+
+# ==============================================================
 # TARGETED GCC / MIDDLE EAST CORRIDORS (28,421+ active listings)
 # Each entry:
 #   slug           -> Bayt.com URL slug, matches /en/{slug}/jobs/ pattern
@@ -472,68 +504,100 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae", c
         if len(jobs) >= limit:
             break
 
-        # Flexible title search (h2, h3, or anchor tags)
-        title_elem = (
-            card.find(["h2", "h3"])
-            or card.find("a", class_=lambda c: c and "title" in str(c).lower())
-        )
+        # Corrected extraction logic with specific element targeting
+        title_element = card.find('h2') or card.find('a', class_='job-title')
+        salary_element = card.find(class_='qa-salary') or card.find(class_='t-mute')
+        link_element = card.find('a', href=True)
 
-        # Link & ID search
-        link_elem = card.find("a", href=True)
-
-        # Company search
+        # Company search (keep existing logic)
         company_elem = (
             card.find(["b", "strong"])
             or card.find("span", class_=lambda c: c and "company" in str(c).lower())
             or card.find("a", class_=lambda c: c and "company" in str(c).lower())
         )
 
-        # Location search
+        # Location search (keep existing logic)
         location_elem = (
             card.find("span", class_=lambda c: c and ("loc" in str(c).lower() or "location" in str(c).lower()))
             or card.find("div", class_=lambda c: c and ("loc" in str(c).lower() or "location" in str(c).lower()))
         )
 
-        if title_elem:
-            title = title_elem.get_text(strip=True)
-            if not title or len(title) < 2:
-                continue
+        # Extract job title with fallback
+        job_title = title_element.get_text(strip=True) if title_element else "Untitled Position"
+        if not job_title or len(job_title) < 2:
+            continue
 
-            company = company_elem.get_text(strip=True) if company_elem else "Confidential Employer"
-            location = location_elem.get_text(strip=True) if location_elem else country.upper()
+        # Extract salary with fallback
+        salary = salary_element.get_text(strip=True) if salary_element else "Not specified"
 
-            raw_href = link_elem["href"] if link_elem else ""
-            apply_url = f"{BASE_URL}{raw_href}" if raw_href.startswith("/") else raw_href
+        # Extract apply URL with fallback
+        raw_href = link_element['href'] if link_element else ""
+        apply_url = f"{BASE_URL}{raw_href}" if raw_href.startswith("/") else raw_href
 
-            # Extract Job ID
-            job_id_match = re.search(r"-(\d+)/?$", raw_href)
-            job_id = f"bayt_{job_id_match.group(1)}" if job_id_match else f"bayt_{abs(hash(apply_url))}"
+        # Extract company and location
+        company = company_elem.get_text(strip=True) if company_elem else "Confidential Employer"
+        location = location_elem.get_text(strip=True) if location_elem else country.upper()
 
-            # Extract Salary Text
-            salary_text = "Not specified"
+        # Extract Job ID
+        job_id_match = re.search(r"-(\d+)/?$", raw_href)
+        job_id = f"bayt_{job_id_match.group(1)}" if job_id_match else f"bayt_{abs(hash(apply_url))}"
+
+        # Use extracted salary, fallback to regex if needed
+        salary_text = salary
+        if salary_text == "Not specified":
             text_content = card.get_text(separator=" ")
             salary_match = re.search(r"(AED\s*[\d,]+\s*-\s*AED\s*[\d,]+|\$\s*[\d,]+\s*-\s*\$\s*[\d,]+)", text_content)
             if salary_match:
                 salary_text = salary_match.group(1)
 
-            jobs.append({
-                "jobId": job_id,
-                "title": title,
-                "company": company,
-                "location": location,
-                "applyUrl": apply_url,
-                "salaryText": salary_text,
-                "source": "Bayt (Middle East)",
-                "zeroFeeMandate": True,
-                # Corridor expansion tags: ensure dashboard visibility +
-                # downstream AI enrichment has strategic context.
-                "corridor": corridor_meta.get("corridor_field"),
-                "corridor_label": corridor_meta.get("label"),
-                "corridor_tag": corridor_meta.get("tag"),
-                "corridor_slug": corridor_meta.get("slug"),
-                "corridor_rank": corridor_meta.get("rank"),
-                "target_sectors": corridor_meta.get("sectors"),
-            })
+        # Extract Email using regex pattern
+        text_content = card.get_text(separator=" ")
+        email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text_content)
+        extracted_email = email_match.group(0) if email_match else None
+
+        # Extract Phone/WhatsApp using regex pattern (international formats)
+        phone_match = re.search(r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4,6}|\+?\d{10,15}', text_content)
+        extracted_phone = phone_match.group(0) if phone_match else None
+
+        # Extract Decision Maker using heuristic (HR/recruiter titles)
+        decision_maker_keywords = ["hr", "human resources", "recruiter", "hiring manager", "talent acquisition", "recruitment", "personnel"]
+        decision_maker_match = None
+        for keyword in decision_maker_keywords:
+            if keyword in text_content.lower():
+                # Try to extract a name near the keyword
+                keyword_idx = text_content.lower().find(keyword)
+                context_start = max(0, keyword_idx - 50)
+                context_end = min(len(text_content), keyword_idx + 50)
+                context = text_content[context_start:context_end]
+                # Look for capitalized words that might be names
+                name_match = re.search(r'\b[A-Z][a-z]+ [A-Z][a-z]+\b', context)
+                if name_match:
+                    decision_maker_match = name_match.group(0)
+                    break
+        extracted_decision_maker = decision_maker_match if decision_maker_match else None
+
+        jobs.append({
+            "jobId": job_id,
+            "title": job_title,
+            "company": company,
+            "location": location,
+            "applyUrl": apply_url,
+            "salaryText": salary_text,
+            "source": "Bayt (Middle East)",
+            "zeroFeeMandate": True,
+            # Contact information extraction
+            "email": extracted_email,
+            "phone": extracted_phone,
+            "decision_maker": extracted_decision_maker,
+            # Corridor expansion tags: ensure dashboard visibility +
+            # downstream AI enrichment has strategic context.
+            "corridor": corridor_meta.get("corridor_field"),
+            "corridor_label": corridor_meta.get("label"),
+            "corridor_tag": corridor_meta.get("tag"),
+            "corridor_slug": corridor_meta.get("slug"),
+            "corridor_rank": corridor_meta.get("rank"),
+            "target_sectors": corridor_meta.get("sectors"),
+        })
 
     logger.info(f"✅ [BAYT] Successfully extracted {len(jobs)} Middle East jobs.")
     return jobs

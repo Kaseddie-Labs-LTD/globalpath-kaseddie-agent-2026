@@ -11,6 +11,7 @@ import { fetcher } from '../constants/api';
 import { MarketingEngine } from './MarketingEngine';
 import { safeArray } from '../utils/sanitize'; // K2.5: Defensive array utility
 import { categorizeJob } from '../utils/jobCategorization';
+import { formatSalaryToUSD } from '../utils/salaryConverter';
 import { APP_CONFIG } from '../constants/appConfig';
 
 interface VendorPortal {
@@ -82,7 +83,14 @@ const JobItem: React.FC<JobItemProps> = ({
       <div className="flex items-center gap-4 text-xs font-bold text-slate-400 mb-3">
         <span className="flex items-center gap-1"><Building2 size={12} /> {safeJobCompany}</span>
         <span className="flex items-center gap-1"><MapPin size={12} /> {getJobLocationString(job?.location)}</span>
-        {job?.salary && <span className="flex items-center gap-1 text-emerald-600"><DollarSign size={12} /> {job.salary}</span>}
+        <span className="flex items-center gap-1 text-emerald-600">
+          <DollarSign size={12} /> {formatSalaryToUSD({
+            salaryText: job?.salary,
+            corridorOrCountry: job?.corridor || job?.country || getJobLocationString(job?.location),
+            jobTitleOrCategory: job?.title || job?.positionName || job?.category,
+            description: job?.description
+          })}
+        </span>
       </div>
       
       {/* Use description with fallback to title */}

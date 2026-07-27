@@ -1,11 +1,4 @@
-/**
- * Metadata Parser for Job Details
- * Splits job description blocks into structured sections:
- * - Job ID/Node ID
- * - Compliance Status (Ethical Handshake)
- * - Salary/Benefits
- * - Description (collapsed by default)
- */
+import { formatSalaryToUSD, mineSalaryFromText } from './salaryConverter';
 
 export interface ParsedJobMetadata {
   jobId: string;
@@ -32,16 +25,20 @@ export function parseJobMetadata(job: any): ParsedJobMetadata {
     complianceStatus = 'verified';
   }
   
-  // Extract salary
-  let salary = job.salary;
-  if (typeof salary === 'object' && salary !== null) {
-    salary = salary.amount || salary.value || extractSalaryFromDescription(description);
-  } else if (!salary) {
-    salary = extractSalaryFromDescription(description);
+  // Extract & convert salary using two-tier hybrid pipeline
+  let rawSalary = job.salary;
+  if (typeof rawSalary === 'object' && rawSalary !== null) {
+    rawSalary = rawSalary.amount || rawSalary.value || extractSalaryFromDescription(description);
+  } else if (!rawSalary || rawSalary === 'Competitive' || rawSalary === 'Not specified') {
+    rawSalary = extractSalaryFromDescription(description) || mineSalaryFromText(description) || '';
   }
-  if (typeof salary !== 'string') {
-    salary = String(salary || "Competitive");
-  }
+
+  const salary = formatSalaryToUSD({
+    salaryText: String(rawSalary || ''),
+    corridorOrCountry: job.corridor || job.country || job.location,
+    jobTitleOrCategory: job.title || job.category,
+    description: description
+  });
   
   // Extract benefits
   const benefits = extractBenefitsFromDescription(description);

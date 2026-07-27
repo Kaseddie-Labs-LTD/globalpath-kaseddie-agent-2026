@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { generateJobInsight, generateB2BPitch } from '../services/ai';
 import { parseJobMetadata } from '../utils/metadataParser';
+import { formatSalaryToUSD } from '../utils/salaryConverter';
 
 interface JobGridProps {
   jobs: Job[];
@@ -217,7 +218,12 @@ const JobCard: React.FC<JobCardProps> = ({ job, isPremier, onApply, onEnhanceJob
           <MapPin size={12} className={isPremier ? 'text-amber-500' : 'text-brand-500'} /> {getJobLocationString(typeof job.location === 'object' ? job.location.city || job.location.country : job.location) || "Remote"}
         </a>
         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-amber-50 p-2 rounded-xl border border-amber-200 text-amber-700 overflow-hidden text-ellipsis whitespace-nowrap">
-          <DollarSign size={12} className="text-amber-600" /> {parsedMeta.salary && parsedMeta.salary.toLowerCase().includes('commission') ? 'Performance Based' : (parsedMeta.salary || "Competitive")}
+          <DollarSign size={12} className="text-amber-600" /> {formatSalaryToUSD({
+            salaryText: parsedMeta.salary || job.salary,
+            corridorOrCountry: job.corridor || job.country || getJobLocationString(job.location),
+            jobTitleOrCategory: job.title || job.category,
+            description: job.description
+          })}
         </div>
       </div>
 
