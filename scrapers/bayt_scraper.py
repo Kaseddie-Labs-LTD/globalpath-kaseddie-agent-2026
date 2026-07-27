@@ -216,7 +216,7 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "UAE (Federal)",
         "tag": "UAE",
         "corridor_field": "UAE / Middle East",
-        "sectors": ["corporate", "engineering", "hospitality", "administrative"],
+        "sectors": ["construction", "transport-logistics", "maintenance", "security-guard", "housemaid"],
     },
     {
         "rank": 2,
@@ -224,15 +224,15 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "Saudi Arabia",
         "tag": "KSA",
         "corridor_field": "Saudi Arabia / Middle East",
-        "sectors": ["infrastructure", "healthcare", "construction", "industrial"],
+        "sectors": ["construction-building", "drivers-transport", "hospitality-restaurant", "facilities-management", "housemaid"],
     },
     {
         "rank": 3,
         "slug": "dubai",
-        "label": "Dubai (City Hub)",
+        "label": "Dubai Hub",
         "tag": "DXB",
         "corridor_field": "Dubai / Middle East",
-        "sectors": ["commercial", "finance", "logistics", "tourism"],
+        "sectors": ["hospitality", "housekeeping", "delivery-drivers", "warehouse-operations", "housemaid"],
     },
     {
         "rank": 4,
@@ -240,7 +240,7 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "Qatar",
         "tag": "QAT",
         "corridor_field": "Qatar / Middle East",
-        "sectors": ["engineering", "aviation", "hospitality", "public-sector"],
+        "sectors": ["construction", "mechanical-trades", "cleaning-services", "hospitality", "housemaid"],
     },
     {
         "rank": 5,
@@ -248,7 +248,7 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "Jordan",
         "tag": "JOR",
         "corridor_field": "Jordan / Middle East",
-        "sectors": ["education", "administration", "regional-corporate"],
+        "sectors": ["manufacturing", "technical-trades", "driving-logistics", "building", "housemaid"],
     },
     {
         "rank": 6,
@@ -256,7 +256,7 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "Kuwait",
         "tag": "KWT",
         "corridor_field": "Kuwait / Middle East",
-        "sectors": ["petroleum", "engineering", "trade", "commercial-support"],
+        "sectors": ["oil-gas-field-operations", "construction", "transportation", "hospitality", "housemaid"],
     },
     {
         "rank": 7,
@@ -264,7 +264,7 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "Lebanon",
         "tag": "LBN",
         "corridor_field": "Lebanon / Middle East",
-        "sectors": ["technical", "media", "multilingual-corporate"],
+        "sectors": ["hospitality", "maintenance", "skilled-trades", "logistics", "housemaid"],
     },
     {
         "rank": 8,
@@ -272,7 +272,7 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "Oman",
         "tag": "OMN",
         "corridor_field": "Oman / Middle East",
-        "sectors": ["logistics", "energy", "maritime", "infrastructure"],
+        "sectors": ["construction", "transport-logistics", "port-operations", "manufacturing", "housemaid"],
     },
     {
         "rank": 9,
@@ -280,7 +280,7 @@ BAYT_TARGET_CORRIDORS: list[dict] = [
         "label": "Bahrain",
         "tag": "BHR",
         "corridor_field": "Bahrain / Middle East",
-        "sectors": ["financial-services", "trade", "manufacturing", "hospitality"],
+        "sectors": ["hospitality", "manufacturing", "construction", "logistics", "housemaid"],
     },
 ]
 
