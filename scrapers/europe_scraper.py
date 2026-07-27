@@ -119,7 +119,7 @@ def get_eurojobs_url(keyword: str, region: str = "de", limit: int = 20) -> str:
     """
     Constructs EuroJobs.com search URL for blue-collar roles.
     """
-    # EuroJobs search URL pattern
+    # EuroJobs search URL pattern - use the jobs endpoint
     search_url = f"{BASE_URL}/jobs"
     params = {
         "q": keyword,
@@ -155,21 +155,57 @@ def scrape_europe_jobs_playwright(keyword: str, region: str = "de", limit: int =
             # Navigate and wait for network idle to ensure JS execution
             page.goto(url, wait_until="networkidle", timeout=30000)
             
-            # Wait for job cards to load
-            try:
-                page.wait_for_selector("div.job-item, article.job-posting, div.job-listing", timeout=10000)
-            except:
-                logger.warning("⚠️ [EUROPE]: Timeout waiting for job cards, proceeding anyway")
+            # EuroJobs often renders listings via client-side scripts; wait for network idle completely
+            page.wait_for_load_state("networkidle")
             
-            # Extract job cards after JS execution
-            job_card_elements = page.locator("div.job-item, article.job-posting, div.job-listing, li.job-card").all()
-            logger.info(f"📊 [EUROPE]: Found {len(job_card_elements)} job cards with Playwright")
+            # Try multiple card container selectors common on European job portals
+            selectors = [
+                "div.job-item",
+                "div.card.job-card",
+                "article.job-listing",
+                "div.job-card",
+                "div[class*='job-posting']",
+                "div[class*='job-list']",
+                "tr.job-row",
+                "li.job-item"
+            ]
+            
+            job_card_elements = []
+            for sel in selectors:
+                elements = page.locator(sel).all()
+                if len(elements) > 0:
+                    logger.info(f"🚀 [EUROPE]: Found {len(elements)} cards using selector: {sel}")
+                    job_card_elements = elements
+                    break
+            
+            if len(job_card_elements) == 0:
+                logger.warning("⚠️ [EUROPE]: No job cards found with any selector, logging page content")
+                page_content = page.inner_text("body")
+                logger.warning(f"  Page content preview: {page_content[:500]}")
             
             for i, card in enumerate(job_card_elements[:limit]):
                 try:
-                    # Extract job title
-                    title_elem = card.locator("h3, h2, a.job-title, span.job-title, div.job-title").first
-                    job_title = title_elem.inner_text() if title_elem.count() > 0 else "Untitled Position"
+                    # Extract job title using refined selectors
+                    title_elem = card.locator("h3, h4, a.job-title, a[class*='title']").first
+                    if title_elem.count() == 0:
+                        continue
+                    
+                    job_title = title_elem.inner_text().strip()
+                    
+                    # Extract apply URL
+                    link_elem = card.locator("a").first
+                    href = link_elem.get_attribute("href") if link_elem.count() > 0 else ""
+                    
+                    # Debug: log what we're finding
+                    logger.info(f"  Card {i}: title='{job_title}', href='{href[:50] if href else 'None'}'")
+                    
+                    # Filter out UI text, navigation, or pagination remnants
+                    if not job_title or len(job_title) <= 3:
+                        continue
+                    if job_title.lower() in ["location", "salary", "company", "date", "type", "results"]:
+                        continue
+                    if "result" in job_title.lower() and len(job_title) < 20:
+                        continue
                     
                     # Extract company
                     company_elem = card.locator("span.company-name, div.company, span.company, div[data-testid='company-name']").first
@@ -184,10 +220,7 @@ def scrape_europe_jobs_playwright(keyword: str, region: str = "de", limit: int =
                     salary = salary_elem.inner_text() if salary_elem.count() > 0 else "Not specified"
                     
                     # Extract apply URL
-                    link_elem = card.locator("a[href]").first
-                    apply_url = link_elem.get_attribute("href") if link_elem.count() > 0 else "#"
-                    if apply_url and apply_url.startswith("/"):
-                        apply_url = BASE_URL + apply_url
+                    apply_url = href if href.startswith("http") else f"{BASE_URL}{href}" if href else "#"
                     
                     # Extract job ID
                     job_id_match = re.search(r'/(\d+)/', apply_url)

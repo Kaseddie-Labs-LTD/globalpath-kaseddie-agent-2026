@@ -153,15 +153,17 @@ def scrape_canada_jobs_playwright(keyword: str, region: str = "on", limit: int =
             # Navigate and wait for network idle to ensure JS execution
             page.goto(url, wait_until="networkidle", timeout=30000)
             
-            # Wait for job cards to load
-            try:
-                page.wait_for_selector("div.results-row, div.resultItem, article.job-posting", timeout=10000)
-            except:
-                logger.warning("⚠️ [CANADA]: Timeout waiting for job cards, proceeding anyway")
+            # Don't wait for specific selector - just try to find elements
+            # First try to find job posting links directly
+            job_links = page.locator("a[href*='jobposting']").all()
+            logger.info(f"📊 [CANADA]: Found {len(job_links)} job posting links")
             
-            # Extract job cards after JS execution - use broader selectors
-            job_card_elements = page.locator("div.results-row, div.resultItem, article.job-posting, li.result-item, div[data-testid='result-item'], div[class*='result'], div[class*='job']").all()
-            logger.info(f"📊 [CANADA]: Found {len(job_card_elements)} job cards with Playwright")
+            if len(job_links) > 0:
+                job_card_elements = job_links
+            else:
+                # Fallback to div-based selectors
+                job_card_elements = page.locator("div.results-row, article.result-item, div[class*='result'], div[class*='job']").all()
+                logger.info(f"📊 [CANADA]: Found {len(job_card_elements)} job cards with Playwright")
             
             # Debug: log page content if no cards found
             if len(job_card_elements) == 0:
@@ -174,35 +176,72 @@ def scrape_canada_jobs_playwright(keyword: str, region: str = "on", limit: int =
                 for i in range(min(10, len(all_divs))):
                     div_text = all_divs[i].inner_text()[:100]
                     logger.warning(f"  Div {i}: {div_text}")
-                
-                # Try alternative approach: look for links with job-related patterns
-                job_links = page.locator("a[href*='jobposting']").all()
-                logger.warning(f"  Found {len(job_links)} job posting links")
-                if len(job_links) > 0:
-                    # Use job links as card elements
-                    job_card_elements = job_links
             
             for i, card in enumerate(job_card_elements[:limit]):
                 try:
-                    # Extract job title
-                    title_elem = card.locator("a.jobTitle, h3, h2, a.result-job-title, span.job-title").first
-                    job_title = title_elem.inner_text() if title_elem.count() > 0 else "Untitled Position"
+                    # Check if card is a link element (job posting link) or a container
+                    card_tag = card.evaluate("el => el.tagName")
                     
-                    # Extract company
-                    company_elem = card.locator("span.businessName, div.company, span.company-name, div[data-testid='company-name']").first
-                    company = company_elem.inner_text() if company_elem.count() > 0 else "Confidential"
+                    if card_tag == "A":
+                        # Card is a link element - extract directly
+                        card_text = card.inner_text().strip()
+                        link = card.get_attribute("href")
+                        
+                        # Parse the card text to extract job title, company, location, salary
+                        # JobBank card format: [flags] [title] [date] [company] Location [location] Salary [salary]
+                        lines = [line.strip() for line in card_text.split('\n') if line.strip()]
+                        
+                        # Find the job title (usually the line after "Job Bank" or the first non-flag line)
+                        job_title = "Untitled Position"
+                        company = "Confidential"
+                        location = region.upper()
+                        salary = "Not specified"
+                        
+                        for j, line in enumerate(lines):
+                            # Skip UI text
+                            if any(skip in line for skip in ["On site", "Direct Apply", "Posted on Job Bank", "Job Bank", "Green job"]):
+                                continue
+                            # First non-flag line is likely the job title
+                            if job_title == "Untitled Position" and len(line) > 3:
+                                job_title = line
+                            # Look for company (usually before "Location")
+                            elif "Location" in line and j > 0:
+                                company = lines[j-1]
+                            # Extract salary
+                            elif "Salary" in line and j < len(lines) - 1:
+                                salary = lines[j+1]
+                            # Extract location
+                            elif "Location" in line and j < len(lines) - 1:
+                                location = lines[j+1]
+                    else:
+                        # Card is a container - find title link inside
+                        title_locator = card.locator("a.result-job-title, h3 a, .noct-title, a.jobTitle").first
+                        if title_locator.count() == 0:
+                            continue
+                        job_title = title_locator.inner_text().strip()
+                        link = title_locator.get_attribute("href")
+                        
+                        # Extract company
+                        company_elem = card.locator("span.businessName, div.company, span.company-name, div[data-testid='company-name']").first
+                        company = company_elem.inner_text() if company_elem.count() > 0 else "Confidential"
+                        
+                        # Extract location
+                        location_elem = card.locator("span.location, div.location, span[data-testid='text-location']").first
+                        location = location_elem.inner_text() if location_elem.count() > 0 else region.upper()
+                        
+                        # Extract salary
+                        salary_elem = card.locator("span.salary, div.salary, div[data-testid='salary-snippet-container']").first
+                        salary = salary_elem.inner_text() if salary_elem.count() > 0 else "Not specified"
                     
-                    # Extract location
-                    location_elem = card.locator("span.location, div.location, span[data-testid='text-location']").first
-                    location = location_elem.inner_text() if location_elem.count() > 0 else region.upper()
+                    # Debug: log what we're finding
+                    logger.info(f"  Card {i}: title='{job_title}', company='{company}', link='{link[:50] if link else 'None'}'")
                     
-                    # Extract salary
-                    salary_elem = card.locator("span.salary, div.salary, div[data-testid='salary-snippet-container']").first
-                    salary = salary_elem.inner_text() if salary_elem.count() > 0 else "Not specified"
+                    # Filter out UI text or pagination remnants
+                    if not job_title or "result" in job_title.lower() or len(job_title) <= 3:
+                        continue
                     
                     # Extract apply URL
-                    link_elem = card.locator("a[href]").first
-                    apply_url = link_elem.get_attribute("href") if link_elem.count() > 0 else "#"
+                    apply_url = link if link else "#"
                     if apply_url and apply_url.startswith("/"):
                         apply_url = BASE_URL + apply_url
                     
