@@ -8,6 +8,7 @@ import time
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 from urllib.parse import urlparse, unquote, urlunparse
+from playwright.sync_api import sync_playwright
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EuropeScraper")
@@ -129,6 +130,137 @@ def get_eurojobs_url(keyword: str, region: str = "de", limit: int = 20) -> str:
     return f"{search_url}?{query_string}"
 
 def scrape_europe_jobs(keyword: str, region: str = "de", limit: int = 20) -> list[dict]:
+    """
+    Main entry point for Europe job scraping.
+    Uses Playwright by default for CSR support, falls back to static scraping.
+    Returns a list of job dictionaries with title, company, location, salary, etc.
+    """
+    return scrape_europe_jobs_playwright(keyword, region, limit)
+
+def scrape_europe_jobs_playwright(keyword: str, region: str = "de", limit: int = 20) -> list[dict]:
+    """
+    Scrapes blue-collar job listings from EuroJobs.com using Playwright for CSR.
+    Returns a list of job dictionaries with title, company, location, salary, etc.
+    """
+    logger.info(f"🔍 [EUROPE]: Scraping EuroJobs.com with Playwright for keyword: {keyword} in region: {region}")
+
+    url = get_eurojobs_url(keyword, region, limit)
+    jobs = []
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # Navigate and wait for network idle to ensure JS execution
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            
+            # Wait for job cards to load
+            try:
+                page.wait_for_selector("div.job-item, article.job-posting, div.job-listing", timeout=10000)
+            except:
+                logger.warning("⚠️ [EUROPE]: Timeout waiting for job cards, proceeding anyway")
+            
+            # Extract job cards after JS execution
+            job_card_elements = page.locator("div.job-item, article.job-posting, div.job-listing, li.job-card").all()
+            logger.info(f"📊 [EUROPE]: Found {len(job_card_elements)} job cards with Playwright")
+            
+            for i, card in enumerate(job_card_elements[:limit]):
+                try:
+                    # Extract job title
+                    title_elem = card.locator("h3, h2, a.job-title, span.job-title, div.job-title").first
+                    job_title = title_elem.inner_text() if title_elem.count() > 0 else "Untitled Position"
+                    
+                    # Extract company
+                    company_elem = card.locator("span.company-name, div.company, span.company, div[data-testid='company-name']").first
+                    company = company_elem.inner_text() if company_elem.count() > 0 else "Confidential"
+                    
+                    # Extract location
+                    location_elem = card.locator("span.location, div.location, span[data-testid='text-location']").first
+                    location = location_elem.inner_text() if location_elem.count() > 0 else region.upper()
+                    
+                    # Extract salary
+                    salary_elem = card.locator("span.salary, div.salary, div[data-testid='salary-snippet-container']").first
+                    salary = salary_elem.inner_text() if salary_elem.count() > 0 else "Not specified"
+                    
+                    # Extract apply URL
+                    link_elem = card.locator("a[href]").first
+                    apply_url = link_elem.get_attribute("href") if link_elem.count() > 0 else "#"
+                    if apply_url and apply_url.startswith("/"):
+                        apply_url = BASE_URL + apply_url
+                    
+                    # Extract job ID
+                    job_id_match = re.search(r'/(\d+)/', apply_url)
+                    job_id_str = job_id_match.group(1) if job_id_match else f"eu_{int(time.time() * 1000)}_{i}"
+                    
+                    # Extract email using regex from card text
+                    card_text = card.inner_text()
+                    email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', card_text)
+                    extracted_email = email_match.group(0) if email_match else None
+                    
+                    # Extract phone using regex
+                    phone_match = re.search(r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4,6}|\+?\d{10,15}', card_text)
+                    extracted_phone = phone_match.group(0) if phone_match else None
+                    
+                    # Extract decision maker using heuristic
+                    decision_maker_match = None
+                    decision_maker_keywords = ["hr", "human resources", "recruiter", "hiring manager", "talent acquisition", "recruitment", "personnel"]
+                    for keyword_dm in decision_maker_keywords:
+                        if keyword_dm in card_text.lower():
+                            keyword_idx = card_text.lower().find(keyword_dm)
+                            context_start = max(0, keyword_idx - 50)
+                            context_end = min(len(card_text), keyword_idx + 50)
+                            context = card_text[context_start:context_end]
+                            name_match = re.search(r'\b[A-Z][a-z]+ [A-Z][a-z]+\b', context)
+                            if name_match:
+                                decision_maker_match = name_match.group(0)
+                                break
+                    extracted_decision_maker = decision_maker_match if decision_maker_match else None
+                    
+                    # Get region metadata
+                    region_meta = EUROPE_REGION_BY_SLUG.get(region, {
+                        "corridor_field": "EU-Central",
+                        "label": region.upper(),
+                        "tag": region.upper(),
+                        "sectors": ["general"]
+                    })
+                    
+                    jobs.append({
+                        "jobId": job_id_str,
+                        "title": job_title,
+                        "company": company,
+                        "location": location,
+                        "applyUrl": apply_url,
+                        "salaryText": salary,
+                        "source": "EuroJobs (Europe)",
+                        "zeroFeeMandate": True,
+                        "email": extracted_email,
+                        "phone": extracted_phone,
+                        "decision_maker": extracted_decision_maker,
+                        "corridor": region_meta.get("corridor_field"),
+                        "corridor_label": region_meta.get("label"),
+                        "corridor_tag": region_meta.get("tag"),
+                        "corridor_slug": region,
+                        "corridor_rank": region_meta.get("rank"),
+                        "target_sectors": region_meta.get("sectors"),
+                    })
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ [EUROPE]: Failed to parse job card {i}: {e}")
+                    continue
+            
+            browser.close()
+            
+    except Exception as e:
+        logger.error(f"❌ [EUROPE]: Playwright scraping failed: {e}")
+        # Fallback to static scraping if Playwright fails
+        logger.info("🔄 [EUROPE]: Falling back to static scraping")
+        return scrape_europe_jobs_static(keyword, region, limit)
+
+    logger.info(f"✅ [EUROPE]: Successfully extracted {len(jobs)} jobs from EuroJobs.com with Playwright")
+    return jobs
+
+def scrape_europe_jobs_static(keyword: str, region: str = "de", limit: int = 20) -> list[dict]:
     """
     Scrapes blue-collar job listings from EuroJobs.com.
     Returns a list of job dictionaries with title, company, location, salary, etc.

@@ -8,6 +8,7 @@ import time
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 from urllib.parse import urlparse, unquote, urlunparse
+from playwright.sync_api import sync_playwright
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("CanadaScraper")
@@ -128,10 +129,159 @@ def get_jobbank_url(keyword: str, region: str = "on", limit: int = 20) -> str:
 
 def scrape_canada_jobs(keyword: str, region: str = "on", limit: int = 20) -> list[dict]:
     """
-    Scrapes blue-collar job listings from JobBank.ca.
+    Main entry point for Canada job scraping.
+    Uses Playwright by default for CSR support, falls back to static scraping.
     Returns a list of job dictionaries with title, company, location, salary, etc.
     """
-    logger.info(f"🔍 [CANADA]: Scraping JobBank.ca for keyword: {keyword} in region: {region}")
+    return scrape_canada_jobs_playwright(keyword, region, limit)
+
+def scrape_canada_jobs_playwright(keyword: str, region: str = "on", limit: int = 20) -> list[dict]:
+    """
+    Scrapes blue-collar job listings from JobBank.ca using Playwright for CSR.
+    Returns a list of job dictionaries with title, company, location, salary, etc.
+    """
+    logger.info(f"🔍 [CANADA]: Scraping JobBank.ca with Playwright for keyword: {keyword} in region: {region}")
+
+    url = get_jobbank_url(keyword, region, limit)
+    jobs = []
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # Navigate and wait for network idle to ensure JS execution
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            
+            # Wait for job cards to load
+            try:
+                page.wait_for_selector("div.results-row, div.resultItem, article.job-posting", timeout=10000)
+            except:
+                logger.warning("⚠️ [CANADA]: Timeout waiting for job cards, proceeding anyway")
+            
+            # Extract job cards after JS execution - use broader selectors
+            job_card_elements = page.locator("div.results-row, div.resultItem, article.job-posting, li.result-item, div[data-testid='result-item'], div[class*='result'], div[class*='job']").all()
+            logger.info(f"📊 [CANADA]: Found {len(job_card_elements)} job cards with Playwright")
+            
+            # Debug: log page content if no cards found
+            if len(job_card_elements) == 0:
+                logger.warning("⚠️ [CANADA]: No job cards found with Playwright, logging page content")
+                page_content = page.inner_text("body")
+                logger.warning(f"  Page content preview: {page_content[:500]}")
+                # Try to find any divs that might contain job data
+                all_divs = page.locator("div").all()
+                logger.warning(f"  Total divs on page: {len(all_divs)}")
+                for i in range(min(10, len(all_divs))):
+                    div_text = all_divs[i].inner_text()[:100]
+                    logger.warning(f"  Div {i}: {div_text}")
+                
+                # Try alternative approach: look for links with job-related patterns
+                job_links = page.locator("a[href*='jobposting']").all()
+                logger.warning(f"  Found {len(job_links)} job posting links")
+                if len(job_links) > 0:
+                    # Use job links as card elements
+                    job_card_elements = job_links
+            
+            for i, card in enumerate(job_card_elements[:limit]):
+                try:
+                    # Extract job title
+                    title_elem = card.locator("a.jobTitle, h3, h2, a.result-job-title, span.job-title").first
+                    job_title = title_elem.inner_text() if title_elem.count() > 0 else "Untitled Position"
+                    
+                    # Extract company
+                    company_elem = card.locator("span.businessName, div.company, span.company-name, div[data-testid='company-name']").first
+                    company = company_elem.inner_text() if company_elem.count() > 0 else "Confidential"
+                    
+                    # Extract location
+                    location_elem = card.locator("span.location, div.location, span[data-testid='text-location']").first
+                    location = location_elem.inner_text() if location_elem.count() > 0 else region.upper()
+                    
+                    # Extract salary
+                    salary_elem = card.locator("span.salary, div.salary, div[data-testid='salary-snippet-container']").first
+                    salary = salary_elem.inner_text() if salary_elem.count() > 0 else "Not specified"
+                    
+                    # Extract apply URL
+                    link_elem = card.locator("a[href]").first
+                    apply_url = link_elem.get_attribute("href") if link_elem.count() > 0 else "#"
+                    if apply_url and apply_url.startswith("/"):
+                        apply_url = BASE_URL + apply_url
+                    
+                    # Extract job ID
+                    job_id_match = re.search(r'/(\d+)/', apply_url)
+                    job_id_str = job_id_match.group(1) if job_id_match else f"ca_{int(time.time() * 1000)}_{i}"
+                    
+                    # Extract email using regex from card text
+                    card_text = card.inner_text()
+                    email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', card_text)
+                    extracted_email = email_match.group(0) if email_match else None
+                    
+                    # Extract phone using regex
+                    phone_match = re.search(r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4,6}|\+?\d{10,15}', card_text)
+                    extracted_phone = phone_match.group(0) if phone_match else None
+                    
+                    # Extract decision maker using heuristic
+                    decision_maker_match = None
+                    decision_maker_keywords = ["hr", "human resources", "recruiter", "hiring manager", "talent acquisition", "recruitment", "personnel"]
+                    for keyword_dm in decision_maker_keywords:
+                        if keyword_dm in card_text.lower():
+                            keyword_idx = card_text.lower().find(keyword_dm)
+                            context_start = max(0, keyword_idx - 50)
+                            context_end = min(len(card_text), keyword_idx + 50)
+                            context = card_text[context_start:context_end]
+                            name_match = re.search(r'\b[A-Z][a-z]+ [A-Z][a-z]+\b', context)
+                            if name_match:
+                                decision_maker_match = name_match.group(0)
+                                break
+                    extracted_decision_maker = decision_maker_match if decision_maker_match else None
+                    
+                    # Get region metadata
+                    region_meta = CANADA_REGION_BY_SLUG.get(region, {
+                        "corridor_field": "Canada / Western Corridor",
+                        "label": region.upper(),
+                        "tag": region.upper(),
+                        "sectors": ["general"]
+                    })
+                    
+                    jobs.append({
+                        "jobId": job_id_str,
+                        "title": job_title,
+                        "company": company,
+                        "location": location,
+                        "applyUrl": apply_url,
+                        "salaryText": salary,
+                        "source": "JobBank (Canada)",
+                        "zeroFeeMandate": True,
+                        "email": extracted_email,
+                        "phone": extracted_phone,
+                        "decision_maker": extracted_decision_maker,
+                        "corridor": region_meta.get("corridor_field"),
+                        "corridor_label": region_meta.get("label"),
+                        "corridor_tag": region_meta.get("tag"),
+                        "corridor_slug": region,
+                        "corridor_rank": region_meta.get("rank"),
+                        "target_sectors": region_meta.get("sectors"),
+                    })
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ [CANADA]: Failed to parse job card {i}: {e}")
+                    continue
+            
+            browser.close()
+            
+    except Exception as e:
+        logger.error(f"❌ [CANADA]: Playwright scraping failed: {e}")
+        # Fallback to static scraping if Playwright fails
+        logger.info("🔄 [CANADA]: Falling back to static scraping")
+        return scrape_canada_jobs_static(keyword, region, limit)
+
+    logger.info(f"✅ [CANADA]: Successfully extracted {len(jobs)} jobs from JobBank.ca with Playwright")
+    return jobs
+
+def scrape_canada_jobs_static(keyword: str, region: str = "on", limit: int = 20) -> list[dict]:
+    """
+    Fallback static scraper for JobBank.ca (original implementation).
+    """
+    logger.info(f"🔍 [CANADA]: Scraping JobBank.ca (static) for keyword: {keyword} in region: {region}")
 
     url = get_jobbank_url(keyword, region, limit)
     
