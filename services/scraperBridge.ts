@@ -38,3 +38,35 @@ export async function scrapeBaytJobs(
     throw error
   }
 }
+
+const ADMIN_TOKEN_STORAGE_KEY = 'gp_admin_auth_token';
+
+export async function scrapeWesternCorridors(
+  limitPerSector: number = 20,
+  includeExpanded: boolean = false
+): Promise<any> {
+  const token = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch('/api/scrape/western-corridors', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      limit_per_sector: limitPerSector,
+      include_expanded: includeExpanded,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Western corridors sync failed: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}

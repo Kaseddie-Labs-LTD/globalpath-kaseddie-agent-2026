@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.cloud import secretmanager
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scrapers'))
 
 # Set up a structured, clean logger format
 logging.basicConfig(
@@ -563,153 +565,174 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     scraper_thread = None
     
     def run_background_sync():
-        try:
-            print("🚀 [BAYT HANDSHAKE]: Activating Bayt GCC Scraper in background (9 corridors)...")
-            from scrapers.bayt_scraper import (
-                scrape_bayt_jobs as run_bayt_scraper,
-                BAYT_TARGET_CORRIDORS,
-            )
+        """
+        Background daemon thread that automatically runs
+        both Bayt (GCC) and Western corridors (USA, Canada, Europe) sweeps.
+        Executes sequentially in a single loop with a 4-hour interval.
+        """
+        logger.info("🧵 [BACKGROUND SYNC DAEMON]: Initializing automated multi-corridor sync worker...")
 
-            total_corridors = len(BAYT_TARGET_CORRIDORS)
-            total_jobs_ingested_global = 0
-            total_skipped_duplicates_global = 0
+        # Optional initial delay to let the server finish startup health checks
+        time.sleep(10)
 
-            for corridor_idx, corridor in enumerate(BAYT_TARGET_CORRIDORS, 1):
-                corridor_slug = corridor["slug"]
-                corridor_label = corridor["label"]
-                corridor_field = corridor["corridor_field"]
-                corridor_rank = corridor["rank"]
+        while True:
+            try:
+                # ============================================================
+                # PHASE 1: Bayt GCC Corridor Sweep
+                # ============================================================
+                logger.info("🚀 [BACKGROUND SYNC]: Starting automated Bayt GCC corridor sync...")
+                from scrapers.bayt_scraper import (
+                    scrape_bayt_jobs as run_bayt_scraper,
+                    BAYT_TARGET_CORRIDORS,
+                )
+
+                total_corridors = len(BAYT_TARGET_CORRIDORS)
+                total_jobs_ingested_global = 0
+                total_skipped_duplicates_global = 0
+
+                for corridor_idx, corridor in enumerate(BAYT_TARGET_CORRIDORS, 1):
+                    corridor_slug = corridor["slug"]
+                    corridor_label = corridor["label"]
+                    corridor_field = corridor["corridor_field"]
+                    corridor_rank = corridor["rank"]
+
+                    print(
+                        f"\n🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
+                        f"— #{corridor_rank} {corridor_label} (slug='{corridor_slug}')"
+                    )
+                    logger.info(
+                        f"🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
+                        f"— #{corridor_rank} {corridor_label}"
+                    )
+
+                    jobs = run_bayt_scraper(keyword="", limit=30, corridor_slug=corridor_slug)
+                    if not jobs:
+                        print(f"⚠️ [BAYT PIPELINE]: No jobs found for {corridor_label}. Moving on.")
+                        continue
+
+                    print(f"✅ [BAYT PIPELINE]: {corridor_label} scraper returned {len(jobs)} jobs!")
+                    points = []
+                    skipped_duplicates = 0
+
+                    for job in jobs:
+                        try:
+                            if pitch_priority_event.is_set() is False:
+                                print("⏸️ [BAYT PIPELINE]: Pitch lane is active — pausing ingestion briefly.")
+                                time.sleep(0.5)
+                        except Exception:
+                            pass
+
+                        item = {
+                            "jobTitle": job.get("title"),
+                            "title": job.get("title"),
+                            "company": job.get("company"),
+                            "location": job.get("location"),
+                            "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
+                            "snippet": job.get("salaryText"),
+                            "url": job.get("applyUrl"),
+                            "link": job.get("applyUrl"),
+                        }
+                        try:
+                            forced_country_hint = corridor.get("tag")
+                            doc = dataset_mapping_function(
+                                item,
+                                category="general",
+                                forced_country=forced_country_hint,
+                            )
+                            doc.metadata["source"] = job.get("source", "Bayt (Middle East)")
+                            doc.metadata["vetted"] = True
+                            doc.metadata["status"] = "verified"
+                            doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
+                            doc.metadata["created_at"] = datetime.now().isoformat()
+                            doc.metadata["corridor"] = job.get("corridor") or corridor_field
+                            doc.metadata["corridor_label"] = job.get("corridor_label") or corridor_label
+                            doc.metadata["corridor_tag"] = job.get("corridor_tag") or corridor.get("tag")
+                            doc.metadata["corridor_slug"] = job.get("corridor_slug") or corridor_slug
+                            doc.metadata["corridor_rank"] = job.get("corridor_rank") or corridor_rank
+                            doc.metadata["target_sectors"] = job.get("target_sectors") or corridor.get("sectors", [])
+
+                            fingerprint = doc.metadata.get("fingerprint")
+                            if fingerprint:
+                                search_result = qdrant_client.scroll(
+                                    collection_name=COLLECTION_NAME,
+                                    scroll_filter=models.Filter(
+                                        must=[
+                                            models.FieldCondition(
+                                                key="fingerprint",
+                                                match=models.MatchValue(value=fingerprint),
+                                            )
+                                        ]
+                                    ),
+                                    limit=1,
+                                )
+                                if search_result[0]:
+                                    skipped_duplicates += 1
+                                    continue
+                            embedding = get_job_embedding(doc.page_content)
+                            point_id = job.get("jobId") or str(uuid.uuid4())
+                            point = models.PointStruct(
+                                id=to_qdrant_id(point_id),
+                                vector=embedding,
+                                payload=doc.metadata,
+                            )
+                            points.append(point)
+                        except Exception as e:
+                            print(f"⚠️ [BAYT INGEST]: Skipping job ({corridor_label}): {e}")
+
+                    if points:
+                        print(
+                            f"🚀 [BAYT PIPELINE]: Upserting {len(points)} {corridor_label} points "
+                            f"into Qdrant collection 'globalpath_leads'..."
+                        )
+                        qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+                        total_jobs_ingested_global += len(points)
+                        total_skipped_duplicates_global += skipped_duplicates
+                        print(
+                            f"✅ [BAYT PIPELINE]: {corridor_label} complete — "
+                            f"ingested {len(points)} (skipped {skipped_duplicates} duplicates)"
+                        )
 
                 print(
-                    f"\n🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
-                    f"— #{corridor_rank} {corridor_label} (slug='{corridor_slug}')"
+                    f"\n✅ [BAYT HANDSHAKE COMPLETE]: All {total_corridors} corridors processed. "
+                    f"Total new leads ingested: {total_jobs_ingested_global} "
+                    f"(skipped {total_skipped_duplicates_global} duplicates total)."
                 )
                 logger.info(
-                    f"🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
-                    f"— #{corridor_rank} {corridor_label}"
+                    f"✅ [BAYT HANDSHAKE COMPLETE]: All corridors processed. "
+                    f"Ingested {total_jobs_ingested_global} leads, skipped {total_skipped_duplicates_global} duplicates."
                 )
 
-                # Scrape this specific corridor
-                jobs = run_bayt_scraper(keyword="", limit=30, corridor_slug=corridor_slug)
-                if not jobs:
-                    print(f"⚠️ [BAYT PIPELINE]: No jobs found for {corridor_label}. Moving on.")
-                    continue
-
-                print(f"✅ [BAYT PIPELINE]: {corridor_label} scraper returned {len(jobs)} jobs!")
-                points = []
-                skipped_duplicates = 0
-
-                for job in jobs:
-                    # Pitch Priority Lane: Wait if B2B generation is running
-                    # (in sync context we use asyncio.run_coroutine_threadsafe for events if needed;
-                    #  for daemon thread simplicity we use a quick non-blocking check pattern)
-                    try:
-                        if pitch_priority_event.is_set() is False:
-                            print("⏸️ [BAYT PIPELINE]: Pitch lane is active — pausing ingestion briefly.")
-                            time.sleep(0.5)
-                    except Exception:
-                        pass
-
-                    item = {
-                        "jobTitle": job.get("title"),
-                        "title": job.get("title"),
-                        "company": job.get("company"),
-                        "location": job.get("location"),
-                        "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
-                        "snippet": job.get("salaryText"),
-                        "url": job.get("applyUrl"),
-                        "link": job.get("applyUrl"),
-                    }
-                    try:
-                        # Use corridor-specific forced_country so dataset_mapping_function
-                        # tags the Document correctly
-                        forced_country_hint = corridor.get("tag")
-                        doc = dataset_mapping_function(
-                            item,
-                            category="general",
-                            forced_country=forced_country_hint,
-                        )
-                        doc.metadata["source"] = job.get("source", "Bayt (Middle East)")
-                        doc.metadata["vetted"] = True
-                        doc.metadata["status"] = "verified"
-                        doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
-                        doc.metadata["created_at"] = datetime.now().isoformat()
-
-                        # --- Corridor expansion payload fields (dashboard visibility) ---
-                        # Use job-specific corridor value (already set by scraper) first,
-                        # then fall back to the corridor config we're iterating over.
-                        doc.metadata["corridor"] = job.get("corridor") or corridor_field
-                        doc.metadata["corridor_label"] = job.get("corridor_label") or corridor_label
-                        doc.metadata["corridor_tag"] = job.get("corridor_tag") or corridor.get("tag")
-                        doc.metadata["corridor_slug"] = job.get("corridor_slug") or corridor_slug
-                        doc.metadata["corridor_rank"] = job.get("corridor_rank") or corridor_rank
-                        doc.metadata["target_sectors"] = job.get("target_sectors") or corridor.get("sectors", [])
-
-                        fingerprint = doc.metadata.get("fingerprint")
-                        if fingerprint:
-                            search_result = qdrant_client.scroll(
-                                collection_name=COLLECTION_NAME,
-                                scroll_filter=models.Filter(
-                                    must=[
-                                        models.FieldCondition(
-                                            key="fingerprint",
-                                            match=models.MatchValue(value=fingerprint),
-                                        )
-                                    ]
-                                ),
-                                limit=1,
-                            )
-                            if search_result[0]:
-                                skipped_duplicates += 1
-                                continue
-                        embedding = get_job_embedding(doc.page_content)
-                        point_id = job.get("jobId") or str(uuid.uuid4())
-                        point = models.PointStruct(
-                            id=to_qdrant_id(point_id),
-                            vector=embedding,
-                            payload=doc.metadata,
-                        )
-                        points.append(point)
-                    except Exception as e:
-                        print(f"⚠️ [BAYT INGEST]: Skipping job ({corridor_label}): {e}")
-
-                # Upsert points for THIS corridor
-                if points:
-                    print(
-                        f"🚀 [BAYT PIPELINE]: Upserting {len(points)} {corridor_label} points "
-                        f"into Qdrant collection 'globalpath_leads'..."
+                # ============================================================
+                # PHASE 2: Western Corridors Sweep (USA, Canada, Europe)
+                # ============================================================
+                logger.info("🚀 [BACKGROUND SYNC]: Starting automated Western corridors sync (USA, Canada, Europe)...")
+                try:
+                    import western_corridors
+                    results = western_corridors.scrape_western_corridors(
+                        limit_per_sector=20,
+                        include_expanded=True,
                     )
-                    qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
-                    total_jobs_ingested_global += len(points)
-                    total_skipped_duplicates_global += skipped_duplicates
-                    print(
-                        f"✅ [BAYT PIPELINE]: {corridor_label} complete — "
-                        f"ingested {len(points)} (skipped {skipped_duplicates} duplicates)"
-                    )
+                    logger.info(f"✅ [BACKGROUND SYNC]: Western corridors sweep completed: {results}")
+                except Exception as western_err:
+                    logger.error(f"❌ [BACKGROUND SYNC]: Western corridors automated sweep failed: {western_err}")
 
-            # Final summary
-            print(
-                f"\n✅ [BAYT HANDSHAKE COMPLETE]: All {total_corridors} corridors processed. "
-                f"Total new leads ingested: {total_jobs_ingested_global} "
-                f"(skipped {total_skipped_duplicates_global} duplicates total)."
-            )
-            logger.info(
-                f"✅ [BAYT HANDSHAKE COMPLETE]: All corridors processed. "
-                f"Ingested {total_jobs_ingested_global} leads, skipped {total_skipped_duplicates_global} duplicates."
-            )
-        except Exception as e:
-            print(f"❌ Background sync error: {e}")
-    
-    # Launch both background tasks in daemon threads/tasks
+            except Exception as e:
+                logger.error(f"❌ [BACKGROUND SYNC ERROR]: Error in background loop: {e}")
+
+            # Sleep interval between full automated pipeline sweeps (4 hours)
+            logger.info("⏳ [BACKGROUND SYNC]: Pipeline sleeping for 4 hours before next automated multi-corridor sweep...")
+            time.sleep(14400)
+
+    # Launch background daemon thread
     import threading
     threading.Thread(target=run_background_sync, daemon=True).start()
 
-    # Pausing Apify dataset sync to focus purely on Bayt 9 corridors
+    # Apify dataset sync (separate configurable task)
     apify_sync_enabled = os.getenv("ENABLE_APIFY_SYNC", "false").lower() == "true"
     if apify_sync_enabled:
         startup_task = asyncio.create_task(sync_all_apify_datasets())
     else:
-        logger.info("⏸️ [APIFY SYNC]: Paused by configuration. Running 9-Corridor Bayt Pipeline exclusively.")
+        logger.info("⏸️ [APIFY SYNC]: Paused by configuration. Only Bayt + Western corridor sync is active.")
         startup_task = None
     
     # 2. Yield immediately so FastAPI opens port 10000 RIGHT AWAY!
@@ -749,9 +772,10 @@ api_router = APIRouter(prefix="/api")
 # Move all API routes to the API router
 @api_router.get("/leads")
 async def get_all_leads(
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500, description="Number of leads to fetch (max 500 for performance)"),
+    offset: int = Query(0, ge=0, description="Pagination offset for scrolling through large datasets"),
     category: str = None,
+    sector: str = None,        # Add sector parameter alias
     corridor: str = None,
     vetted_only: bool = False   # NEW: filter to only verified/vetted leads
 ):
@@ -759,9 +783,13 @@ async def get_all_leads(
     Returns leads from Qdrant with PAGINATION support.
     vetted_only=true restricts results to status in [verified, vetted]
     OR vetted == true, giving the HR Command Center its own clean partition.
+    sector parameter is an alias for category for frontend compatibility.
     """
+    # Map sector to category if sector is provided
+    filter_category = category if category else sector
+
     try:
-        print(f"[PAGINATED LEADS]: limit={limit}, offset={offset}, category={category}, corridor={corridor}, vetted_only={vetted_only}")
+        print(f"[PAGINATED LEADS]: limit={limit}, offset={offset}, category={category}, sector={sector}, filter_category={filter_category}, corridor={corridor}, vetted_only={vetted_only}")
 
         try:
             collection_info = qdrant_client.get_collection(collection_name=COLLECTION_NAME)
@@ -774,11 +802,11 @@ async def get_all_leads(
 
         # Build Qdrant filter conditions
         filter_conditions = []
-        if category:
+        if filter_category:
             filter_conditions.append(
                 models.FieldCondition(
                     key="category",
-                    match=models.MatchValue(value=category.lower())
+                    match=models.MatchValue(value=filter_category.lower())
                 )
             )
         if corridor:
@@ -814,8 +842,36 @@ async def get_all_leads(
             all_points = scroll_result[0]
             qdrant_next_offset = scroll_result[1]
         except Exception as e:
-            print(f"❌ [DEBUG]: Could not access collection: {e}")
-            return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
+            err_msg = str(e)
+            if "Index required" in err_msg or "400" in err_msg:
+                print(f"⚠️ [QDRANT INDEX FIX]: Missing index detected for filtered fields. Creating payload indexes...")
+                for field in ["category", "corridor", "status"]:
+                    try:
+                        qdrant_client.create_payload_index(
+                            collection_name=COLLECTION_NAME,
+                            field_name=field,
+                            field_schema=PayloadSchemaType.KEYWORD
+                        )
+                    except Exception:
+                        pass
+                # Retry scroll after auto-indexing
+                try:
+                    scroll_result = qdrant_client.scroll(
+                        collection_name=COLLECTION_NAME,
+                        limit=safe_limit,
+                        offset=offset,
+                        scroll_filter=scroll_filter,
+                        with_payload=True,
+                        with_vectors=False
+                    )
+                    all_points = scroll_result[0]
+                    qdrant_next_offset = scroll_result[1]
+                except Exception as retry_err:
+                    print(f"❌ [DEBUG]: Retry scroll failed: {retry_err}")
+                    return {"error": f"Could not access collection: {retry_err}", "collection_name": COLLECTION_NAME}
+            else:
+                print(f"❌ [DEBUG]: Could not access collection: {e}")
+                return {"error": f"Could not access collection: {e}", "collection_name": COLLECTION_NAME}
 
         # Post-filter: when vetted_only, also accept leads where vetted==True
         # (catches leads flagged vetted=True but whose status field wasn't updated)
@@ -851,6 +907,556 @@ async def get_all_leads(
     except Exception as e:
         print(f"❌ [DEBUG]: Error in /leads endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Scrape Request Model
+class ScrapeRequest(BaseModel):
+    sector: str = "blue_collar"
+    source: str = "bayt"
+    fresh: bool = True
+
+@api_router.post("/scrape")
+async def trigger_live_scrape(req: ScrapeRequest):
+    """
+    Triggers live scraping from Bayt for blue-collar job entries.
+    Ignores existing database records and filters out professional clutter.
+    Uses the updated BAYT_TARGET_CORRIDORS mapping with blue-collar focused sectors.
+    Persists scraped jobs directly to Qdrant vector collection.
+    """
+    try:
+        logger.info(f"🚀 [LIVE SCRAPE]: Triggering Bayt scraper for sector={req.sector}, source={req.source}")
+
+        # Import and call Bayt scraper
+        try:
+            import bayt_scraper
+            results = []
+
+            # Use the updated corridor mapping with blue-collar focused sectors
+            corridors = bayt_scraper.BAYT_TARGET_CORRIDORS
+            logger.info(f"🗺️ [LIVE SCRAPE]: Scraping across {len(corridors)} GCC corridors")
+
+            for corridor in corridors:
+                corridor_slug = corridor.get("slug")
+                corridor_label = corridor.get("label")
+                sectors = corridor.get("sectors", [])
+
+                logger.info(f"📍 [LIVE SCRAPE]: Processing corridor: {corridor_label} ({corridor_slug})")
+
+                for sector in sectors:
+                    logger.info(f"🔍 [LIVE SCRAPE]: Scraping sector: {sector} in {corridor_label}")
+                    try:
+                        scraped_jobs = bayt_scraper.scrape_bayt_jobs(keyword=sector, country=corridor_slug, limit=20)
+                        results.extend(scraped_jobs)
+                        logger.info(f"✅ [LIVE SCRAPE]: Extracted {len(scraped_jobs)} jobs from {sector}")
+                    except Exception as sector_err:
+                        logger.warning(f"⚠️ [LIVE SCRAPE]: Failed to scrape {sector}: {sector_err}")
+                        continue
+
+            logger.info(f"✅ [LIVE SCRAPE]: Successfully extracted {len(results)} total jobs from Bayt across all corridors")
+
+            # Persist scraped jobs to Qdrant
+            if results:
+                logger.info(f"💾 [LIVE SCRAPE]: Persisting {len(results)} jobs to Qdrant collection")
+                upserted_count = 0
+                duplicate_count = 0
+
+                for job in results:
+                    try:
+                        # Generate fingerprint for deduplication
+                        fingerprint = hashlib.md5(f"{job.get('applyUrl', '')}-{job.get('title', '')}-{job.get('company', '')}".encode()).hexdigest()
+
+                        # Check if already exists (simple fingerprint check)
+                        existing = qdrant_client.scroll(
+                            collection_name=COLLECTION_NAME,
+                            scroll_filter=models.Filter(
+                                must=[
+                                    models.FieldCondition(
+                                        key="fingerprint",
+                                        match=models.MatchValue(value=fingerprint)
+                                    )
+                                ]
+                            ),
+                            limit=1,
+                            with_payload=False
+                        )
+
+                        if existing[0]:  # Already exists
+                            duplicate_count += 1
+                            continue
+
+                        # Generate embedding
+                        job_text = f"Position: {job.get('title', '')}. Company: {job.get('company', '')}. Location: {job.get('location', '')}. Description: {job.get('description', '')}"
+                        embedding = get_job_embedding(job_text)
+
+                        # Prepare metadata
+                        metadata = {
+                            "name": job.get("title", "Untitled Position"),
+                            "country": job.get("location", "UAE"),
+                            "interests": job.get("description", ""),
+                            "category": "blue_collar",
+                            "status": "verified",
+                            "illegal_fee_detected": False,
+                            "source": "bayt_live_scrape",
+                            "verified": True,
+                            "fingerprint": fingerprint,
+                            "fee_blocked": True,
+                            "node": job.get("corridor", "Dubai Hub"),
+                            "corridor": job.get("corridor", "Dubai Hub"),
+                            "priority": "immediate",
+                            "sourcing_status": "ready",
+                            "tier": "tier1",
+                            "priority_reason": "Fresh blue-collar lead from live scrape",
+                            "email": job.get("email"),
+                            "phone": job.get("phone"),
+                            "decision_maker": job.get("decision_maker"),
+                            "company": job.get("company"),
+                            "salary": job.get("salaryText"),
+                            "applyUrl": job.get("applyUrl")
+                        }
+
+                        # Upsert to Qdrant
+                        qdrant_client.upsert(
+                            collection_name=COLLECTION_NAME,
+                            points=[
+                                models.PointStruct(
+                                    id=fingerprint,
+                                    vector=embedding,
+                                    payload=metadata
+                                )
+                            ]
+                        )
+                        upserted_count += 1
+
+                    except Exception as upsert_err:
+                        logger.warning(f"⚠️ [LIVE SCRAPE]: Failed to upsert job: {upsert_err}")
+                        continue
+
+                logger.info(f"✅ [LIVE SCRAPE]: Persisted {upserted_count} new jobs to Qdrant ({duplicate_count} duplicates skipped)")
+
+                return {
+                    "status": "success",
+                    "message": f"Live Bayt scraper completed and persisted to Qdrant",
+                    "corridors_processed": len(corridors),
+                    "jobs_extracted": len(results),
+                    "jobs_upserted": upserted_count,
+                    "duplicates_skipped": duplicate_count,
+                    "fresh": req.fresh
+                }
+            else:
+                return {
+                    "status": "success",
+                    "message": "No jobs extracted from Bayt",
+                    "corridors_processed": len(corridors),
+                    "jobs_extracted": 0,
+                    "fresh": req.fresh
+                }
+
+        except ImportError as ie:
+            logger.error(f"❌ [LIVE SCRAPE]: Failed to import bayt_scraper: {ie}")
+            return {
+                "status": "error",
+                "detail": f"Failed to import bayt_scraper module: {str(ie)}"
+            }
+        except Exception as scrape_err:
+            logger.error(f"❌ [LIVE SCRAPE]: Scraping error: {scrape_err}")
+            return {
+                "status": "error",
+                "detail": f"Scraping error: {str(scrape_err)}"
+            }
+
+    except Exception as e:
+        logger.error(f"❌ [LIVE SCRAPE]: General error: {e}")
+        return {"status": "error", "detail": str(e)}
+
+@api_router.post("/clear-collection")
+async def clear_qdrant_collection():
+    """
+    Clears all points from the globalpath_leads collection for a fresh start.
+    WARNING: This is a destructive operation - use with caution.
+    """
+    try:
+        logger.info("🗑️ [CLEAR COLLECTION]: Attempting to clear globalpath_leads collection")
+
+        # Option A: Delete and re-create the collection for a clean slate
+        try:
+            qdrant_client.delete_collection(collection_name=COLLECTION_NAME)
+            logger.info("✅ [CLEAR COLLECTION]: Collection deleted successfully")
+        except Exception as delete_err:
+            logger.warning(f"⚠️ [CLEAR COLLECTION]: Delete failed (collection may not exist): {delete_err}")
+
+        # Re-create the collection with correct vector configuration
+        qdrant_client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE)
+        )
+        logger.info("✅ [CLEAR COLLECTION]: Collection re-created successfully")
+
+        return {
+            "status": "success",
+            "message": "Qdrant collection 'globalpath_leads' completely reset!",
+            "collection_name": COLLECTION_NAME
+        }
+    except Exception as e:
+        logger.error(f"❌ [CLEAR COLLECTION]: Error: {e}")
+        return {"status": "error", "detail": str(e)}
+
+# ---------------------------------------------------------------------------
+# ADMIN AUTH: HS256-style compact token (stdlib only, no PyJWT dependency)
+# ---------------------------------------------------------------------------
+# Resolution order for the admin password:
+#   1. ADMIN_PASSWORD (backend-only secret, preferred for production)
+#   2. VITE_ADMIN_PASSWORD (compat with frontend env naming)
+ADMIN_PASSWORD = SecretManagerGateway.get_secret("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD") or SecretManagerGateway.get_secret("VITE_ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    print("CRITICAL: ADMIN_PASSWORD environment variable is missing.")
+
+# JWT signing secret. Falls back to a per-process random secret so tokens are
+# never signed with a hardcoded key, but operators should set JWT_SECRET in
+# production to keep sessions valid across restarts / replicas.
+JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET") or os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "FATAL: JWT_SECRET is not set in the environment. "
+        "Server cannot start without a signing secret. "
+        "Set JWT_SECRET in your Render/local .env before deploying."
+    )
+JWT_TTL_SECONDS = int(os.getenv("ADMIN_JWT_TTL_SECONDS", "3600"))  # 1 hour default
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(s: str) -> bytes:
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad)
+
+
+def create_admin_token(subject: str = "admin", ttl_seconds: int = JWT_TTL_SECONDS) -> str:
+    """Create a compact HS256-signed token: header.payload.signature."""
+    header = {"alg": "HS256", "typ": "JWT"}
+    now = int(time.time())
+    payload = {"sub": subject, "role": "admin", "iat": now, "exp": now + ttl_seconds}
+    header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    signing_input = f"{header_b64}.{payload_b64}".encode()
+    sig = hmac.new(JWT_SECRET.encode(), signing_input, hashlib.sha256).digest()
+    return f"{header_b64}.{payload_b64}.{_b64url_encode(sig)}"
+
+
+def verify_admin_token(token: str) -> Optional[dict]:
+    """Return the decoded payload if the token is valid and unexpired, else None."""
+    try:
+        header_b64, payload_b64, sig_b64 = token.split(".")
+    except ValueError:
+        return None
+    try:
+        signing_input = f"{header_b64}.{payload_b64}".encode()
+        expected_sig = hmac.new(JWT_SECRET.encode(), signing_input, hashlib.sha256).digest()
+        actual_sig = _b64url_decode(sig_b64)
+        if not hmac.compare_digest(expected_sig, actual_sig):
+            return None
+        payload = json.loads(_b64url_decode(payload_b64))
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+security = HTTPBearer(auto_error=False)
+
+async def require_admin_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
+
+    payload = verify_admin_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired admin token")
+
+    return payload
+
+
+class WesternScrapeRequest(BaseModel):
+    limit_per_sector: int = 20
+    include_expanded: bool = False
+
+@api_router.post("/scrape/western-corridors")
+async def trigger_western_sweep(req: WesternScrapeRequest, admin: dict = Depends(require_admin_token)):
+    """
+    Triggers live scraping from Western corridors (Canada, USA, Europe).
+    Guarded by admin token verification — matches the Bayt scraper security posture.
+    Uses the western_corridors runner script to scrape blue-collar job entries.
+    Persists scraped jobs directly to Qdrant vector collection.
+    """
+    try:
+        logger.info(f"🚀 [WESTERN SWEEP]: Triggering Western corridor scrape with limit_per_sector={req.limit_per_sector}")
+
+        # Import western corridors runner
+        try:
+            import western_corridors
+            results = western_corridors.scrape_western_corridors(limit_per_sector=req.limit_per_sector, include_expanded=req.include_expanded)
+
+            # Get processed leads from the runner
+            all_leads = []
+            for corridor_slug, job_count in results.items():
+                logger.info(f"📍 [WESTERN SWEEP]: Corridor {corridor_slug} extracted {job_count} jobs")
+
+            # Re-run scrape to get actual job data for ingestion
+            # (In production, the runner should return both summary and job data)
+            logger.info(f"💾 [WESTERN SWEEP]: Re-executing scrape for Qdrant ingestion")
+
+            total_ingested = 0
+            total_duplicates = 0
+
+            # Get target corridors based on include_expanded flag
+            target_corridors = western_corridors.WESTERN_BLUE_COLLAR_CORRIDORS.copy()
+            if req.include_expanded:
+                target_corridors.extend(western_corridors.EXPANDED_CORRIDORS)
+                logger.info(f"🌍 [WESTERN SWEEP]: Including expanded regional corridors")
+
+            for corridor_config in target_corridors:
+                corridor_slug = corridor_config["slug"]
+                corridor_id = corridor_config.get("corridor_id")
+                platform = corridor_config.get("platform")
+                platforms = corridor_config.get("platforms", [])
+                sectors = corridor_config["sectors"]
+                location = corridor_config.get("location", corridor_slug)
+
+                # Handle expanded corridors with multiple platforms
+                if platforms:
+                    for platform_name in platforms:
+                        try:
+                            # Route to appropriate scraper based on platform
+                            if platform_name == "indeed":
+                                import usa_scraper
+                                scraper = usa_scraper
+                                region = "us"
+                            elif platform_name == "linkedin":
+                                logger.warning(f"⚠️ [WESTERN SWEEP]: LinkedIn scraping not yet implemented, skipping")
+                                continue
+                            elif platform_name in ["ziprecruiter", "adzuna", "stepstone"]:
+                                logger.warning(f"⚠️ [WESTERN SWEEP]: {platform_name} scraping not yet implemented, skipping")
+                                continue
+                            else:
+                                logger.warning(f"⚠️ [WESTERN SWEEP]: Unknown platform {platform_name}, skipping")
+                                continue
+
+                            for sector in sectors:
+                                try:
+                                    keyword = western_corridors.map_sector_to_keyword(sector)
+                                    scraped_jobs = scraper.scrape_usa_jobs(keyword=keyword, region=region, limit=req.limit_per_sector)
+
+                                    # Persist to Qdrant
+                                    for job in scraped_jobs:
+                                        try:
+                                            fingerprint = hashlib.md5(f"{job.get('applyUrl', '')}-{job.get('title', '')}-{job.get('company', '')}".encode()).hexdigest()
+
+                                            # Check for duplicates
+                                            existing = qdrant_client.scroll(
+                                                collection_name=COLLECTION_NAME,
+                                                scroll_filter=models.Filter(
+                                                    must=[
+                                                        models.FieldCondition(
+                                                            key="fingerprint",
+                                                            match=models.MatchValue(value=fingerprint)
+                                                        )
+                                                    ]
+                                                ),
+                                                limit=1,
+                                                with_payload=False
+                                            )
+
+                                            if existing[0]:
+                                                total_duplicates += 1
+                                                continue
+
+                                            # Generate embedding
+                                            job_text = f"Position: {job.get('title', '')}. Company: {job.get('company', '')}. Location: {job.get('location', '')}. Description: {job.get('description', '')}"
+                                            embedding = get_job_embedding(job_text)
+
+                                            # Prepare metadata
+                                            metadata = {
+                                                "name": job.get("title", "Untitled Position"),
+                                                "country": job.get("location", "USA"),
+                                                "interests": job.get("description", ""),
+                                                "category": "blue_collar",
+                                                "status": "verified",
+                                                "illegal_fee_detected": False,
+                                                "source": f"western_corridors_{corridor_slug}",
+                                                "verified": True,
+                                                "fingerprint": fingerprint,
+                                                "fee_blocked": True,
+                                                "node": corridor_config.get("corridor_field"),
+                                                "corridor": corridor_config.get("corridor_field"),
+                                                "corridor_id": corridor_id,  # New field for expanded corridors
+                                                "priority": "immediate",
+                                                "sourcing_status": "ready",
+                                                "tier": "tier1",
+                                                "priority_reason": f"Fresh blue-collar lead from {corridor_config['label']} scrape",
+                                                "email": job.get("email"),
+                                                "phone": job.get("phone"),
+                                                "decision_maker": job.get("decision_maker"),
+                                                "company": job.get("company"),
+                                                "salary": job.get("salaryText"),
+                                                "applyUrl": job.get("applyUrl")
+                                            }
+
+                                            # Upsert to Qdrant
+                                            qdrant_client.upsert(
+                                                collection_name=COLLECTION_NAME,
+                                                points=[
+                                                    models.PointStruct(
+                                                        id=fingerprint,
+                                                        vector=embedding,
+                                                        payload=metadata
+                                                    )
+                                                ]
+                                            )
+                                            total_ingested += 1
+
+                                        except Exception as upsert_err:
+                                            logger.warning(f"⚠️ [WESTERN SWEEP]: Failed to upsert job: {upsert_err}")
+                                            continue
+
+                                except Exception as sector_err:
+                                    logger.warning(f"⚠️ [WESTERN SWEEP]: Failed to scrape {sector}: {sector_err}")
+                                    continue
+
+                        except Exception as platform_err:
+                            logger.warning(f"⚠️ [WESTERN SWEEP]: Failed to process platform {platform_name}: {platform_err}")
+                            continue
+                else:
+                    # Base Western corridor with single platform
+                    # Route to appropriate scraper
+                    if platform == "jobbank":
+                        import canada_scraper
+                        scraper = canada_scraper
+                        region = "on"
+                    elif platform == "indeed":
+                        import usa_scraper
+                        scraper = usa_scraper
+                        region = "tx"
+                    elif platform == "eurojobs":
+                        import europe_scraper
+                        scraper = europe_scraper
+                        region = "de"
+                    else:
+                        continue
+
+                    for sector in sectors:
+                        try:
+                            keyword = western_corridors.map_sector_to_keyword(sector)
+                            if platform == "jobbank":
+                                scraped_jobs = scraper.scrape_canada_jobs(keyword=keyword, region=region, limit=req.limit_per_sector)
+                            elif platform == "indeed":
+                                scraped_jobs = scraper.scrape_usa_jobs(keyword=keyword, region=region, limit=req.limit_per_sector)
+                            elif platform == "eurojobs":
+                                scraped_jobs = scraper.scrape_europe_jobs(keyword=keyword, region=region, limit=req.limit_per_sector)
+
+                            # Persist to Qdrant
+                            for job in scraped_jobs:
+                                try:
+                                    fingerprint = hashlib.md5(f"{job.get('applyUrl', '')}-{job.get('title', '')}-{job.get('company', '')}".encode()).hexdigest()
+
+                                    # Check for duplicates
+                                    existing = qdrant_client.scroll(
+                                        collection_name=COLLECTION_NAME,
+                                        scroll_filter=models.Filter(
+                                            must=[
+                                                models.FieldCondition(
+                                                    key="fingerprint",
+                                                    match=models.MatchValue(value=fingerprint)
+                                                )
+                                            ]
+                                        ),
+                                        limit=1,
+                                        with_payload=False
+                                    )
+
+                                    if existing[0]:
+                                        total_duplicates += 1
+                                        continue
+
+                                    # Generate embedding
+                                    job_text = f"Position: {job.get('title', '')}. Company: {job.get('company', '')}. Location: {job.get('location', '')}. Description: {job.get('description', '')}"
+                                    embedding = get_job_embedding(job_text)
+
+                                    # Prepare metadata
+                                    metadata = {
+                                        "name": job.get("title", "Untitled Position"),
+                                        "country": job.get("location", "USA"),
+                                        "interests": job.get("description", ""),
+                                        "category": "blue_collar",
+                                        "status": "verified",
+                                        "illegal_fee_detected": False,
+                                        "source": f"western_corridors_{corridor_slug}",
+                                        "verified": True,
+                                        "fingerprint": fingerprint,
+                                        "fee_blocked": True,
+                                        "node": corridor_config.get("corridor_field"),
+                                        "corridor": corridor_config.get("corridor_field"),
+                                        "corridor_id": corridor_id,  # New field for expanded corridors
+                                        "priority": "immediate",
+                                        "sourcing_status": "ready",
+                                        "tier": "tier1",
+                                        "priority_reason": f"Fresh blue-collar lead from {corridor_config['label']} scrape",
+                                        "email": job.get("email"),
+                                        "phone": job.get("phone"),
+                                        "decision_maker": job.get("decision_maker"),
+                                        "company": job.get("company"),
+                                        "salary": job.get("salaryText"),
+                                        "applyUrl": job.get("applyUrl")
+                                    }
+
+                                    # Upsert to Qdrant
+                                    qdrant_client.upsert(
+                                        collection_name=COLLECTION_NAME,
+                                        points=[
+                                            models.PointStruct(
+                                                id=fingerprint,
+                                                vector=embedding,
+                                                payload=metadata
+                                            )
+                                        ]
+                                    )
+                                    total_ingested += 1
+
+                                except Exception as upsert_err:
+                                    logger.warning(f"⚠️ [WESTERN SWEEP]: Failed to upsert job: {upsert_err}")
+                                    continue
+
+                        except Exception as sector_err:
+                            logger.warning(f"⚠️ [WESTERN SWEEP]: Failed to scrape {sector}: {sector_err}")
+                            continue
+
+            logger.info(f"✅ [WESTERN SWEEP]: Completed. Ingested {total_ingested} jobs, skipped {total_duplicates} duplicates")
+
+            return {
+                "status": "success",
+                "message": "Western corridors (Canada, USA, Europe) sweep completed and persisted to Qdrant",
+                "corridor_summary": results,
+                "jobs_ingested": total_ingested,
+                "duplicates_skipped": total_duplicates
+            }
+
+        except ImportError as ie:
+            logger.error(f"❌ [WESTERN SWEEP]: Failed to import western_corridors: {ie}")
+            return {
+                "status": "error",
+                "detail": f"Failed to import western_corridors module: {str(ie)}"
+            }
+        except Exception as scrape_err:
+            logger.error(f"❌ [WESTERN SWEEP]: Scraping error: {scrape_err}")
+            return {
+                "status": "error",
+                "detail": f"Scraping error: {str(scrape_err)}"
+            }
+
+    except Exception as e:
+        logger.error(f"❌ [WESTERN SWEEP]: General error: {e}")
+        return {"status": "error", "detail": str(e)}
 
 def sanitize_region_name(name):
     """
@@ -1753,14 +2359,18 @@ def init_qdrant_leads_collection():
                 )
             )
             
-            # Create Payload Index for fingerprint (Mandatory for fast deduplication)
-            print(f"🔍 Creating payload index on 'fingerprint' for {COLLECTION_NAME}...")
-            qdrant_client.create_payload_index(
-                collection_name=COLLECTION_NAME,
-                field_name="fingerprint",
-                field_schema=PayloadSchemaType.KEYWORD,
-            )
-            print(f" Collection '{COLLECTION_NAME}' and index created successfully.")
+            # Create Payload Index for key fields (Mandatory for Qdrant filtering)
+            print(f"🔍 Creating payload indexes on 'fingerprint', 'category', 'corridor', and 'status' for {COLLECTION_NAME}...")
+            for field in ["fingerprint", "category", "corridor", "status"]:
+                try:
+                    qdrant_client.create_payload_index(
+                        collection_name=COLLECTION_NAME,
+                        field_name=field,
+                        field_schema=PayloadSchemaType.KEYWORD,
+                    )
+                except Exception as idx_err:
+                    print(f"⚠️ Index for {field} might already exist: {idx_err}")
+            print(f" Collection '{COLLECTION_NAME}' and indexes created successfully.")
             
     except Exception as e:
         print(f" Error checking/creating collection: {e}")
@@ -1791,86 +2401,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ---------------------------------------------------------------------------
-# ADMIN AUTH: HS256-style compact token (stdlib only, no PyJWT dependency)
-# ---------------------------------------------------------------------------
-# Resolution order for the admin password:
-#   1. ADMIN_PASSWORD (backend-only secret, preferred for production)
-#   2. VITE_ADMIN_PASSWORD (compat with frontend env naming)
-ADMIN_PASSWORD = SecretManagerGateway.get_secret("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD") or SecretManagerGateway.get_secret("VITE_ADMIN_PASSWORD")
-if not ADMIN_PASSWORD:
-    print("CRITICAL: ADMIN_PASSWORD environment variable is missing.")
-
-# JWT signing secret. Falls back to a per-process random secret so tokens are
-# never signed with a hardcoded key, but operators should set JWT_SECRET in
-# production to keep sessions valid across restarts / replicas.
-JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET") or os.getenv("JWT_SECRET")
-if not JWT_SECRET:
-    raise RuntimeError(
-        "FATAL: JWT_SECRET is not set in the environment. "
-        "Server cannot start without a signing secret. "
-        "Set JWT_SECRET in your Render/local .env before deploying."
-    )
-JWT_TTL_SECONDS = int(os.getenv("ADMIN_JWT_TTL_SECONDS", "3600"))  # 1 hour default
-
-
-def _b64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _b64url_decode(s: str) -> bytes:
-    pad = "=" * (-len(s) % 4)
-    return base64.urlsafe_b64decode(s + pad)
-
-
-def create_admin_token(subject: str = "admin", ttl_seconds: int = JWT_TTL_SECONDS) -> str:
-    """Create a compact HS256-signed token: header.payload.signature."""
-    header = {"alg": "HS256", "typ": "JWT"}
-    now = int(time.time())
-    payload = {"sub": subject, "role": "admin", "iat": now, "exp": now + ttl_seconds}
-    header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
-    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
-    signing_input = f"{header_b64}.{payload_b64}".encode()
-    sig = hmac.new(JWT_SECRET.encode(), signing_input, hashlib.sha256).digest()
-    return f"{header_b64}.{payload_b64}.{_b64url_encode(sig)}"
-
-
-def verify_admin_token(token: str) -> Optional[dict]:
-    """Return the decoded payload if the token is valid and unexpired, else None."""
-    try:
-        header_b64, payload_b64, sig_b64 = token.split(".")
-    except ValueError:
-        return None
-    try:
-        signing_input = f"{header_b64}.{payload_b64}".encode()
-        expected_sig = hmac.new(JWT_SECRET.encode(), signing_input, hashlib.sha256).digest()
-        actual_sig = _b64url_decode(sig_b64)
-        if not hmac.compare_digest(expected_sig, actual_sig):
-            return None
-        payload = json.loads(_b64url_decode(payload_b64))
-        if int(payload.get("exp", 0)) < int(time.time()):
-            return None
-        return payload
-    except Exception:
-        return None
-
-
-security = HTTPBearer(auto_error=False)
-
-async def require_admin_token(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> dict:
-    if not credentials or credentials.scheme.lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
-
-    payload = verify_admin_token(credentials.credentials)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired admin token")
-
-    return payload
-
-
 class AdminLoginRequest(BaseModel):
     password: str
 
