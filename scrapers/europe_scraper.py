@@ -686,69 +686,56 @@ def scrape_europe_jobs_static(keyword: str, region: str = "de", limit: int = 20)
     soup = BeautifulSoup(response.text, "html.parser")
     jobs = []
 
-    # EuroJobs.com job card structure - specific selectors only
-    job_cards = (
-        soup.find_all("div", class_="job-item") or 
-        soup.find_all("article", class_="job-posting") or
-        soup.find_all("div", class_="job-listing") or
-        soup.find_all("li", class_="job-card") or
-        soup.find_all("div", {"data-testid": "job-item"})
-    )
+    # EuroJobs.com job card structure - broad selectors for modern Bootstrap card layout
+    # Targets: Bootstrap cards (div.card), grid columns (div.col-lg-4), list items, job boxes
+    job_cards = soup.select("div.card, div.job-item, article, div.col-lg-4, div.list-item, div.job-box")
+
+    if not job_cards:
+        # Fallback: look inside container rows for dynamic column classes
+        job_cards = soup.select("div.row div[class*='col'], div.job-listing")
 
     logger.info(f"📊 [EUROPE]: Found {len(job_cards)} job cards on page")
-    
+
     # Debug: log HTML structure if no cards found
     if len(job_cards) == 0:
         logger.warning("⚠️ [EUROPE]: No job cards found, logging sample HTML structure")
-        sample_divs = soup.find_all("div", limit=10)
+        sample_divs = soup.find_all("div", limit=15)
         for i, div in enumerate(sample_divs):
             logger.warning(f"  Sample div {i}: class={div.get('class')}, id={div.get('id')}")
 
     for card in job_cards[:limit]:
         try:
-            # Extract job title - updated selectors
-            title_element = (
-                card.find("h3") or 
-                card.find("h2") or 
-                card.find("a", class_="job-title") or
-                card.find("span", class_="job-title") or
-                card.find("div", class_="job-title")
-            )
+            # Extract job title from links or heading tags inside the card
+            title_element = card.select_one("a.job-title, h3 a, h4 a, a[href*='/job/'], a[href*='details']")
+            if not title_element:
+                title_element = card.find("h3") or card.find("h2") or card.find("span", class_="job-title")
             job_title = title_element.get_text(strip=True) if title_element else "Untitled Position"
+            if len(job_title) <= 3:
+                continue
 
-            # Extract company - updated selectors
-            company_element = (
-                card.find("span", class_="company-name") or 
-                card.find("div", class_="company") or
-                card.find("span", class_="company") or
-                card.find("div", {"data-testid": "company-name"})
-            )
+            # Extract company - broad selectors for Bootstrap cards
+            company_element = card.select_one(".company-name, .employer, span.text-muted, .badge, .company")
+            if not company_element:
+                company_element = card.find("b") or card.find("strong")
             company = company_element.get_text(strip=True) if company_element else "Confidential"
 
-            # Extract location - updated selectors
-            location_element = (
-                card.find("span", class_="location") or 
-                card.find("div", class_="location") or
-                card.find("span", {"data-testid": "text-location"})
-            )
+            # Extract location
+            location_element = card.select_one(".location, .job-location, span[class*='location']")
+            if not location_element:
+                location_element = card.find("span", class_="location") or card.find("div", class_="location")
             location = location_element.get_text(strip=True) if location_element else region.upper()
 
-            # Extract salary - updated selectors
-            salary_element = (
-                card.find("span", class_="salary") or 
-                card.find("div", class_="salary") or
-                card.find("div", {"data-testid": "salary-snippet-container"})
-            )
+            # Extract salary
+            salary_element = card.select_one(".salary, .job-salary, span[class*='salary']")
             salary = salary_element.get_text(strip=True) if salary_element else "Not specified"
 
             # Extract apply URL
-            link_element = card.find("a", href=True)
-            apply_url = link_element['href'] if link_element else "#"
-            if apply_url.startswith("/"):
-                apply_url = BASE_URL + apply_url
+            link_element = card.select_one("a[href]") or card.find("a", href=True)
+            raw_href = link_element['href'] if link_element else ""
+            apply_url = f"{BASE_URL}{raw_href}" if raw_href.startswith("/") else raw_href
 
             # Extract job ID
-            job_id = re.search(r'/(\d+)/', apply_url)
+            job_id = re.search(r'/(\d+)/', apply_url) or re.search(r'-(\d+)$', raw_href)
             job_id_str = job_id.group(1) if job_id else f"eu_{int(time.time() * 1000)}"
 
             # Extract email using regex

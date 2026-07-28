@@ -145,6 +145,8 @@ function App() {
   const [hasMoreLeads, setHasMoreLeads] = useState(true);
   const LEADS_PAGE_SIZE = 100; // Reduced from 1000 to prevent large requests
   const MAX_OFFSET = 5000; // Very low max offset to prevent infinite loops
+  // Ref-based lock to prevent cascading auto-fetch after the final page resolves
+  const isFetchingRef = useRef(false);
 
   // Reset pagination state on mount to prevent stale offset from previous sessions
   useEffect(() => {
@@ -349,15 +351,23 @@ function App() {
         console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
         console.log(`📊 [PAGINATED]: Total available: ${totalLeadsAvailable}`);
         
-        // 3. Prevent auto-fetcher from running if it exceeds bounds
-        if (moreLeadsRemaining && leadsOffset < MAX_OFFSET) {
+        // 3. Prevent auto-fetcher from running if it exceeds bounds.
+        //    Strict guard: hasMoreLeads (next_offset from backend) + ref lock prevent
+        //    redundant cascading fetches after the final page resolves.
+        if (moreLeadsRemaining && leadsOffset < MAX_OFFSET && !isFetchingRef.current) {
+          isFetchingRef.current = true;
           const nextOffsetValue = leadsOffset + LEADS_PAGE_SIZE;
           if (nextOffsetValue < totalLeadsAvailable) {
             console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
             setLeadsOffset(nextOffsetValue);
+          } else {
+            isFetchingRef.current = false;
           }
-        } else if (leadsOffset >= MAX_OFFSET) {
-          console.warn('🚨 [PAGINATION]: Reached max offset, stopping auto-fetch');
+        } else {
+          isFetchingRef.current = false;
+          if (leadsOffset >= MAX_OFFSET || !moreLeadsRemaining) {
+            console.warn('🚨 [PAGINATION]: Reached max offset or no more leads, stopping auto-fetch');
+          }
         }
         
         if (leadsArray.length === 0 && leadsOffset === 0) {
@@ -525,7 +535,8 @@ function App() {
 
   // OOM PROTECTION: Load more leads function (pagination)
   const loadMoreLeads = useCallback(() => {
-    if (hasMoreLeads && !isGeneratingPitch) {
+    if (hasMoreLeads && !isGeneratingPitch && !isFetchingRef.current) {
+      isFetchingRef.current = true;
       setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);
     }
   }, [hasMoreLeads, isGeneratingPitch]);
@@ -550,18 +561,25 @@ function App() {
     }
   );
 
+  const isStatsSyncingRef = useRef(false);
+
   const fetchStats = useCallback(async () => {
+    if (isStatsSyncingRef.current) {
+      console.log('🔍 [Handshake] Sync already in progress — skipping duplicate call');
+      return;
+    }
+    isStatsSyncingRef.current = true;
     try {
       console.log("🔍 [Handshake] Syncing with SWR Telemetry...");
       let statsData = swrStats;
       let leadsData = swrLeadsResponse;
       let totalLeadsCount = 0;
 
-      // Initial or Force Refresh Fallback
+      // Initial or Force Refresh Fallback — use current paginated key to avoid resetting to page 0
       if (!statsData || !leadsData) {
         const [sRes, lRes] = await Promise.all([
           fetcher(sanitizeEndpoint('corridor-stats')),
-          fetcher(sanitizeEndpoint('leads'))
+          fetcher(sanitizeEndpoint(`/leads?limit=${LEADS_PAGE_SIZE}&offset=${leadsOffset}`))
         ]);
         statsData = sRes;
         leadsData = lRes;
@@ -719,8 +737,10 @@ function App() {
         }
       }
 
+      isStatsSyncingRef.current = false;
       return sanitizedStats;
     } catch (globalError) {
+      isStatsSyncingRef.current = false;
       console.error("[Handshake Critical]: Fallback triggered to prevent dashboard crash", globalError);
       return []; // Return empty safe array to let UI mount gracefully
     }
@@ -766,6 +786,7 @@ function App() {
         // 2. Refresh SWR data to get the latest (including any leads that were already processed)
         console.log('🔄 [REFRESH]: Refreshing SWR data after sync');
         mutateStats();
+        // Scoped mutate — only bust this page's cache; onSuccess auto-fetch is blocked by isFetchingRef guard
         mutateLeads();
   
         // 3. (Legacy/Fallback) Still keep some local fetching for immediate UI feedback if needed
