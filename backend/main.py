@@ -566,161 +566,175 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     
     def run_background_sync():
         """
-        Background daemon thread that automatically runs
-        both Bayt (GCC) and Western corridors (USA, Canada, Europe) sweeps.
-        Executes sequentially in a single loop with a 4-hour interval.
+        Background daemon thread that processes all 12 active regions:
+        – 9 Bayt GCC corridors individually
+        – 3 International corridors (Canada, USA, Europe) as a single batch block
+        Sleeps 4 hours between full sweeps.
         """
-        logger.info("🧵 [BACKGROUND SYNC DAEMON]: Initializing automated multi-corridor sync worker...")
+        logger.info("🧵 [BACKGROUND SYNC DAEMON]: Initializing 12-region sync worker...")
+        logger.info(f"🎯 Bayt GCC targets ({len(BAYT_REGIONS)}): {', '.join(BAYT_REGIONS)}")
+        logger.info(f"🎯 International targets ({len(INTERNATIONAL_REGIONS)}): {', '.join(INTERNATIONAL_REGIONS)}")
 
-        # Optional initial delay to let the server finish startup health checks
+        # Lazy registry mapping Bayt region name → corridor config
+        def get_region_handler(region_name):
+            from scrapers.bayt_scraper import (
+                scrape_bayt_jobs as run_bayt_scraper,
+                BAYT_TARGET_CORRIDORS,
+            )
+
+            BAYT_TAG_MAP = {
+                "UAE": "uae",
+                "Saudi Arabia": "saudi-arabia",
+                "Qatar": "qatar",
+                "Oman": "oman",
+                "Kuwait": "kuwait",
+                "Bahrain": "bahrain",
+                "Dubai": "dubai",
+                "Jordan": "jordan",
+                "Lebanon": "lebanon",
+            }
+
+            BAYT_SLUG_MAP = {c["slug"]: c for c in BAYT_TARGET_CORRIDORS}
+
+            slug = BAYT_TAG_MAP.get(region_name)
+            if slug and slug in BAYT_SLUG_MAP:
+                return ("bayt", run_bayt_scraper, BAYT_SLUG_MAP[slug])
+
+            return None
+
         time.sleep(10)
 
         while True:
             try:
+                total_ingested = 0
+                total_skipped = 0
+                bayt_count = len(BAYT_REGIONS)
+
                 # ============================================================
-                # PHASE 1: Bayt GCC Corridor Sweep
+                # PHASE 1: Process 9 Bayt GCC corridors individually
                 # ============================================================
-                logger.info("🚀 [BACKGROUND SYNC]: Starting automated Bayt GCC corridor sync...")
-                from scrapers.bayt_scraper import (
-                    scrape_bayt_jobs as run_bayt_scraper,
-                    BAYT_TARGET_CORRIDORS,
-                )
+                logger.info(f"🚀 [SYNC]: Starting Bayt GCC sweep ({bayt_count} regions)...")
 
-                total_corridors = len(BAYT_TARGET_CORRIDORS)
-                total_jobs_ingested_global = 0
-                total_skipped_duplicates_global = 0
+                for index, region_name in enumerate(BAYT_REGIONS, start=1):
+                    try:
+                        logger.info(f"🔄 [{index}/{bayt_count + 1}] Processing Bayt region: {region_name}")
+                        handler = get_region_handler(region_name)
+                        if handler is None:
+                            logger.warning(f"⚠️ No handler found for Bayt region: {region_name}")
+                            continue
 
-                for corridor_idx, corridor in enumerate(BAYT_TARGET_CORRIDORS, 1):
-                    corridor_slug = corridor["slug"]
-                    corridor_label = corridor["label"]
-                    corridor_field = corridor["corridor_field"]
-                    corridor_rank = corridor["rank"]
+                        _, scrape_fn, corridor = handler
+                        corridor_slug = corridor["slug"]
+                        corridor_label = corridor["label"]
 
-                    print(
-                        f"\n🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
-                        f"— #{corridor_rank} {corridor_label} (slug='{corridor_slug}')"
-                    )
-                    logger.info(
-                        f"🚀 [BAYT PIPELINE]: Corridor {corridor_idx}/{total_corridors} "
-                        f"— #{corridor_rank} {corridor_label}"
-                    )
+                        logger.info(f"🚀 [BAYT PIPELINE]: #{corridor['rank']} {corridor_label}")
 
-                    jobs = run_bayt_scraper(keyword="", limit=30, corridor_slug=corridor_slug)
-                    if not jobs:
-                        print(f"⚠️ [BAYT PIPELINE]: No jobs found for {corridor_label}. Moving on.")
-                        continue
+                        jobs = scrape_fn(keyword="", limit=30, corridor_slug=corridor_slug)
+                        if not jobs:
+                            logger.info(f"⚠️ [BAYT PIPELINE]: No jobs found for {corridor_label}. Skipping.")
+                            continue
 
-                    print(f"✅ [BAYT PIPELINE]: {corridor_label} scraper returned {len(jobs)} jobs!")
-                    points = []
-                    skipped_duplicates = 0
+                        logger.info(f"✅ [BAYT PIPELINE]: {corridor_label} returned {len(jobs)} jobs")
+                        points = []
+                        skipped_inner = 0
 
-                    for job in jobs:
-                        try:
-                            if pitch_priority_event.is_set() is False:
-                                print("⏸️ [BAYT PIPELINE]: Pitch lane is active — pausing ingestion briefly.")
-                                time.sleep(0.5)
-                        except Exception:
-                            pass
+                        for job in jobs:
+                            try:
+                                if pitch_priority_event.is_set() is False:
+                                    time.sleep(0.5)
+                            except Exception:
+                                pass
 
-                        item = {
-                            "jobTitle": job.get("title"),
-                            "title": job.get("title"),
-                            "company": job.get("company"),
-                            "location": job.get("location"),
-                            "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
-                            "snippet": job.get("salaryText"),
-                            "url": job.get("applyUrl"),
-                            "link": job.get("applyUrl"),
-                        }
-                        try:
-                            forced_country_hint = corridor.get("tag")
-                            doc = dataset_mapping_function(
-                                item,
-                                category="general",
-                                forced_country=forced_country_hint,
-                            )
-                            doc.metadata["source"] = job.get("source", "Bayt (Middle East)")
-                            doc.metadata["vetted"] = True
-                            doc.metadata["status"] = "verified"
-                            doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
-                            doc.metadata["created_at"] = datetime.now().isoformat()
-                            doc.metadata["corridor"] = job.get("corridor") or corridor_field
-                            doc.metadata["corridor_label"] = job.get("corridor_label") or corridor_label
-                            doc.metadata["corridor_tag"] = job.get("corridor_tag") or corridor.get("tag")
-                            doc.metadata["corridor_slug"] = job.get("corridor_slug") or corridor_slug
-                            doc.metadata["corridor_rank"] = job.get("corridor_rank") or corridor_rank
-                            doc.metadata["target_sectors"] = job.get("target_sectors") or corridor.get("sectors", [])
-
-                            fingerprint = doc.metadata.get("fingerprint")
-                            if fingerprint:
-                                search_result = qdrant_client.scroll(
-                                    collection_name=COLLECTION_NAME,
-                                    scroll_filter=models.Filter(
-                                        must=[
-                                            models.FieldCondition(
-                                                key="fingerprint",
-                                                match=models.MatchValue(value=fingerprint),
-                                            )
-                                        ]
-                                    ),
-                                    limit=1,
+                            item = {
+                                "jobTitle": job.get("title"),
+                                "title": job.get("title"),
+                                "company": job.get("company"),
+                                "location": job.get("location"),
+                                "description": job.get("salaryText", "") + " - Apply at " + job.get("applyUrl", ""),
+                                "snippet": job.get("salaryText"),
+                                "url": job.get("applyUrl"),
+                                "link": job.get("applyUrl"),
+                            }
+                            try:
+                                doc = dataset_mapping_function(
+                                    item,
+                                    category="general",
+                                    forced_country=corridor.get("tag"),
                                 )
-                                if search_result[0]:
-                                    skipped_duplicates += 1
-                                    continue
-                            embedding = get_job_embedding(doc.page_content)
-                            point_id = job.get("jobId") or str(uuid.uuid4())
-                            point = models.PointStruct(
-                                id=to_qdrant_id(point_id),
-                                vector=embedding,
-                                payload=doc.metadata,
-                            )
-                            points.append(point)
-                        except Exception as e:
-                            print(f"⚠️ [BAYT INGEST]: Skipping job ({corridor_label}): {e}")
+                                doc.metadata["source"] = job.get("source", "Bayt (Middle East)")
+                                doc.metadata["vetted"] = True
+                                doc.metadata["status"] = "verified"
+                                doc.metadata["zero_fee"] = job.get("zeroFeeMandate", True)
+                                doc.metadata["created_at"] = datetime.now().isoformat()
+                                doc.metadata["corridor"] = job.get("corridor") or corridor.get("corridor_field")
+                                doc.metadata["corridor_label"] = job.get("corridor_label") or corridor_label
+                                doc.metadata["corridor_tag"] = job.get("corridor_tag") or corridor.get("tag")
+                                doc.metadata["corridor_slug"] = job.get("corridor_slug") or corridor_slug
+                                doc.metadata["corridor_rank"] = job.get("corridor_rank") or corridor["rank"]
+                                doc.metadata["target_sectors"] = job.get("target_sectors") or corridor.get("sectors", [])
 
-                    if points:
-                        print(
-                            f"🚀 [BAYT PIPELINE]: Upserting {len(points)} {corridor_label} points "
-                            f"into Qdrant collection 'globalpath_leads'..."
-                        )
-                        qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
-                        total_jobs_ingested_global += len(points)
-                        total_skipped_duplicates_global += skipped_duplicates
-                        print(
-                            f"✅ [BAYT PIPELINE]: {corridor_label} complete — "
-                            f"ingested {len(points)} (skipped {skipped_duplicates} duplicates)"
-                        )
+                                fingerprint = doc.metadata.get("fingerprint")
+                                if fingerprint:
+                                    search_result = qdrant_client.scroll(
+                                        collection_name=COLLECTION_NAME,
+                                        scroll_filter=models.Filter(
+                                            must=[
+                                                models.FieldCondition(
+                                                    key="fingerprint",
+                                                    match=models.MatchValue(value=fingerprint),
+                                                )
+                                            ]
+                                        ),
+                                        limit=1,
+                                    )
+                                    if search_result[0]:
+                                        skipped_inner += 1
+                                        continue
+                                embedding = get_job_embedding(doc.page_content)
+                                point_id = job.get("jobId") or str(uuid.uuid4())
+                                point = models.PointStruct(
+                                    id=to_qdrant_id(point_id),
+                                    vector=embedding,
+                                    payload=doc.metadata,
+                                )
+                                points.append(point)
+                            except Exception as e:
+                                logger.warning(f"⚠️ [BAYT INGEST]: Skipping job ({corridor_label}): {e}")
 
-                print(
-                    f"\n✅ [BAYT HANDSHAKE COMPLETE]: All {total_corridors} corridors processed. "
-                    f"Total new leads ingested: {total_jobs_ingested_global} "
-                    f"(skipped {total_skipped_duplicates_global} duplicates total)."
-                )
-                logger.info(
-                    f"✅ [BAYT HANDSHAKE COMPLETE]: All corridors processed. "
-                    f"Ingested {total_jobs_ingested_global} leads, skipped {total_skipped_duplicates_global} duplicates."
-                )
+                        if points:
+                            logger.info(f"🚀 [BAYT PIPELINE]: Upserting {len(points)} {corridor_label} points...")
+                            qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+                            total_ingested += len(points)
+                            total_skipped += skipped_inner
+                            logger.info(f"✅ [BAYT PIPELINE]: {corridor_label} complete — ingested {len(points)} (skipped {skipped_inner} dupes)")
+
+                    except Exception as e:
+                        logger.error(f"❌ Error processing Bayt region {region_name}: {e}")
 
                 # ============================================================
-                # PHASE 2: Western Corridors Sweep (USA, Canada, Europe)
+                # PHASE 2: Process International Corridors once as a unified batch
                 # ============================================================
-                logger.info("🚀 [BACKGROUND SYNC]: Starting automated Western corridors sync (USA, Canada, Europe)...")
                 try:
+                    logger.info(f"🔄 [{bayt_count + 1}/{bayt_count + 1}] Processing International Corridors (Canada, USA, Europe)")
                     import western_corridors
                     results = western_corridors.scrape_western_corridors(
                         limit_per_sector=20,
-                        include_expanded=True,
+                        include_expanded=False,
                     )
-                    logger.info(f"✅ [BACKGROUND SYNC]: Western corridors sweep completed: {results}")
-                except Exception as western_err:
-                    logger.error(f"❌ [BACKGROUND SYNC]: Western corridors automated sweep failed: {western_err}")
+                    logger.info(f"✅ International corridors sweep completed: {results}")
+                    total_ingested += sum(results.values())
+                except Exception as e:
+                    logger.error(f"❌ Error processing international corridors: {e}")
+
+                logger.info(
+                    f"✅ [SYNC]: Full 12-corridor recruitment sweep completed. "
+                    f"Total new leads ingested: {total_ingested} (skipped {total_skipped} dupes)"
+                )
 
             except Exception as e:
                 logger.error(f"❌ [BACKGROUND SYNC ERROR]: Error in background loop: {e}")
 
-            # Sleep interval between full automated pipeline sweeps (4 hours)
-            logger.info("⏳ [BACKGROUND SYNC]: Pipeline sleeping for 4 hours before next automated multi-corridor sweep...")
+            logger.info(f"⏳ [BACKGROUND SYNC]: Pipeline sleeping for 4 hours before next sweep...")
             time.sleep(14400)
 
     # Launch background daemon thread
@@ -1770,6 +1784,21 @@ async def get_apify_status():
 # Collection settings
 COLLECTION_NAME = "globalpath_leads"
 VECTOR_SIZE = 384  # FastEmbed BAAI/bge-small-en-v1.5 output dimension
+
+# ==============================================================
+# Region Configuration (12 active targets)
+# ==============================================================
+BAYT_REGIONS = [
+    "UAE", "Saudi Arabia", "Qatar", "Oman",
+    "Kuwait", "Bahrain", "Dubai", "Jordan", "Lebanon"
+]
+
+INTERNATIONAL_REGIONS = [
+    "United States", "Canada", "Europe"
+]
+
+ACTIVE_TARGETS = BAYT_REGIONS + INTERNATIONAL_REGIONS  # Total: 12 regions
+# ==============================================================
 
 # PERSISTENT STORAGE: Use disk-based storage instead of :memory: to prevent OOM data loss
 PERSISTENT_STORAGE_PATH = os.environ.get('QDRANT_STORAGE_PATH', './qdrant_storage')
