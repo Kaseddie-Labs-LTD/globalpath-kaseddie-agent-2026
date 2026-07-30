@@ -3101,6 +3101,128 @@ async def get_transparency_data():
             "system_health": "Unknown"
         }
 
+@api_router.get("/audit/sector-report")
+async def sector_audit_report(admin: dict = Depends(require_admin_token)):
+    """
+    Full audit report of job distribution, mapping, and per-sector descriptions.
+    Groups all leads by category (blue_collar, service_domestic, professional, other)
+    and provides counts, corridor distribution, sample titles, and descriptions per sector.
+    Admin-only.
+    """
+    try:
+        all_points = []
+        offset = None
+        while True:
+            result = qdrant_client.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=1000,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False
+            )
+            batch = result[0]
+            if not batch:
+                break
+            all_points.extend(batch)
+            offset = result[1]
+            if offset is None:
+                break
+
+        total = len(all_points)
+        sectors = {"blue_collar": [], "service_domestic": [], "professional": [], "other": [], "uncategorized": []}
+        corridor_set = set()
+
+        for point in all_points:
+            p = point.payload or {}
+            cat = (p.get("category") or "uncategorized").lower()
+            if cat not in sectors:
+                cat = "uncategorized"
+            sectors[cat].append(point)
+            corr = p.get("corridor") or p.get("node") or p.get("country") or "unknown"
+            corridor_set.add(corr)
+
+        corridors = sorted(corridor_set)
+        report = {
+            "generated_at": datetime.now().isoformat(),
+            "total_leads": total,
+            "corridors_found": corridors,
+            "sector_distribution": {},
+            "sector_by_corridor": {},
+            "cross_tab": {}
+        }
+
+        # Build cross-tab: sector x corridor counts
+        for corr in corridors:
+            report["cross_tab"][corr] = {}
+            for cat in sectors:
+                report["cross_tab"][corr][cat] = 0
+            for cat, points in sectors.items():
+                for pt in points:
+                    p = pt.payload or {}
+                    c = p.get("corridor") or p.get("node") or p.get("country") or "unknown"
+                    if c == corr:
+                        report["cross_tab"][corr][cat] += 1
+
+        DESC_SAMPLE_LIMIT = 5
+        for cat, points in sectors.items():
+            count = len(points)
+            # Corridor breakdown within this sector
+            corr_counts = {}
+            for pt in points:
+                p = pt.payload or {}
+                c = p.get("corridor") or p.get("node") or p.get("country") or "unknown"
+                corr_counts[c] = corr_counts.get(c, 0) + 1
+
+            # Sample titles
+            titles = []
+            for pt in points[:15]:
+                p = pt.payload or {}
+                t = p.get("title") or p.get("name") or ""
+                if t:
+                    titles.append(t)
+
+            # Sample descriptions
+            descriptions = []
+            for pt in points[:DESC_SAMPLE_LIMIT]:
+                p = pt.payload or {}
+                d = p.get("description") or p.get("interests") or ""
+                t = p.get("title") or p.get("name") or "Untitled"
+                if d:
+                    descriptions.append({"title": t, "snippet": d[:300]})
+
+            # Fee blocked within sector
+            fee_blocked = sum(
+                1 for pt in points
+                if (pt.payload or {}).get("fee_blocked") or (pt.payload or {}).get("illegal_fee_detected")
+            )
+
+            report["sector_distribution"][cat] = {
+                "count": count,
+                "percentage": round(count / total * 100, 1) if total else 0,
+                "fee_blocked": fee_blocked,
+                "corridor_breakdown": dict(sorted(corr_counts.items(), key=lambda x: -x[1])),
+                "sample_titles": titles[:10],
+                "sample_descriptions": descriptions
+            }
+
+        report["sector_by_corridor"] = {}
+        for corr in corridors:
+            report["sector_by_corridor"][corr] = {}
+            for cat, points in sectors.items():
+                c_count = sum(
+                    1 for pt in points
+                    if ((pt.payload or {}).get("corridor") or (pt.payload or {}).get("node") or (pt.payload or {}).get("country") or "unknown") == corr
+                )
+                if c_count > 0:
+                    report["sector_by_corridor"][corr][cat] = c_count
+
+        print(f"✅ [AUDIT SECTOR REPORT]: Generated report for {total} leads across {len(corridors)} corridors")
+        return {"status": "success", "report": report}
+
+    except Exception as e:
+        print(f"❌ [AUDIT SECTOR REPORT]: Error: {e}")
+        return {"status": "error", "message": str(e)}
+
 @api_router.post("/heal-unknown-titles")
 async def heal_unknown_titles(admin: dict = Depends(require_admin_token)):
     """
@@ -4753,6 +4875,74 @@ async def force_verify_all_leads(admin: dict = Depends(require_admin_token)):
             "message": f"Failed to force verify leads: {str(e)}",
             "verified_count": 0
         }
+
+@api_router.post("/admin/reclassify-leads")
+async def reclassify_leads(admin: dict = Depends(require_admin_token)):
+    """
+    Surgically reclassifies all existing Qdrant vectors based on title/description keywords.
+    """
+    try:
+        all_points = []
+        offset = None
+        while True:
+            result = qdrant_client.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=1000,
+                offset=offset,
+                with_payload=True,
+                with_vectors=True
+            )
+            batch = result[0]
+            if not batch:
+                break
+            all_points.extend(batch)
+            offset = result[1]
+            if offset is None:
+                break
+
+        updated_count = 0
+        for point in all_points:
+            p = point.payload or {}
+            title = (p.get("title") or p.get("name") or "").lower()
+            desc = (p.get("description") or "").lower()
+            text_blob = f"{title} {desc}"
+
+            if any(kw in text_blob for kw in [
+                "manager", "director", "engineer", "analyst", "accountant",
+                "sme", "lead", "consultant", "officer", "specialist",
+                "coordinator", "executive", "developer", "expert", "architect"
+            ]):
+                new_category = "professional"
+            elif any(kw in text_blob for kw in [
+                "technician", "operator", "driver", "mechanic", "steel",
+                "construction", "laborer", "fabricator", "welder", "maintenance"
+            ]):
+                new_category = "blue_collar"
+            elif any(kw in text_blob for kw in [
+                "assistant", "retail", "hospitality", "housekeeping", "waiter",
+                "chef", "domestic", "service", "front desk", "customer", "cleaner"
+            ]):
+                new_category = "service_domestic"
+            else:
+                new_category = "professional"
+
+            if p.get("category") != new_category:
+                p["category"] = new_category
+                qdrant_client.set_payload(
+                    collection_name=COLLECTION_NAME,
+                    payload=p,
+                    points=[point.id]
+                )
+                updated_count += 1
+
+        return {
+            "status": "success",
+            "total_scanned": len(all_points),
+            "reclassified_count": updated_count
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @api_router.post("/admin/login")
 async def admin_login(req: AdminLoginRequest):
