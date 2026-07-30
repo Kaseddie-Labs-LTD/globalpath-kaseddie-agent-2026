@@ -504,8 +504,24 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae", c
         if len(jobs) >= limit:
             break
 
-        # Corrected extraction logic with specific element targeting
-        title_element = card.find('h2') or card.find('a', class_='job-title')
+        # Expanded title extraction with multi-selector + text fallback
+        title_element = card.select_one(
+            "h2 a, h3 a, h2.jb-title a, a.jb-title, .job-title a, h2, h3, .job-title, a.text-overflow"
+        )
+        raw_title = title_element.get_text(strip=True) if title_element else ""
+
+        # Fallback: if selectors missed the title, parse from card text
+        if not raw_title or raw_title.lower() in ("unknown position", "", "untitled position"):
+            card_full_text = card.get_text(separator="\n", strip=True)
+            lines = [line.strip() for line in card_full_text.split("\n") if line.strip()]
+            if lines:
+                raw_title = lines[0]
+
+        # Clean title: strip any trailing "Summary:" / "Description:" artifacts
+        job_title = re.sub(r"(Summary:|Description:).*$", "", raw_title).strip()
+        if not job_title or len(job_title) < 2:
+            job_title = "Professional Role"
+
         salary_element = card.find(class_='qa-salary') or card.find(class_='t-mute')
         link_element = card.find('a', href=True)
 
@@ -530,9 +546,11 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae", c
         # Extract salary with fallback
         salary = salary_element.get_text(strip=True) if salary_element else "Not specified"
 
-        # Extract apply URL with fallback
+        # Extract apply URL with fallback and placeholder sanitization
         raw_href = link_element['href'] if link_element else ""
         apply_url = f"{BASE_URL}{raw_href}" if raw_href.startswith("/") else raw_href
+        if not apply_url or apply_url.strip() in ("#", "javascript:void(0)", ""):
+            apply_url = ""
 
         # Extract company and location
         company = company_elem.get_text(strip=True) if company_elem else "Confidential Employer"
@@ -552,6 +570,14 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae", c
 
         # Extract Email using regex pattern
         text_content = card.get_text(separator=" ")
+
+        # Extract Summary / Job Description (Bayt often prefixes with "Summary:")
+        summary_elem = card.select_one(".summary, .p-t5, p, .jb-details")
+        summary_text = summary_elem.get_text(strip=True) if summary_elem else ""
+        if summary_text.startswith("Summary:"):
+            summary_text = summary_text.replace("Summary:", "", 1).strip()
+        description_text = summary_text or text_content[:400] if text_content else job_title
+
         email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text_content)
         extracted_email = email_match.group(0) if email_match else None
 
@@ -583,6 +609,8 @@ def scrape_bayt_jobs(keyword: str = "", limit: int = 20, country: str = "uae", c
             "location": location,
             "applyUrl": apply_url,
             "salaryText": salary_text,
+            "description": description_text or salary_text,
+            "snippet": description_text or salary_text,
             "source": "Bayt (Middle East)",
             "zeroFeeMandate": True,
             # Contact information extraction

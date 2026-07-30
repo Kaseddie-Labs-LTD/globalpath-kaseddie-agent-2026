@@ -5,6 +5,7 @@ import re
 import logging
 import os
 import time
+import random
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 from urllib.parse import urlparse, unquote, urlunparse
@@ -123,19 +124,50 @@ HEADERS = {
     "Cache-Control": "max-age=0"
 }
 
+# Rotating User-Agent pool for anti-bot evasion
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+]
+
+_SEC_CH_UA_OPTIONS = [
+    '"Not_A Brand";v="8", "Chromium";v="124", "Google Chrome";v="124"',
+    '"Not_A Brand";v="8", "Chromium";v="123", "Google Chrome";v="123"',
+    '"Not_A Brand";v="8", "Chromium";v="122", "Google Chrome";v="122"',
+]
+
+
+def _jitter_delay():
+    """Add random jitter delay (2.5-5.0s) to evade rate-limiting detection."""
+    delay = random.uniform(2.5, 5.0)
+    logger.debug(f"⏳ [USA]: Jitter delay {delay:.1f}s")
+    time.sleep(delay)
+
+
+def _rotated_headers() -> dict:
+    """Return a copy of HEADERS with a rotated User-Agent and Sec-Ch-Ua."""
+    h = HEADERS.copy()
+    h["User-Agent"] = random.choice(_USER_AGENTS)
+    h["Sec-Ch-Ua"] = random.choice(_SEC_CH_UA_OPTIONS)
+    return h
+
 # Proxy configuration - set to None if no proxy available
 PROXY = os.environ.get("THORDATA_PROXY_URL")  # e.g., "http://user:pass@proxy-server:port"
 
 def get_indeed_url(keyword: str, region: str = "tx", limit: int = 20) -> str:
     """
     Constructs Indeed.com search URL for blue-collar roles.
+    Appends filter=0 to bypass Indeed's "no results" filtering.
     """
-    # Indeed search URL pattern
     search_url = f"{BASE_URL}/jobs"
     params = {
         "q": keyword,
         "l": region,
-        "sort": "date"
+        "sort": "date",
+        "filter": "0"
     }
     query_string = "&".join([f"{k}={v}" for k, v in params.items()])
     return f"{search_url}?{query_string}"
@@ -143,23 +175,31 @@ def get_indeed_url(keyword: str, region: str = "tx", limit: int = 20) -> str:
 def scrape_usa_jobs(keyword: str, region: str = "tx", limit: int = 20) -> list[dict]:
     """
     Scrapes blue-collar job listings from Indeed.com.
+    Uses random jitter delay and rotating User-Agent to evade rate-limiting.
     Returns a list of job dictionaries with title, company, location, salary, etc.
     """
     logger.info(f"🔍 [USA]: Scraping Indeed.com for keyword: {keyword} in region: {region}")
 
+    # Add random jitter delay to evade anti-bot rate-limiting
+    _jitter_delay()
+
     url = get_indeed_url(keyword, region, limit)
     
     try:
-        # Use proxy if configured, otherwise direct request with stealth headers
         proxies = {"http": PROXY, "https": PROXY} if PROXY else None
         if PROXY:
             logger.info(f"🔒 [USA]: Using proxy: {PROXY[:20]}...")
         
-        response = requests.get(url, headers=HEADERS, proxies=proxies, timeout=30, impersonate="chrome120")
+        # Rotate User-Agent and browser fingerprint per request
+        headers = _rotated_headers()
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30, impersonate="chrome124")
         response.raise_for_status()
         logger.info(f"✅ [USA]: Successfully fetched page for {keyword}")
     except Exception as e:
-        logger.error(f"❌ [USA]: Failed to fetch page: {e}")
+        if hasattr(e, 'response') and e.response is not None and e.response.status_code == 403:
+            logger.error(f"🚀 [USA]: 403 Forbidden encountered on Indeed for {keyword} in {region}. Anti-bot wall active. Consider routing via Apify proxy actor.")
+        else:
+            logger.error(f"❌ [USA]: Failed to fetch page: {e}")
         return []
 
     soup = BeautifulSoup(response.text, "html.parser")

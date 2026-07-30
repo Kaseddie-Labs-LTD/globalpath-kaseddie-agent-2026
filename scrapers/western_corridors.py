@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Dict, List
 import sys
 import os
+import requests
+from bs4 import BeautifulSoup
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -171,30 +173,128 @@ def map_sector_to_keyword(sector: str) -> str:
     }
     return sector_keyword_map.get(sector, sector.replace("-", " "))
 
+def _fee_check(description: str) -> dict:
+    """Lightweight fee detection mirroring backend/main.py _fee_check."""
+    content_lower = description.lower()
+    illegal_keywords = ["placement fee", "recruitment cost", "processing fee", "payment required", "service charge", "visa cost", "candidate pay"]
+    has_fees = any(kw in content_lower for kw in illegal_keywords)
+    if not has_fees and "payment" in content_lower:
+        illegal_context = ["application", "visa", "processing", "upfront", "deposit"]
+        words = content_lower.split()
+        for i, w in enumerate(words):
+            if "payment" in w:
+                start, end = max(0, i - 3), min(len(words), i + 4)
+                if any(ic in words[start:end] for ic in illegal_context):
+                    has_fees = True
+                    break
+    return {"illegal_fee_detected": has_fees, "fee_blocked": has_fees}
+
+
+def classify_job_category(title: str, description: str = "") -> str:
+    """
+    Classifies incoming job records into high-level dashboard categories
+    to prevent 'Other' overflow for international corridors (Canada, USA, UK, Germany).
+    Mirrors backend/main.py classify_job_category.
+    """
+    text = f"{title} {description}".lower()
+
+    blue_collar_keywords = [
+        'driver', 'truck', 'warehouse', 'cleaner', 'cleaning', 'farm', 'worker',
+        'agricultural', 'construction', 'carpenter', 'electrician', 'plumber',
+        'mechanic', 'welder', 'laborer', 'operator', 'packer',
+        'factory', 'assembly', 'maintenance', 'logistic', 'delivery', 'forklift',
+    ]
+
+    service_keywords = [
+        'cook', 'chef', 'waiter', 'waitress', 'hotel', 'hospitality', 'restaurant',
+        'caregiver', 'nursing assistant', 'elderly care', 'security', 'guard',
+        'housekeeper', 'maid', 'receptionist', 'barista', 'catering', 'nanny', 'domestic',
+    ]
+
+    professional_keywords = [
+        'developer', 'engineer', 'manager', 'analyst', 'consultant', 'architect',
+        'accountant', 'designer', 'director', 'coordinator', 'specialist',
+        'administrator', 'nurse', 'doctor', 'physician', 'teacher', 'professor',
+        'lead', 'executive', 'officer', 'software', 'frontend', 'backend',
+        'data scientist', 'cybersecurity', 'it specialist',
+    ]
+
+    for kw in blue_collar_keywords:
+        if kw in text:
+            return "blue_collar"
+    for kw in service_keywords:
+        if kw in text:
+            return "service_domestic"
+    for kw in professional_keywords:
+        if kw in text:
+            return "professional"
+    return "other"
+
+
+def enrich_with_full_description(job: dict) -> dict:
+    """
+    Fetches full description from the job's applyUrl if snippet is short/missing.
+    Mirrors backend/main.py enrich_with_full_description.
+    """
+    job_url = job.get("applyUrl")
+    if not job_url or job_url.strip() in ("#", "javascript:void(0)", ""):
+        if job_url:
+            logger.warning(f"[DESC ENRICH] Skipping invalid/placeholder URL: '{job_url}'. Falling back to snippet.")
+        job["full_description"] = job.get("snippet") or job.get("salaryText", "")
+        return job
+    existing_desc = job.get("description") or job.get("snippet") or job.get("salaryText", "")
+    if len(existing_desc) > 200:
+        job["full_description"] = existing_desc
+        return job
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        resp = requests.get(job_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            desc_container = (
+                soup.find("div", class_="panel-body")
+                or soup.find("div", id="job-details")
+                or soup.find("div", class_="job-description")
+                or soup.find("div", class_="description")
+                or soup.find("div", {"itemprop": "description"})
+                or soup.find("section", class_="job-description")
+            )
+            if desc_container:
+                job["full_description"] = desc_container.get_text(separator="\n", strip=True)
+            else:
+                job["full_description"] = existing_desc
+        else:
+            job["full_description"] = existing_desc
+    except Exception as e:
+        logger.warning(f"[DESC ENRICH] Failed to fetch full description for {job_url}: {e}")
+        job["full_description"] = existing_desc
+    return job
+
+
 def process_and_ingest_leads(jobs: List[dict], corridor: str, corridor_id: str = None):
     """
     Applies fingerprinting, deduplication, and prepares payload for Qdrant ingestion.
-    This is a placeholder - actual Qdrant upsert should be called from the backend endpoint.
-    
-    Args:
-        jobs: List of job dictionaries from scrapers
-        corridor: Corridor slug for metadata
-        corridor_id: Optional corridor_id for expanded regional corridors
+    Enriches jobs with full descriptions from detail pages.
+    Uses _fee_check for proper fee detection instead of hardcoded values.
     """
     logger.info(f"💾 [WESTERN]: Processing {len(jobs)} jobs for Qdrant ingestion")
-    
-    # Standardize payload fields to match globalpath schema
+
+    # Enrich with full descriptions from detail pages
+    enriched_jobs = [enrich_with_full_description(j) for j in jobs]
+
     processed_leads = []
-    for job in jobs:
+    for job in enriched_jobs:
+        desc = job.get("full_description") or job.get("description", "")
+        fee_info = _fee_check(desc)
         lead_payload = {
             "title": job.get("title"),
             "company": job.get("company"),
             "location": job.get("location"),
-            "description": job.get("description", ""),
+            "description": desc,
             "url": job.get("applyUrl"),
             "corridor": corridor,
             "corridor_label": CORRIDOR_BY_SLUG.get(corridor, {}).get("label", corridor),
-            "corridor_id": corridor_id,  # New field for expanded corridors
+            "corridor_id": corridor_id,
             "salary": job.get("salaryText"),
             "email": job.get("email"),
             "phone": job.get("phone"),
@@ -202,18 +302,18 @@ def process_and_ingest_leads(jobs: List[dict], corridor: str, corridor_id: str =
             "scraped_at": datetime.utcnow().isoformat(),
             "vetted": False,
             "source": f"western_corridors_{corridor}",
-            "category": "blue_collar",
+            "category": classify_job_category(job.get("title", ""), desc),
             "status": "verified",
-            "illegal_fee_detected": False,
-            "verified": True,
-            "fee_blocked": True,
+            "illegal_fee_detected": fee_info["illegal_fee_detected"],
+            "verified": not fee_info["illegal_fee_detected"],
+            "fee_blocked": fee_info["fee_blocked"],
             "priority": "immediate",
             "sourcing_status": "ready",
             "tier": "tier1",
             "priority_reason": "Fresh blue-collar lead from Western corridor scrape"
         }
         processed_leads.append(lead_payload)
-    
+
     logger.info(f"✅ [WESTERN]: Processed {len(processed_leads)} leads ready for Qdrant upsert")
     return processed_leads
 

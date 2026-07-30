@@ -6,9 +6,12 @@ import logging
 import os
 import time
 from bs4 import BeautifulSoup
-from curl_cffi import requests
+from curl_cffi import requests as curl_requests
 from urllib.parse import urlparse, unquote, urlunparse
 from playwright.sync_api import sync_playwright
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EuropeScraper")
@@ -321,15 +324,22 @@ def scrape_europe_jobs_cloud_safe(keyword: str, region: str = "de", limit: int =
 def scrape_europe_jobs_eures_api(keyword: str, region: str = "de", limit: int = 20) -> list[dict]:
     """
     Fallback to EURES API for European job vacancies.
-    Uses the official EURES job search API as documented in their OpenAPI spec.
-    Returns a list of job dictionaries with title, company, location, salary, etc.
+    Uses a resilient requests session with automatic retries for connection drops.
+    Falls back to None on failure, triggering the static EuroJobs.com fallback.
     """
     logger.info(f"🔍 [EUROPE]: Using EURES API for keyword: {keyword} in region: {region}")
-    
+
+    # Create resilient session with retries for connection drops (curl:56)
+    session = requests.Session()
+    retry_adapter = HTTPAdapter(
+        max_retries=Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504], raise_on_status=False)
+    )
+    session.mount("https://", retry_adapter)
+    session.mount("http://", retry_adapter)
+
     jobs = []
     
     try:
-        # EURES API endpoint
         eures_url = "https://europa.eu/eures/api/jv-searchengine/public/jv-search/search"
         
         # Map region codes to EURES location codes
@@ -377,7 +387,7 @@ def scrape_europe_jobs_eures_api(keyword: str, region: str = "de", limit: int = 
             "User-Agent": HEADERS.get("User-Agent")
         }
         
-        response = requests.post(eures_url, json=payload, headers=eures_headers, timeout=30)
+        response = session.post(eures_url, json=payload, headers=eures_headers, timeout=30)
         response.raise_for_status()
         
         data = response.json()
