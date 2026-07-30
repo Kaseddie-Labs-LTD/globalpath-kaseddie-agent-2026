@@ -154,10 +154,12 @@ function App() {
     setLeadsOffset(0);
     setHasMoreLeads(true);
   }, []);
+
   const [enrollmentInterestJob, setEnrollmentInterestJob] = useState<{ title: string; company?: string } | null>(null);
   const [recentLead, setRecentLead] = useState<{ name: string; job: string; company?: string } | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string>('All');
   const [activeCategory, setActiveCategory] = useState<'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general'>('All');
+  const [selectedSector, setSelectedSector] = useState<string>('All');
   const [jobGridKeyword, setJobGridKeyword] = useState<string>('');
   const [jobGridScrollTrigger, setJobGridScrollTrigger] = useState<number>(0);
   const [serviceNotice, setServiceNotice] = useState<string | null>(null);
@@ -165,6 +167,12 @@ function App() {
   const [showContact, setShowContact] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [isUplinking, setIsUplinking] = useState(false);
+
+  // Reset pagination when category filter changes (avoids empty pages mid-offset)
+  useEffect(() => {
+    setLeadsOffset(0);
+    setHasMoreLeads(true);
+  }, [activeCategory]);
   const leadsTableRef = useRef<HTMLDivElement>(null);
 
   // APRIL 30: Function declaration (hoisted) to prevent TDZ when referenced by callbacks above
@@ -304,6 +312,24 @@ function App() {
     return 'general';
   }, []);
 
+  // ─── Unified sector-to-category mapping ────────────────────────────────────
+  // Single source of truth mapping UI sector display names to technical categories.
+  // Must stay in sync with backend SECTOR_TO_CATEGORY in main.py.
+  const SECTOR_TO_CATEGORY: Record<string, string> = {
+    'Logistics': 'blue_collar',
+    'Manufacturing': 'blue_collar',
+    'IT & Digital': 'professional',
+    'Healthcare': 'professional',
+    'Service & Domestic': 'service_domestic',
+    'Other': 'general',
+  };
+  const CATEGORY_TO_SECTOR: Record<string, string[]> = {
+    'blue_collar': ['Logistics', 'Manufacturing'],
+    'professional': ['IT & Digital', 'Healthcare'],
+    'service_domestic': ['Service & Domestic'],
+    'general': ['Other'],
+  };
+
   const countNodesByCategory = useCallback((corridor: string, category: 'blue_collar' | 'professional' | 'service_domestic') => {
     return jobs.filter(j => {
       const region = computeRegionLabelFromLocation(j);
@@ -314,9 +340,16 @@ function App() {
 
   // --- 2. Fetch Logic ---
   // OOM PROTECTION: Paginated leads fetching - only load 100 at a time
+  const activeCategoryForFetch = activeCategory !== 'All' ? activeCategory : '';
   const { data: swrLeadsResponse, mutate: mutateLeads } = useSWR(
-    ['/leads', LEADS_PAGE_SIZE, leadsOffset],
-    ([url, limit, offset]) => fetcher(`${url}?limit=${limit}&offset=${offset}`),
+    ['/leads', LEADS_PAGE_SIZE, leadsOffset, activeCategory],
+    ([url, limit, offset]) => {
+      let fetchUrl = `${url}?limit=${limit}&offset=${offset}`;
+      if (activeCategory !== 'All') {
+        fetchUrl += `&category=${activeCategory}`;
+      }
+      return fetcher(fetchUrl);
+    },
     {
       refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
       revalidateOnFocus: false, // OOM PROTECTION: Don't revalidate on focus (prevents memory spikes)
@@ -1132,8 +1165,14 @@ function App() {
                   jobs={jobs} 
                   onNodeClick={handleNodeClick}
                   onSectorClick={(sector) => {
-                    handleNodeClick('All', 'All', sector === 'Other' ? '' : sector);
-                    addLog(`SECTOR FILTER: Activating deep-dive for ${sector} nodes.`, "info", "SEARCH");
+                    const mappedCategory = SECTOR_TO_CATEGORY[sector] || 'All';
+                    setSelectedSector(sector);
+                    setActiveCategory(mappedCategory as any);
+                    setJobGridKeyword('');
+                    setView(AppView.MATCHES);
+                    setJobGridScrollTrigger(Date.now());
+                    setSidebarOpen(false);
+                    addLog(`SECTOR FILTER: Applying ${sector} → ${mappedCategory} category filter.`, "info", "SEARCH");
                   }}
                   regionJobCounts={regionJobCounts} 
                   pendingCount={pendingVettingCount}
@@ -1200,6 +1239,7 @@ function App() {
                 activeCategoryOverride={activeCategory}
                 onCategoryChange={setActiveCategory}
                 keywordOverride={jobGridKeyword}
+                selectedSectorOverride={selectedSector}
                 scrollTrigger={jobGridScrollTrigger}
                 isAdmin={isAdminAuthenticated}
                  onApply={async (j) => {

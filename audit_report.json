@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-07-30T14:26:37.014014",
+  "total_leads": 277,
+  "corridors_found": [
+    "Bahrain / Middle East",
+    "Dubai / Middle East",
+    "Jordan / Middle East",
+    "Kuwait / Middle East",
+    "Lebanon / Middle East",
+    "Oman / Middle East",
+    "Qatar / Middle East",
+    "Saudi Arabia / Middle East",
+    "UAE / Middle East"
+  ],
+  "sector_distribution": {
+    "uncategorized": {
+      "count": 277,
+      "percentage": 100.0,
+      "fee_blocked": 0,
+      "zero_fee_compliant": 0,
+      "corridor_breakdown": {
+        "UAE / Middle East": 45,
+        "Saudi Arabia / Middle East": 41,
+        "Kuwait / Middle East": 35,
+        "Bahrain / Middle East": 31,
+        "Lebanon / Middle East": 31,
+        "Qatar / Middle East": 31,
+        "Oman / Middle East": 28,
+        "Jordan / Middle East": 28,
+        "Dubai / Middle East": 7
+      },
+      "sample_titles": [
+        "General Manager - FMCG",
+        "Senior IT Expert",
+        "Accountant- OMAN",
+        "Ecommerce Director",
+        "Shopping Experience Assistant | Retail | IKEA Oman",
+        "Sales Officer",
+        "Technical Manager \u2013 Joinery & Interior Fit-Out",
+        "Crew Scheduling Coordinator",
+        "Steel Engineer",
+        "Data Governance SME + Technical Team Lead"
+      ],
+      "sample_descriptions": [
+        {
+          "title": "General Manager - FMCG",
+          "snippet": "\n \n \n \n \n General Manager - FMCG  \n \n \n Michael Page \n Dubai ,  UAE \n \n \n \n \n \n \n \n \n \n \n \n \nSummary:  \nElevate your career with a pivotal leadership role that drives commercial growth and market expansion across the MEA region. This position demands strategic vision, distributor management, and tea"
+        },
+        {
+          "title": "Senior IT Expert",
+          "snippet": "Muscat,Oman"
+        },
+        {
+          "title": "Accountant- OMAN",
+          "snippet": "Muscat,Oman"
+        },
+        {
+          "title": "Ecommerce Director",
+          "snippet": "Manama,Bahrain"
+        },
+        {
+          "title": "Shopping Experience Assistant | Retail | IKEA Oman",
+          "snippet": "Muscat,Oman"
+        }
+      ]
+    }
+  },
+  "cross_tab": {
+    "Bahrain / Middle East": {
+      "uncategorized": 31
+    },
+    "Dubai / Middle East": {
+      "uncategorized": 7
+    },
+    "Jordan / Middle East": {
+      "uncategorized": 28
+    },
+    "Kuwait / Middle East": {
+      "uncategorized": 35
+    },
+    "Lebanon / Middle East": {
+      "uncategorized": 31
+    },
+    "Oman / Middle East": {
+      "uncategorized": 28
+    },
+    "Qatar / Middle East": {
+      "uncategorized": 31
+    },
+    "Saudi Arabia / Middle East": {
+      "uncategorized": 41
+    },
+    "UAE / Middle East": {
+      "uncategorized": 45
+    }
+  }
+}

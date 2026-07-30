@@ -848,10 +848,51 @@ async def get_all_leads(
     corridor: str = None,
     vetted_only: bool = False
 ):
+    """
+    Returns leads from Qdrant with server-side category/sector/corridor filtering.
+    Must stay in sync with frontend SECTOR_TO_CATEGORY in App.tsx.
+    """
+    # ─── Unified sector-to-category mapping ───────────────────────────────
+    SECTOR_TO_CATEGORY = {
+        "logistics": "blue_collar",
+        "manufacturing": "blue_collar",
+        "it & digital": "professional",
+        "healthcare": "professional",
+        "service & domestic": "service_domestic",
+        "other": "general",
+    }
+
     try:
+        # Build Qdrant filter conditions from query params
+        filter_conditions = []
+
+        # Map sector to category if sector is provided (e.g. "Logistics" → "blue_collar")
+        effective_category = category
+        if sector and not effective_category:
+            effective_category = SECTOR_TO_CATEGORY.get(sector.strip().lower())
+
+        if effective_category:
+            filter_conditions.append(
+                models.FieldCondition(
+                    key="category",
+                    match=models.MatchValue(value=effective_category.lower())
+                )
+            )
+        if corridor:
+            filter_conditions.append(
+                models.FieldCondition(
+                    key="corridor",
+                    match=models.MatchValue(value=corridor)
+                )
+            )
+
+        scroll_filter = models.Filter(must=filter_conditions) if filter_conditions else None
+
         records, _ = qdrant_client.scroll(
             collection_name="globalpath_leads",
             limit=limit,
+            offset=offset,
+            scroll_filter=scroll_filter,
             with_payload=True
         )
 
@@ -859,6 +900,7 @@ async def get_all_leads(
         for record in records:
             p = record.payload or {}
             title = p.get("title") or p.get("name") or ""
+            stored_category = p.get("category", "general")
             description = p.get("description") or p.get("interests") or "No description available."
 
             # 1. Dynamic Company Extraction
@@ -910,6 +952,7 @@ async def get_all_leads(
                 "id": str(record.id),
                 "title": title,
                 "name": title,
+                "category": stored_category,
                 "company": company,
                 "location": p.get("location", "GCC Region"),
                 "market": p.get("market", "UAE"),

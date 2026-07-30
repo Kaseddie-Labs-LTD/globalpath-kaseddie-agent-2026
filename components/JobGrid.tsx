@@ -23,6 +23,7 @@ interface JobGridProps {
   activeCategoryOverride?: 'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general';
   onCategoryChange?: (category: 'All' | 'blue_collar' | 'professional' | 'service_domestic' | 'general') => void;
   keywordOverride?: string;
+  selectedSectorOverride?: string;
   scrollTrigger?: number;
   isAdmin?: boolean;
 }
@@ -567,7 +568,7 @@ const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, onApply, 
 
 const REGIONS = ['All', 'GCC Corridor', 'Luxembourg Node', 'EU-Central (Germany)', 'UK-Northern Corridor', 'Western Corridor', 'Global Corridor'];
 
-export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, onAnalyzeSafety, onInitializeNode, selectedRegionOverride, onRegionChange, activeCategoryOverride, onCategoryChange, keywordOverride, scrollTrigger, isAdmin = false }) => {
+export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, onAnalyzeSafety, onInitializeNode, selectedRegionOverride, onRegionChange, activeCategoryOverride, onCategoryChange, keywordOverride, selectedSectorOverride, scrollTrigger, isAdmin = false }) => {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
@@ -849,6 +850,11 @@ export const JobGrid: React.FC<JobGridProps> = ({ jobs, onApply, onEnhanceJob, o
                 {cat.replace('_', ' ')}
               </button>
             ))}
+            {selectedSectorOverride && selectedSectorOverride !== 'All' && (
+              <span className="ml-1.5 px-2 py-1 rounded-md bg-brand-100 text-brand-700 text-[8px] font-black uppercase tracking-widest border border-brand-200">
+                Sector: {selectedSectorOverride}
+              </span>
+            )}
             
             <div className="h-4 w-px bg-slate-200 mx-1"></div>
 
