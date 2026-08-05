@@ -144,8 +144,8 @@ function App() {
   const [leadsOffset, setLeadsOffset] = useState(0);
   const [hasMoreLeads, setHasMoreLeads] = useState(true);
   const LEADS_PAGE_SIZE = 100; // Reduced from 1000 to prevent large requests
-  const MAX_OFFSET = 5000; // Very low max offset to prevent infinite loops
-  // Ref-based lock to prevent cascading auto-fetch after the final page resolves
+  // Ref-based lock to prevent concurrent page fetches when the user clicks
+  // "Load More Jobs" repeatedly or a slow response overlaps the next click
   const isFetchingRef = useRef(false);
 
   // Reset pagination state on mount to prevent stale offset from previous sessions
@@ -358,6 +358,7 @@ function App() {
       keepPreviousData: true, // Prevents jobs from disappearing during re-validation
       shouldRetryOnError: false, // Don't flood FastAPI if a regional shard times out
       onError: (error) => {
+        isFetchingRef.current = false;
         console.error('❌ SWR Error fetching leads:', error);
         addLog(`SWR Connection Error: ${error.message}`, "error", "SWR");
       },
@@ -384,24 +385,11 @@ function App() {
         console.log(`✅ [PAGINATED]: Has more leads: ${moreLeadsRemaining}`);
         console.log(`📊 [PAGINATED]: Total available: ${totalLeadsAvailable}`);
         
-        // 3. Prevent auto-fetcher from running if it exceeds bounds.
-        //    Strict guard: hasMoreLeads (next_offset from backend) + ref lock prevent
-        //    redundant cascading fetches after the final page resolves.
-        if (moreLeadsRemaining && leadsOffset < MAX_OFFSET && !isFetchingRef.current) {
-          isFetchingRef.current = true;
-          const nextOffsetValue = leadsOffset + LEADS_PAGE_SIZE;
-          if (nextOffsetValue < totalLeadsAvailable) {
-            console.log('🔄 [AUTO-FETCH]: Loading next page of leads...');
-            setLeadsOffset(nextOffsetValue);
-          } else {
-            isFetchingRef.current = false;
-          }
-        } else {
-          isFetchingRef.current = false;
-          if (leadsOffset >= MAX_OFFSET || !moreLeadsRemaining) {
-            console.warn('🚨 [PAGINATION]: Reached max offset or no more leads, stopping auto-fetch');
-          }
-        }
+        // 3. NO auto-fetch recursion — pagination is user-driven only via the
+        //    "Load More Jobs" button. Always release the fetch lock so the
+        //    manual button can chain the next page on demand without
+        //    hammering the backend with concurrent page requests.
+        isFetchingRef.current = false;
         
         if (leadsArray.length === 0 && leadsOffset === 0) {
           console.error('🚨 CRITICAL: SWR returned 0 leads at offset 0');
@@ -1231,6 +1219,7 @@ function App() {
               </div>
             )}
             {view === AppView.MATCHES && (
+              <>
               <div id="job-grid-top">
               <JobGrid 
                 jobs={jobs} 
@@ -1263,6 +1252,23 @@ function App() {
                  }}
                />
                </div>
+               {hasMoreLeads && (
+                 <div className="flex flex-col items-center gap-2 py-6">
+                   <button
+                     onClick={loadMoreLeads}
+                     disabled={isGeneratingPitch || isFetchingRef.current}
+                     className="px-6 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-brand-500/20 transition-all"
+                   >
+                     {isFetchingRef.current ? 'Loading more jobs...' : `Load More Jobs (${jobs.length} loaded${totalDbLeads ? ` of ${totalDbLeads}` : ''})`}
+                   </button>
+                   {totalDbLeads > 0 && (
+                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                       {jobs.length} of {totalDbLeads} jobs loaded
+                     </p>
+                    )}
+                  </div>
+                )}
+              </>
             )}
              {view === AppView.UPLOADS && (
                 <div className="max-w-2xl mx-auto space-y-8 py-12">
