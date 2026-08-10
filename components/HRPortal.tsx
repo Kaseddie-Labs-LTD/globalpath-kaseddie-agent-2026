@@ -22,6 +22,8 @@ import { B2BPitchGenerator } from './B2BPitchGenerator';
 
 import { AgentLogEntry } from '../types';
 
+import { fetcher } from '../constants/api';
+
 
 
 interface HRPortalProps {
@@ -113,6 +115,54 @@ export const HRPortal: React.FC<HRPortalProps> = ({
   const [pitchText, setPitchText] = useState<string>(initialPitchText || '');
 
   const [isRefining, setIsRefining] = useState<boolean>(false);
+
+  const [isSponsoring, setIsSponsoring] = useState<boolean>(false);
+
+  // Persistent agency identity so a Stripe payment can be attributed to a real
+  // agency (UUID survives across sessions; label is what the admin console shows).
+  const [agencyLabel, setAgencyLabel] = useState<string>(() => {
+    try { return localStorage.getItem('gp_hr_agency_label') || ''; } catch { return ''; }
+  });
+
+  const getAgencyId = (): string => {
+    try {
+      let id = localStorage.getItem('gp_hr_agency_id');
+      if (!id) {
+        id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `ag-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        localStorage.setItem('gp_hr_agency_id', id);
+      }
+      return id;
+    } catch {
+      return `ag-${Date.now()}`;
+    }
+  };
+
+  const handleSponsorSpotlight = async () => {
+    if (isSponsoring) return;
+    setIsSponsoring(true);
+    try {
+      // Shared fetcher resolves the absolute backend URL (localhost:10000 dev /
+      // Render origin prod), so checkout works in production instead of dying
+      // on the dev-server proxy or a port mismatch.
+      const data = await fetcher('/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agency_id: getAgencyId(),
+          agency_name: agencyLabel || undefined,
+        }),
+      });
+      if (!data || typeof data.url !== 'string') {
+        throw new Error((data as any)?.detail || 'Checkout could not be started.');
+      }
+      window.location.href = data.url;
+    } catch (err: any) {
+      alert('Unable to start checkout: ' + (err?.message || 'Unknown error'));
+      setIsSponsoring(false);
+    }
+  };
 
   const [copiedToast, setCopiedToast] = useState<boolean>(false);
 
@@ -1083,6 +1133,51 @@ export const HRPortal: React.FC<HRPortalProps> = ({
           {/* Unified Outreach Command Center */}
 
           <div className="lg:col-span-5">
+
+            {/* Stripe Micro-Transaction: Featured Agency Spotlight */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-amber-500/30 mb-4">
+
+              <div className="flex items-center justify-between gap-4">
+
+                <div>
+
+                  <div className="text-[10px] font-black text-amber-400 uppercase tracking-[0.2em] mb-1">Featured Agency Spotlight</div>
+
+                  <div className="text-[11px] text-slate-400">Unlock 30 days of priority talent matching placement for your agency.</div>
+
+                </div>
+
+                <button
+
+                  onClick={handleSponsorSpotlight}
+
+                  disabled={isSponsoring}
+
+                  className="shrink-0 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-wait text-slate-950 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] transition-all shadow-xl active:scale-95 flex items-center gap-2"
+
+                >
+
+                  <Sparkles size={16} /> {isSponsoring ? 'Starting Checkout...' : 'Sponsor Spotlight ($29)'}
+
+                </button>
+
+              </div>
+
+              <input
+
+                type="text"
+
+                value={agencyLabel}
+
+                onChange={(e) => { setAgencyLabel(e.target.value); try { localStorage.setItem('gp_hr_agency_label', e.target.value); } catch {} }}
+
+                placeholder="Agency name or email (receipt attribution)"
+
+                className="mt-3 w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-[11px] text-slate-300 placeholder-slate-500 outline-none focus:border-amber-500/50 transition-colors"
+
+              />
+
+            </div>
 
             <B2BPitchGenerator 
 

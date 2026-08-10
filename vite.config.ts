@@ -12,7 +12,9 @@ export default defineConfig(({ mode }) => {
         allowedHosts: true,
         proxy: {
           '/api': {
-            target: 'http://localhost:8000',
+            // MUST match the FastAPI backend port (uvicorn PORT=10000).
+            // Previously 8000 -> caused HTTP 500 via dead proxy for raw relative fetches.
+            target: 'http://localhost:10000',
             changeOrigin: true,
           },
         },

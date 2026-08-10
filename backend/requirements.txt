@@ -32,3 +32,4 @@ uvicorn
 groq
 google-genai
 playwright
+stripe>=15.0.0

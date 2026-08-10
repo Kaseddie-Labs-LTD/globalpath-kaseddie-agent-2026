@@ -287,6 +287,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
   const [isForceVerifying, setIsForceVerifying] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
+  const [isStripeDispatch, setIsStripeDispatch] = useState(false);
+  const [spotlights, setSpotlights] = useState<any[]>([]);
+
+  const fetchSpotlights = async () => {
+    try {
+      const data = await fetcher('/stripe/spotlights');
+      if (data && Array.isArray(data.spotlights)) {
+        setSpotlights(data.spotlights);
+        onAddLog(`OVERSIGHT: ${data.spotlights.filter((s: any) => s.active).length} active spotlight entitlement(s) on file.`, 'info');
+      }
+    } catch (e) {
+      console.warn('Spotlights fetch failed:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchSpotlights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleTriggerStripeWebhook = async () => {
+    if (isStripeDispatch) return;
+    setIsStripeDispatch(true);
+    try {
+      // Real agency identity — falls back to the admin/lab identity so the
+      // checkout is always attributable (metadata + client_reference_id).
+      let agencyId = 'kaseddie-lab-admin';
+      try { agencyId = localStorage.getItem('gp_hr_agency_id') || agencyId; } catch {}
+
+      // STEP 1: Create a REAL Stripe Checkout session for this agency.
+      onAddLog(`STRIPE: Creating checkout session for agency ${agencyId}...`, "thinking");
+      const checkout = await fetcher('/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agency_id: agencyId,
+          agency_name: 'Kaseddie Lab LTD',
+          plan: 'spotlight-30d',
+        }),
+      });
+
+      if (!checkout || typeof checkout.url !== 'string') {
+        onAddLog(`STRIPE: Checkout could not be started — ${(checkout as any)?.detail || 'backend did not return a session URL.'}`, "error");
+        return;
+      }
+
+      // STEP 2: Open the hosted Stripe payment page (new tab).
+      window.open(checkout.url, '_blank');
+      onAddLog(`STRIPE: Checkout session ${checkout.session_id || ''} opened — complete payment in the new tab to fire the real webhook loop.`, "success");
+
+      // STEP 3: Fire the sandbox webhook echo so the admin log exercises the
+      // receipt path immediately, even before the payment completes.
+      onAddLog("STRIPE: Dispatching sandbox webhook echo (customer.created)...", "thinking");
+      const raw = await fetcher('/stripe/trigger-test-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'customer.created', object_id: 'cus_L82G0DAIEgLtBf' }),
+      });
+      const result: any =
+        raw && typeof (raw as any).json === 'function'
+          ? await (raw as Response).json()
+          : raw;
+
+      console.log('Stripe Sandbox Event Dispatched:', result);
+
+      if (!result || result.status !== 'dispatched') {
+        onAddLog('STRIPE: Sandbox echo failed — backend did not confirm receipt.', 'error');
+        return;
+      }
+      onAddLog(`STRIPE: Sandbox echo dispatched — ${result.event} (${result.object_id})`, "success");
+      await handleRefreshData();
+      fetchSpotlights();
+    } catch (error: any) {
+      console.error('Failed to dispatch Stripe test payload:', error);
+      onAddLog(`STRIPE: Dispatch failed — ${error?.message || error}`, "error");
+    } finally {
+      setIsStripeDispatch(false);
+    }
+  };
+
   const handleRefreshData = async () => {
     if (!onRefresh) return;
     // ARCHITECT'S DIRECTIVE 1: Check mount status before state updates
@@ -584,7 +664,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ logs, hrJobs, on
                   <RefreshCw size={10} />
                   CLEAR CACHE
                 </button>
+                <button 
+                  onClick={handleTriggerStripeWebhook}
+                  disabled={isStripeDispatch}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-white text-white hover:text-indigo-600 text-[10px] font-black px-2.5 py-1 rounded-full transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <DollarSign size={10} className={isStripeDispatch ? 'animate-spin' : ''} />
+                  {isStripeDispatch ? 'DISPATCHING...' : 'STRIPE TEST WEBHOOK'}
+                </button>
               </div>
+              {spotlights.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Featured Spotlights:</span>
+                  {spotlights.filter((s: any) => s.active).slice(0, 5).map((s: any) => (
+                    <span key={s.agency_id} className="text-[9px] font-black px-2 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                      {s.agency_label || s.agency_id} · till {s.expires_at ? s.expires_at.slice(0, 10) : 'n/a'}
+                    </span>
+                  ))}
+                  <span className="text-[9px] font-bold text-slate-500">
+                    {spotlights.length} total · {spotlights.filter((s: any) => s.active).length} active
+                  </span>
+                </div>
+              )}
             </div>
             <p className="text-slate-400 text-xs font-mono uppercase tracking-[0.3em]">Full-Spectrum ASR Sector Rotation System</p>
           </div>

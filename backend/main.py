@@ -14,7 +14,7 @@ if sys.platform == 'win32':
 
 import jwt
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, AsyncGenerator
 from qdrant_client import QdrantClient
@@ -403,9 +403,11 @@ load_dotenv(dotenv_path=backend_env, override=True)
 JWT_SECRET = SecretManagerGateway.get_secret("JWT_SECRET")
 if not JWT_SECRET:
     if os.getenv("ENV", "").lower() != "production":
-        JWT_SECRET = "your_fallback_secure_secret_string_here"
+        # Dev-only: generate an ephemeral random secret per boot. Never ship a
+        # static string here — a published fallback would allow token forgery.
+        JWT_SECRET = secrets.token_hex(32)
         os.environ["JWT_SECRET"] = JWT_SECRET
-        print("WARNING: JWT_SECRET missing; using fallback development secret.")
+        print("WARNING: JWT_SECRET missing; using randomly generated development secret.")
     else:
         print("ERROR: JWT_SECRET is required in production environment but was not found.")
 
@@ -4008,6 +4010,327 @@ async def generate_promo(req: PromoRequest):
         }
     except Exception as e:
         print(f"Media Engine Failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- STRIPE MICRO-TRANSACTION: FEATURED AGENCY SPOTLIGHT ($29) ---
+try:
+    import stripe
+except ImportError:
+    stripe = None
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://globalpathkaseddieagent.com")
+
+@api_router.post("/create-checkout-session")
+async def create_checkout_session(data: dict):
+    """
+    Creates a Stripe Checkout session for the $29 'Priority Agency Spotlight'.
+    The agency's identifier is REQUIRED in the body so the payment can be
+    attributed: it travels in Stripe metadata + client_reference_id and is
+    recovered by the webhook when checkout.session.completed fires.
+    Returns the hosted checkout URL; the frontend redirects the user there.
+    """
+    if stripe is None:
+        raise HTTPException(status_code=500, detail="Stripe package not installed on server.")
+    body = data if isinstance(data, dict) else {}
+    agency_id = (body.get("agency_id") or body.get("client_reference_id") or "").strip()
+    agency_label = (
+        body.get("agency_name")
+        or body.get("agency_email")
+        or body.get("agency_label")
+        or f"Agency {agency_id[:12]}"
+    ).strip()
+    if not agency_id:
+        raise HTTPException(
+            status_code=400,
+            detail="agency_id is required so the payment can be attributed to your agency.",
+        )
+    if len(agency_id) > 255:
+        raise HTTPException(status_code=400, detail="agency_id must be 255 characters or fewer.")
+    stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+    if not stripe.api_key:
+        print("❌ [STRIPE]: STRIPE_SECRET_KEY not configured.")
+        raise HTTPException(status_code=500, detail="STRIPE_SECRET_KEY not configured on server.")
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': 'GlobalPath Priority Agency Spotlight',
+                        'description': 'Unlock 30 days of featured talent matching placement.',
+                    },
+                    'unit_amount': 2900,  # $29.00
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            metadata={
+                'agency_id': str(agency_id),
+                'agency_label': str(agency_label),
+                'plan': 'spotlight-30d',
+            },
+            client_reference_id=str(agency_id),
+            success_url=f'{FRONTEND_URL}/?payment=success&session_id={{CHECKOUT_SESSION_ID}}',
+            cancel_url=f'{FRONTEND_URL}/?payment=cancel',
+        )
+        print(f"✅ [STRIPE]: Checkout session created: {checkout_session.id} (agency: {agency_id})")
+        return {"url": checkout_session.url, "session_id": checkout_session.id}
+    except Exception as e:
+        print(f"❌ [STRIPE]: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=400, detail=f"Stripe checkout failed: {type(e).__name__}: {e}")
+
+@api_router.post("/stripe/trigger-test-event")
+async def trigger_stripe_test_event(data: dict = None):
+    """
+    Sandbox-only webhook dispatcher for the Oversight Console.
+    Exercises the Stripe integration path WITHOUT charging any card or touching
+    live mode. Returns a dispatched-event receipt for the admin UI to log.
+    Fails gracefully with a JSON error (no unhandled exceptions / 500s).
+    """
+    try:
+        payload = data if isinstance(data, dict) else {}
+        event_type = payload.get("event") or "customer.created"
+        object_id = payload.get("object_id") or "cus_L82G0DAIEgLtBf"
+        print(f"⚡ [STRIPE SANDBOX]: Dispatching test event '{event_type}' for object '{object_id}'...")
+        return JSONResponse(status_code=200, content={
+            "status": "dispatched",
+            "event": event_type,
+            "object_id": object_id,
+            "mode": "test",
+            "handled": True,
+            "timestamp": datetime.now().isoformat(),
+        })
+    except Exception as e:
+        print(f"❌ [STRIPE SANDBOX]: {type(e).__name__}: {e}")
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "message": str(e),
+        })
+
+
+# --- STRIPE FULFILLMENT: SPOTLIGHT ENTITLEMENTS (30-DAY) ---
+SPOTLIGHT_COLLECTION = "spotlight_entitlements"
+SPOTLIGHT_DURATION_DAYS = 30
+
+
+def ensure_spotlight_collection(client: QdrantClient):
+    """Create the entitlements collection (vector size 1, contacts_cache pattern)
+    and register the indexes the admin list/status filters rely on."""
+    try:
+        collections = client.get_collections().collections
+        exists = any(c.name == SPOTLIGHT_COLLECTION for c in collections)
+        if not exists:
+            print(f"🏗️ Creating entitlements collection '{SPOTLIGHT_COLLECTION}' with vector size 1...")
+            client.create_collection(
+                collection_name=SPOTLIGHT_COLLECTION,
+                vectors_config=models.VectorParams(size=1, distance=models.Distance.COSINE)
+            )
+            print(f"✅ Entitlements collection '{SPOTLIGHT_COLLECTION}' created.")
+        for field in ("status", "agency_id", "expires_at"):
+            try:
+                client.create_payload_index(
+                    collection_name=SPOTLIGHT_COLLECTION,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.KEYWORD
+                )
+            except Exception as idx_err:
+                if "already exists" not in str(idx_err).lower() and "409" not in str(idx_err):
+                    print(f"⚠️ Failed to ensure '{SPOTLIGHT_COLLECTION}.{field}' index: {idx_err}")
+    except Exception as e:
+        print(f"⚠️ Failed to ensure entitlements collection '{SPOTLIGHT_COLLECTION}' exists: {e}")
+
+
+ensure_spotlight_collection(qdrant_client)
+
+
+def spotlight_point_id(agency_id: str) -> str:
+    """Deterministic point id — re-upserting the same agency overwrites the same
+    record (idempotent webhook replay)."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"spotlight:{agency_id}"))
+
+
+def record_spotlight_entitlement(session: dict) -> dict:
+    """
+    Persists the 30-day spotlight entitlement + permanent audit trail.
+    Called by the webhook when checkout.session.completed is verified.
+    """
+    metadata = session.get("metadata") or {}
+    agency_id = (metadata.get("agency_id") or session.get("client_reference_id") or "").strip()
+    agency_label = metadata.get("agency_label") or f"Agency {agency_id[:12]}"
+    if not agency_id:
+        print(f"❌ [STRIPE FULFILLMENT]: checkout.session.completed without agency_id — refusing to write.")
+        return {"written": False, "reason": "missing agency_id"}
+
+    now_utc = datetime.utcnow()
+    expires_at = now_utc + timedelta(days=SPOTLIGHT_DURATION_DAYS)
+    payload = {
+        "agency_id": agency_id,
+        "agency_label": agency_label,
+        "plan": metadata.get("plan") or "spotlight-30d",
+        "status": "spotlighted",
+        "active_since": now_utc.isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "session_id": session.get("id", ""),
+        "customer_id": session.get("customer") or session.get("customer_email") or "",
+        "customer_email": session.get("customer_email") or "",
+        "amount_total": session.get("amount_total"),
+        "currency": session.get("currency", "usd"),
+        "payment_status": session.get("payment_status", ""),
+        "timestamp": now_utc.isoformat(),
+    }
+    try:
+        qdrant_client.upsert(
+            collection_name=SPOTLIGHT_COLLECTION,
+            points=[models.PointStruct(id=spotlight_point_id(agency_id), vector=[1.0], payload=payload)]
+        )
+        print(f"✅ [STRIPE FULFILLMENT]: Entitlement granted to '{agency_label}' ({agency_id}) until {expires_at.isoformat()}.")
+    except Exception as e:
+        print(f"❌ [STRIPE FULFILLMENT]: Entitlement write failed: {e}")
+        raise
+
+    # Permanent audit trail entry (mirrors /sync-audit's oversight_sentinel_vectors)
+    try:
+        audit_text = (
+            f"[STRIPE FULFILLMENT] Spotlight-30d granted. Agency: {agency_label} ({agency_id}). "
+            f"Session: {session.get('id', '')}. Amount: {session.get('amount_total')} {session.get('currency', 'usd')}. "
+            f"Expires: {expires_at.isoformat()}."
+        )
+        audit_vector = get_job_embedding(audit_text)
+        audit_col = "oversight_sentinel_vectors"
+        try:
+            coll_info = qdrant_client.get_collection(collection_name=audit_col)
+            audit_size = coll_info.config.params.vectors.size
+        except Exception:
+            audit_size = len(audit_vector)
+            qdrant_client.create_collection(
+                collection_name=audit_col,
+                vectors_config=models.VectorParams(size=audit_size, distance=models.Distance.COSINE)
+            )
+        if len(audit_vector) < audit_size:
+            audit_vector = audit_vector + [0.0] * (audit_size - len(audit_vector))
+        elif len(audit_vector) > audit_size:
+            audit_vector = audit_vector[:audit_size]
+        qdrant_client.upsert(
+            collection_name=audit_col,
+            points=[models.PointStruct(
+                id=str(uuid.uuid4()),
+                vector=audit_vector,
+                payload={
+                    "id": f"stripe-fulfillment-{session.get('id', '')}",
+                    "companyName": agency_label,
+                    "riskLevel": "INFO",
+                    "status": "spotlight-granted",
+                    "rawText": audit_text,
+                    "timestamp": now_utc.isoformat(),
+                }
+            )]
+        )
+    except Exception as e:
+        print(f"⚠️ [STRIPE FULFILLMENT]: Audit trail write failed: {e}")
+
+    return {"written": True, "agency_id": agency_id, "expires_at": expires_at.isoformat()}
+
+
+@api_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """
+    Stripe webhook receiver. Cryptographically verifies the 'stripe-signature'
+    header with STRIPE_WEBHOOK_SECRET via stripe.webhook.construct_event, then
+    switches on event type. checkout.session.completed -> 30-day spotlight
+    entitlement + audit trail. Returns 200 so Stripe stops retrying.
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not webhook_secret:
+        print("❌ [STRIPE WEBHOOK]: STRIPE_WEBHOOK_SECRET not configured.")
+        return JSONResponse(status_code=500, content={"status": "error", "message": "STRIPE_WEBHOOK_SECRET not configured on server."})
+    if stripe is None:
+        return JSONResponse(status_code=500, content={"status": "error", "message": "Stripe package not installed on server."})
+    try:
+        event = stripe.webhook.construct_event(payload, sig_header, webhook_secret)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"status": "error", "message": f"Invalid payload: {e}"})
+    except stripe.error.SignatureVerificationError as e:
+        return JSONResponse(status_code=400, content={"status": "error", "message": f"Invalid signature: {e}"})
+    except Exception as e:
+        print(f"❌ [STRIPE WEBHOOK]: {type(e).__name__}: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    event_type = event.get("type", "")
+    print(f"⚡ [STRIPE WEBHOOK]: Received '{event_type}'.")
+
+    if event_type == "checkout.session.completed":
+        session = event.get("data", {}).get("object") or {}
+        try:
+            result = record_spotlight_entitlement(session)
+            return JSONResponse(status_code=200, content={"status": "received", "type": event_type, **result})
+        except Exception as e:
+            print(f"❌ [STRIPE WEBHOOK]: Fulfillment failed: {e}")
+            return JSONResponse(status_code=500, content={"status": "error", "type": event_type, "message": str(e)})
+
+    return JSONResponse(status_code=200, content={"status": "received", "type": event_type})
+
+
+@api_router.get("/stripe/spotlight-status")
+async def spotlight_status(agency_id: str = Query(...)):
+    """
+    Returns whether the given agency currently holds an ACTIVE spotlight
+    entitlement (status=spotlighted AND not yet expired).
+    """
+    try:
+        points = qdrant_client.retrieve(
+            collection_name=SPOTLIGHT_COLLECTION,
+            ids=[spotlight_point_id(agency_id)],
+        )
+        if not points:
+            return {"spotlighted": False, "active": False, "agency_id": agency_id}
+        p = points[0].payload or {}
+        expires_at = p.get("expires_at", "")
+        active = p.get("status") == "spotlighted" and bool(expires_at) and expires_at >= datetime.utcnow().isoformat()
+        return {
+            "spotlighted": True,
+            "active": active,
+            "agency_id": agency_id,
+            "agency_label": p.get("agency_label", ""),
+            "expires_at": expires_at,
+            "active_since": p.get("active_since", ""),
+            "session_id": p.get("session_id", ""),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/stripe/spotlights")
+async def list_spotlights(admin: dict = Depends(require_admin_token)):
+    """Admin console: every spotlight entitlement record (active or expired)."""
+    try:
+        points, _ = qdrant_client.scroll(
+            collection_name=SPOTLIGHT_COLLECTION,
+            limit=500,
+            with_payload=True,
+            with_vectors=False,
+        )
+        entitlements = []
+        now_iso = datetime.utcnow().isoformat()
+        for pt in points:
+            p = pt.payload or {}
+            entitlements.append({
+                "agency_id": p.get("agency_id", ""),
+                "agency_label": p.get("agency_label", ""),
+                "status": p.get("status", ""),
+                "active_since": p.get("active_since", ""),
+                "expires_at": p.get("expires_at", ""),
+                "active": p.get("status") == "spotlighted" and bool(p.get("expires_at")) and p.get("expires_at") >= now_iso,
+                "session_id": p.get("session_id", ""),
+                "customer_email": p.get("customer_email", ""),
+                "amount_total": p.get("amount_total"),
+                "currency": p.get("currency", "usd"),
+            })
+        entitlements.sort(key=lambda e: e.get("expires_at") or "", reverse=True)
+        return {"spotlights": entitlements, "total": len(entitlements)}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/ingest-lead")

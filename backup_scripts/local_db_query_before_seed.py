@@ -17,8 +17,10 @@ load_dotenv(dotenv_path=backend_env, override=True)
 print("Loading environment configurations...")
 print("GEMINI_API_KEY found:", bool(os.getenv("GEMINI_API_KEY") or os.getenv("VITE_APP_GEMINI_API_KEY")))
 
-# Strip the 'ac-' prefix from the main domain to match the correct DNS SRV record
-mongo_uri = "mongodb+srv://GlobalPath:Kaseddie2026@63ha989.mongodb.net/?authSource=admin&retryWrites=true&w=majority"
+# Load the MongoDB URI from environment — never hardcode credentials in source.
+mongo_uri = os.getenv("MDB_URI")
+if not mongo_uri:
+    raise SystemExit("MDB_URI not found in environment. Set it in .env (see .env.example).")
 client = MongoClient(mongo_uri)
 db = client["Sentinel-Memory-Vault"]
 

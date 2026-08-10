@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useTransition, Suspense, useRef } from 'react';
 import { useAuth } from './hooks/useAuth';
 import useSWR from 'swr';
-import { LayoutDashboard, FileText, Briefcase, Menu, Globe, ShieldCheck, Loader2, User, MessageCircle, Globe2, RefreshCw, Cpu, Zap, Award, Lock, ShieldAlert, Building2, Terminal, ChevronRight, Users, Truck, ShoppingCart, UserPlus, HardHat, Timer, Activity, Plus, Mail, Phone, Settings, Video, Mic } from 'lucide-react';
+import { LayoutDashboard, FileText, Briefcase, Menu, Globe, ShieldCheck, Loader2, User, MessageCircle, Globe2, RefreshCw, Cpu, Zap, Award, Lock, ShieldAlert, Building2, Terminal, ChevronRight, Users, Truck, ShoppingCart, UserPlus, HardHat, Timer, Activity, Plus, Mail, Phone, Settings, Video, Mic, ChevronLeft } from 'lucide-react';
 
 // Component Imports
 import { AgentLog } from './components/AgentLog';
@@ -144,6 +144,8 @@ function App() {
   const [leadsOffset, setLeadsOffset] = useState(0);
   const [hasMoreLeads, setHasMoreLeads] = useState(true);
   const LEADS_PAGE_SIZE = 100; // Reduced from 1000 to prevent large requests
+  // Page-numbered navigation (1-based) — mirrors LEADS_PAGE_SIZE chunking
+  const [currentPage, setCurrentPage] = useState(1);
   // Ref-based lock to prevent concurrent page fetches when the user clicks
   // "Load More Jobs" repeatedly or a slow response overlaps the next click
   const isFetchingRef = useRef(false);
@@ -153,6 +155,7 @@ function App() {
     console.log('🔄 [PAGINATION RESET]: Resetting offset to 0');
     setLeadsOffset(0);
     setHasMoreLeads(true);
+    setCurrentPage(1);
   }, []);
 
   const [enrollmentInterestJob, setEnrollmentInterestJob] = useState<{ title: string; company?: string } | null>(null);
@@ -172,7 +175,23 @@ function App() {
   useEffect(() => {
     setLeadsOffset(0);
     setHasMoreLeads(true);
+    setCurrentPage(1);
   }, [activeCategory]);
+
+  // STRIPE: Parse ?payment=success|cancel&session_id=... returned by Checkout so
+  // the user sees an immediate confirmation instead of a silent page. Cleans the
+  // URL afterwards (history.replaceState) so reloads don't re-toast.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
+    if (!payment) return;
+    if (payment === 'success') {
+      setServiceNotice('Payment received — your Agency Spotlight is being activated for 30 days.');
+    } else if (payment === 'cancel') {
+      setServiceNotice('Checkout cancelled — you have not been charged. You can retry anytime.');
+    }
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+  }, []);
   const leadsTableRef = useRef<HTMLDivElement>(null);
 
   // APRIL 30: Function declaration (hoisted) to prevent TDZ when referenced by callbacks above
@@ -554,13 +573,41 @@ function App() {
     });
   }, [computeRegionLabelFromLocation]);
 
-  // OOM PROTECTION: Load more leads function (pagination)
-  const loadMoreLeads = useCallback(() => {
-    if (hasMoreLeads && !isGeneratingPitch && !isFetchingRef.current) {
-      isFetchingRef.current = true;
-      setLeadsOffset(prev => prev + LEADS_PAGE_SIZE);
+  // OOM PROTECTION: Page-numbered navigation (Previous / Page N / Next).
+  // Changing leadsOffset re-triggers the SWR fetch for that exact page via the
+  // '/leads' key, keeping every request capped at LEADS_PAGE_SIZE.
+  const totalPages = Math.max(1, Math.ceil((totalDbLeads || 0) / LEADS_PAGE_SIZE));
+
+  const handlePageChange = useCallback((newPage: number) => {
+    if (isFetchingRef.current || isGeneratingPitch) return;
+    if (newPage < 1 || newPage > totalPages) return;
+    if (newPage === currentPage) return;
+    isFetchingRef.current = true;
+    setCurrentPage(newPage);
+    setLeadsOffset((newPage - 1) * LEADS_PAGE_SIZE);
+    // Scroll back to the top of the grid so the new page is visible immediately
+    setTimeout(() => {
+      const tableElement = document.getElementById('job-grid-top') || leadsTableRef.current;
+      if (tableElement) {
+        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  }, [totalPages, currentPage, isGeneratingPitch]);
+
+  // Compact window of page numbers (1 ... p-2 p-1 p p+1 p+2 ... N) with ellipsis
+  const getVisiblePages = useCallback((): (number | '...')[] => {
+    const pages: (number | '...')[] = [];
+    for (let p = 1; p <= totalPages; p++) {
+      const nearCurrent = Math.abs(p - currentPage) <= 2;
+      const isEdge = p === 1 || p === totalPages;
+      if (isEdge || nearCurrent) {
+        pages.push(p);
+      } else if (pages[pages.length - 1] !== '...') {
+        pages.push('...');
+      }
     }
-  }, [hasMoreLeads, isGeneratingPitch]);
+    return pages;
+  }, [totalPages, currentPage]);
 
   const { data: swrStats, mutate: mutateStats } = useSWR(sanitizeEndpoint('corridor-stats'), fetcher, { 
       refreshInterval: isGeneratingPitch ? 0 : 60000, // Network bottleneck fix: 60s polling, PAUSE during AI pitch generation
@@ -645,6 +692,7 @@ function App() {
         setJobs(prev => {
           const existingIds = new Set(prev.map(j => j.id));
           const uniqueNew = mappedLeads.filter(j => !existingIds.has(j.id));
+          if (uniqueNew.length === 0) return prev; // No new leads → keep identity, avoid re-render churn
           return [...uniqueNew, ...prev].slice(0, 1000);
         });
 
@@ -868,18 +916,38 @@ function App() {
   }, [regionIndex, sectorIndex, agentState, isPending, addLog, computeRegionLabelFromLocation, categorizeJob, fetchStats, isPulseSyncing]);
 
   // --- 3. Effect Hooks ---
-
+  // Break the telemetry handshake loop: the handshake runs AT MOST ONCE when the
+  // first stats/leads payload arrives. Routine synchronization is handled by SWR's
+  // 60s revalidation + the jobs effect below — never re-trigger fetchStats on every
+  // swrStats/swrLeadsResponse reference change.
+  const initialHandshakeRef = useRef(false);
   useEffect(() => {
+    if (initialHandshakeRef.current) return;
     if (swrStats || swrLeadsResponse) {
+      initialHandshakeRef.current = true;
       fetchStats();
     }
-  }, [swrStats, swrLeadsResponse, fetchStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swrStats, swrLeadsResponse]);
 
   useEffect(() => {
     setBatches(computeBatchesFromJobs(jobs));
   }, [jobs, computeBatchesFromJobs]);
 
   const intervalRef = useRef<number | null>(null);
+  // Stabilize the pulse timer: the interval is created ONCE (deps [mounted]) and calls
+  // the LATEST handleRefreshPulse through a ref. Without this, every identity change of
+  // handleRefreshPulse (agentState / isPulseSyncing churn) re-created the timer each render.
+  const refreshPulseRef = useRef<typeof handleRefreshPulse>(handleRefreshPulse);
+  useEffect(() => {
+    refreshPulseRef.current = handleRefreshPulse;
+  }, [handleRefreshPulse]);
+
+  const isPulseSyncingRef = useRef(isPulseSyncing);
+  useEffect(() => {
+    isPulseSyncingRef.current = isPulseSyncing;
+  }, [isPulseSyncing]);
+
   useEffect(() => {
     if (!mounted) return;
     if (intervalRef.current) {
@@ -889,8 +957,8 @@ function App() {
     intervalRef.current = window.setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          if (!isPulseSyncing) { // Only trigger if not already syncing
-            handleRefreshPulse();
+          if (!isPulseSyncingRef.current) { // Only trigger if not already syncing
+            refreshPulseRef.current();
           }
           return ROTATION_INTERVAL_SECONDS;
         }
@@ -903,7 +971,8 @@ function App() {
         intervalRef.current = null;
       }
     };
-  }, [mounted, handleRefreshPulse]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
   
   const initialPulseRef = useRef(false);
 
@@ -911,10 +980,11 @@ function App() {
     setMounted(true); 
     if (!initialPulseRef.current) {
       addLog("ASR Full-Spectrum Rotation online. Hub capacity stabilizing.", "success", "INIT");
-      handleRefreshPulse(undefined, undefined, false);
+      refreshPulseRef.current(undefined, undefined, false);
       initialPulseRef.current = true;
     }
-  }, [handleRefreshPulse, addLog]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     try {
@@ -1252,22 +1322,47 @@ function App() {
                  }}
                />
                </div>
-               {hasMoreLeads && (
-                 <div className="flex flex-col items-center gap-2 py-6">
-                   <button
-                     onClick={loadMoreLeads}
-                     disabled={isGeneratingPitch || isFetchingRef.current}
-                     className="px-6 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-brand-500/20 transition-all"
-                   >
-                     {isFetchingRef.current ? 'Loading more jobs...' : `Load More Jobs (${jobs.length} loaded${totalDbLeads ? ` of ${totalDbLeads}` : ''})`}
-                   </button>
-                   {totalDbLeads > 0 && (
-                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                       {jobs.length} of {totalDbLeads} jobs loaded
-                     </p>
-                    )}
-                  </div>
-                )}
+               {(totalDbLeads > 0 || jobs.length > 0) && (
+                 <div className="flex flex-col items-center gap-3 py-6 px-4">
+                   <nav className="inline-flex items-center gap-1 flex-wrap justify-center rounded-2xl border border-slate-800 bg-slate-900/60 px-3 py-2.5 shadow-xl" aria-label="Pagination">
+                     <button
+                       onClick={() => handlePageChange(currentPage - 1)}
+                       disabled={currentPage <= 1 || isFetchingRef.current || isGeneratingPitch}
+                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 text-[10px] font-black uppercase tracking-widest transition-all"
+                     >
+                       <ChevronLeft size={12} /> Prev
+                     </button>
+                     {getVisiblePages().map((p, i) =>
+                       p === '...' ? (
+                         <span key={`gap-${i}`} className="px-1.5 text-slate-500 text-xs font-bold">…</span>
+                       ) : (
+                         <button
+                           key={p}
+                           onClick={() => handlePageChange(p)}
+                           disabled={isFetchingRef.current || isGeneratingPitch}
+                           className={`min-w-[2rem] px-2 py-1.5 rounded-lg text-[11px] font-black transition-all active:scale-95 ${
+                             p === currentPage
+                               ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30'
+                               : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                           }`}
+                         >
+                           {p}
+                         </button>
+                       )
+                     )}
+                     <button
+                       onClick={() => handlePageChange(currentPage + 1)}
+                       disabled={currentPage >= totalPages || isFetchingRef.current || isGeneratingPitch}
+                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 text-[10px] font-black uppercase tracking-widest transition-all"
+                     >
+                       Next <ChevronRight size={12} />
+                     </button>
+                   </nav>
+                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                     Page {currentPage} of {totalPages} · {jobs.length} of {totalDbLeads} leads {isFetchingRef.current ? '· fetching...' : ''}
+                   </p>
+                 </div>
+               )}
               </>
             )}
              {view === AppView.UPLOADS && (
